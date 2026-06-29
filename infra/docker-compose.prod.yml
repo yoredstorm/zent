@@ -80,9 +80,6 @@ services:
     depends_on:
       - openwa
 
-      retries: 5
-      start_period: 60s
-
   backend-api:
     build:
       context: ../apps/api
