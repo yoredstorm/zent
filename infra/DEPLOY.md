@@ -245,7 +245,21 @@ depends_on:
 
 El badge debe pasar de **Desconectado** a conectado. Al enviar un mensaje, las colas de webhooks deberían incrementar PENDIENTE/COMPLETADO.
 
-**Webhook:** no hace falta registrarlo a mano en la UI. `backend-api` lo registra al arrancar si `OPENWA_API_KEY` está definida. La URL debe ser interna: `http://backend-api:3000/api/webhooks/openwa` (no la IP pública).
+**Webhook:** no hace falta registrarlo a mano en la UI. `backend-api` lo registra al arrancar si `OPENWA_API_KEY` está definida.
+
+URL del webhook (interna Docker):
+
+```
+http://backend-api:3000/api/webhooks/openwa
+```
+
+OpenWA bloquea IPs privadas (172.x) por SSRF. El compose incluye `SSRF_ALLOWED_HOSTS=backend-api` en el servicio `openwa` para permitir esa URL. Si creas el webhook a mano y ves *"Host backend-api resolves to a blocked internal address"*, redeploy con ese env o usa temporalmente la URL pública:
+
+```
+http://77.93.154.87:3001/api/webhooks/openwa
+```
+
+Evento: solo `message.received`.
 
 **Variables en Dokploy** (misma clave en ambos):
 

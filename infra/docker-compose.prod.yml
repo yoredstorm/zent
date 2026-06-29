@@ -59,6 +59,8 @@ services:
       PORT: "2785"
       # API_MASTER_KEY viene SOLO del .env de Dokploy (debe ser igual que OPENWA_API_KEY)
       REDIS_URL: redis://redis:6379
+      # Permite webhook a backend-api (IP Docker 172.x); sin esto OpenWA rechaza la URL por SSRF
+      SSRF_ALLOWED_HOSTS: backend-api
       SESSION_DATA_PATH: /app/data/sessions
       PUPPETEER_HEADLESS: "true"
       PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
