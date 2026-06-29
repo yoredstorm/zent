@@ -54,8 +54,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # OpenWA solo lee API_MASTER_KEY — misma key que OPENWA_API_KEY en Dokploy
-      API_MASTER_KEY: ${OPENWA_API_KEY}
+      # API_MASTER_KEY viene SOLO del .env de Dokploy (no usar ${} — vacío pisa el .env)
       SESSION_DATA_PATH: /app/data/sessions
       PUPPETEER_HEADLESS: "true"
       PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
@@ -102,16 +101,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      DATABASE_URL: ${DATABASE_URL}
+      # Secrets (DATABASE_URL, JWT_*, OPENWA_*) vienen del .env de Dokploy
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       CORS_ORIGIN: "*"
     depends_on:
@@ -148,13 +142,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3001"
-      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       WORKER_MODE: "true"
     depends_on:
