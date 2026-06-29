@@ -45,6 +45,12 @@ services:
       - app
     ports:
       - "2785:2785"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.openwa.rule=Host(`77.93.154.87`)"
+      - "traefik.http.routers.openwa.entrypoints=owa"
+      - "traefik.http.routers.openwa.tls=true"
+      - "traefik.http.services.openwa.loadbalancer.server.port=2785"
     volumes:
       - openwa_prod:/home/openwa/.openwa
     environment:
@@ -173,12 +179,14 @@ services:
       - app
     ports:
       - "8443:443"
+      - "2786:2786"
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=infra_app"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.owa.address=:2786"
       - "--api.insecure=true"
       - "--log.level=INFO"
     volumes:

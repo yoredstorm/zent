@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
-const OPENWA_URL = 'http://77.93.154.87:2785';
+const OPENWA_URL = 'https://77.93.154.87:2786';
 
 export default function WhatsAppPage() {
   const [status, setStatus] = useState<any>(null);
@@ -26,7 +26,7 @@ export default function WhatsAppPage() {
   };
 
   const openOpenWA = () => {
-    window.open(OPENWA_URL, '_blank', 'noopener,noreferrer');
+    window.open(OPENWA_URL);
   };
 
   const statusColors: Record<string, string> = {
