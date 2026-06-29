@@ -45,18 +45,6 @@ services:
       - app
     ports:
       - "2785:2785"
-
-  openwa-ssl:
-    build:
-      context: ./openwa-proxy
-      dockerfile: Dockerfile
-    restart: always
-    networks:
-      - app
-    ports:
-      - "2786:443"
-    depends_on:
-      - openwa
     volumes:
       - openwa_prod:/home/openwa/.openwa
     environment:
@@ -77,6 +65,21 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:2785/api/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  openwa-ssl:
+    build:
+      context: ./openwa-proxy
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - app
+    ports:
+      - "2786:443"
+    depends_on:
+      - openwa
+
       retries: 5
       start_period: 60s
 
