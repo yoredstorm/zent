@@ -192,6 +192,72 @@ services:
     depends_on:
       - backend-api
 
+  loki:
+    image: grafana/loki:3.0.0
+    restart: always
+    networks:
+      - app
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    restart: always
+    networks:
+      - app
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: always
+    networks:
+      - app
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: always
+    networks:
+      - app
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: always
+    networks:
+      - app
+    env_file:
+      - .env
+    ports:
+      - "3002:3000"
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+      - prometheus
+
   traefik:
     image: traefik:v3.2
     restart: always
@@ -219,3 +285,9 @@ volumes:
     name: zent_openwa_prod
   uploads_prod:
     name: zent_uploads_prod
+  loki_data:
+    name: zent_loki_data
+  prometheus_data:
+    name: zent_prometheus_data
+  grafana_data:
+    name: zent_grafana_data

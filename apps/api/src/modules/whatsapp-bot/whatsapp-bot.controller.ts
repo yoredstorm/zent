@@ -35,7 +35,7 @@ export class WhatsappBotController {
     if (signature) {
       const payload = JSON.stringify(body);
       if (!this.openwa.verifyWebhookSignature(signature, payload)) {
-        this.logger.warn('Invalid webhook signature');
+        this.logger.warn('Webhook rejected: invalid signature');
         return { status: 'invalid_signature' };
       }
     }
@@ -44,10 +44,12 @@ export class WhatsappBotController {
     const data = body?.data ?? body;
 
     if (event && event !== 'message.received') {
-      return { status: 'ignored' };
+      this.logger.log(`Webhook ignored: event=${event}`);
+      return { status: 'ignored', reason: 'event' };
     }
     if (data?.fromMe === true) {
-      return { status: 'ignored' };
+      this.logger.log('Webhook ignored: fromMe=true');
+      return { status: 'ignored', reason: 'fromMe' };
     }
 
     const chatId = data?.chatId || data?.from || body?.chatId || body?.from;
@@ -62,7 +64,8 @@ export class WhatsappBotController {
       `${waSessionId ?? 'default'}-${chatId}-${Date.now()}`;
 
     if (!chatId || !messageBody) {
-      return { status: 'ignored' };
+      this.logger.log(`Webhook ignored: missing chatId or body (chatId=${chatId ?? 'none'})`);
+      return { status: 'ignored', reason: 'missing_fields' };
     }
 
     await this.queue.add('message', {
@@ -73,7 +76,9 @@ export class WhatsappBotController {
       idempotencyKey: key,
     });
 
-    this.logger.debug(`Enqueued message from ${chatId}`);
+    this.logger.log(
+      `Enqueued message from ${chatId} session=${waSessionId ?? 'auto'} body="${messageBody.slice(0, 40)}"`,
+    );
     return { status: 'queued' };
   }
 }

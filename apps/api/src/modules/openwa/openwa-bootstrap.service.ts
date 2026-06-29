@@ -16,7 +16,10 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
 
     const apiKey = this.config.get('OPENWA_API_KEY', '');
     if (!apiKey || apiKey === 'changeme') {
-      this.logger.warn('OPENWA_API_KEY not set — skipping webhook registration');
+      this.logger.error(
+        'OPENWA_API_KEY is not set in environment — webhook will NOT be registered. ' +
+          'Add OPENWA_API_KEY to Dokploy Environment.',
+      );
       return;
     }
 

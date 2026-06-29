@@ -20,8 +20,15 @@ export default function LoginPage() {
       localStorage.setItem('refreshToken', data.refreshToken);
       toast.success('Sesión iniciada correctamente');
       router.push('/dashboard');
-    } catch {
-      toast.error('Credenciales inválidas');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (!status) {
+        toast.error('No se pudo conectar con el servidor. Verifica que la API esté en ejecución.');
+      } else if (status === 401) {
+        toast.error('Credenciales inválidas');
+      } else {
+        toast.error(`Error del servidor (${status})`);
+      }
     } finally {
       setLoading(false);
     }

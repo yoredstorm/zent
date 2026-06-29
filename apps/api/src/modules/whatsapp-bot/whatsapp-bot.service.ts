@@ -68,7 +68,8 @@ export class WhatsappBotService {
       return;
     }
 
-    if (text === 'menu' || text === 'inicio' || text === '0') {
+    const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
+    if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
       await this.showMainMenu();
       return;
     }
