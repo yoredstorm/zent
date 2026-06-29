@@ -45,6 +45,18 @@ services:
       - app
     ports:
       - "2785:2785"
+
+  openwa-ssl:
+    build:
+      context: ./openwa-proxy
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - app
+    ports:
+      - "2786:443"
+    depends_on:
+      - openwa
     volumes:
       - openwa_prod:/home/openwa/.openwa
     environment:

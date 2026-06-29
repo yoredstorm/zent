@@ -55,9 +55,9 @@ export default function WhatsAppPage() {
               <p className="text-sm text-blue-800 mb-2">
                 Para vincular WhatsApp, abre el dashboard de OpenWA:
               </p>
-              <a href="http://77.93.154.87:2785" target="_blank" rel="noopener noreferrer"
+              <a href="https://77.93.154.87:2786" target="_blank" rel="noopener noreferrer"
                 className="text-blue-600 font-medium hover:underline">
-                http://77.93.154.87:2785
+                https://77.93.154.87:2786
               </a>
               <p className="text-xs text-blue-600 mt-2">
                 Abre esta URL en una nueva pestaña del navegador.
@@ -96,9 +96,9 @@ export default function WhatsAppPage() {
         <p className="text-gray-600 mb-4">
           Gestiona sesiones, mensajes y webhooks desde el panel de OpenWA.
           <br />
-          <span className="text-xs text-orange-600">Abrir en nueva pestaña: http://77.93.154.87:2785</span>
+          <span className="text-xs text-orange-600">Abrir en nueva pestaña: https://77.93.154.87:2786</span>
         </p>
-        <a href="http://77.93.154.87:2785" target="_blank" rel="noopener noreferrer"
+        <a href="https://77.93.154.87:2786" target="_blank" rel="noopener noreferrer"
           className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
           Abrir OpenWA Dashboard →
         </a>
