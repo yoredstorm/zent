@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 
 export interface OpenWASession {
   id: string;
-  status: 'connected' | 'disconnected' | 'connecting' | 'qr';
+  status: string;
   qr?: string;
 }
 
@@ -25,18 +25,19 @@ interface SendDocumentPayload {
   caption?: string;
 }
 
+const ACTIVE_SESSION_STATUSES = new Set(['ready', 'connected', 'authenticating']);
+
 @Injectable()
 export class OpenwaService {
   private readonly logger = new Logger(OpenwaService.name);
   private readonly baseUrl: string;
   private readonly apiKey: string;
-  private readonly sessionId: string;
+  private cachedSessionId: string | null = null;
   private redis: Redis;
 
   constructor(private config: ConfigService) {
     this.baseUrl = this.config.get('OPENWA_BASE_URL', 'http://openwa:2785');
     this.apiKey = this.config.get('OPENWA_API_KEY', '');
-    this.sessionId = this.config.get('OPENWA_SESSION_ID', 'default');
     this.redis = new Redis({
       host: this.config.get('REDIS_HOST', 'localhost'),
       port: parseInt(this.config.get('REDIS_PORT', '6379')),
@@ -60,36 +61,83 @@ export class OpenwaService {
     return response.json();
   }
 
+  /** Resuelve la sesión activa; OPENWA_SESSION_ID es opcional. */
+  async resolveSessionId(): Promise<string> {
+    const sessions = await this.getSessions();
+
+    if (this.cachedSessionId && sessions.some((s) => s.id === this.cachedSessionId)) {
+      return this.cachedSessionId;
+    }
+    this.cachedSessionId = null;
+
+    const configured = this.config.get('OPENWA_SESSION_ID', '').trim();
+    if (configured) {
+      const match = sessions.find((s) => s.id === configured);
+      if (match) {
+        this.cachedSessionId = match.id;
+        return match.id;
+      }
+      this.logger.warn(`OPENWA_SESSION_ID "${configured}" not found — auto-detecting session`);
+    }
+
+    const active = sessions.find((s) => ACTIVE_SESSION_STATUSES.has(s.status));
+    if (active) {
+      this.cachedSessionId = active.id;
+      this.logger.log(`Auto-selected OpenWA session: ${active.id} (${active.status})`);
+      return active.id;
+    }
+
+    if (sessions.length === 1) {
+      this.cachedSessionId = sessions[0].id;
+      this.logger.log(`Using sole OpenWA session: ${sessions[0].id}`);
+      return sessions[0].id;
+    }
+
+    if (sessions.length > 1) {
+      this.cachedSessionId = sessions[0].id;
+      this.logger.warn(`No active session; using first: ${sessions[0].id}`);
+      return sessions[0].id;
+    }
+
+    throw new Error('No OpenWA sessions found. Create one in the OpenWA dashboard.');
+  }
+
   async getSessions(): Promise<OpenWASession[]> {
     return this.request<OpenWASession[]>('/api/sessions');
   }
 
-  async createSession(id: string = this.sessionId): Promise<void> {
-    await this.request(`/api/sessions`, 'POST', { id });
+  async createSession(id?: string): Promise<void> {
+    const sessionId = id ?? (await this.resolveSessionId());
+    await this.request(`/api/sessions`, 'POST', { id: sessionId });
   }
 
-  async startSession(id: string = this.sessionId): Promise<void> {
-    await this.request(`/api/sessions/${id}/start`, 'POST');
+  async startSession(id?: string): Promise<void> {
+    const sessionId = id ?? (await this.resolveSessionId());
+    await this.request(`/api/sessions/${sessionId}/start`, 'POST');
   }
 
-  async getQRCode(id: string = this.sessionId): Promise<string> {
-    const data = await this.request<{ qr: string }>(`/api/sessions/${id}/qr`);
+  async getQRCode(id?: string): Promise<string> {
+    const sessionId = id ?? (await this.resolveSessionId());
+    const data = await this.request<{ qr: string }>(`/api/sessions/${sessionId}/qr`);
     return data.qr;
   }
 
-  async getSessionStatus(id: string = this.sessionId): Promise<string> {
+  async getSessionStatus(id?: string): Promise<string> {
+    const sessionId = id ?? (await this.resolveSessionId());
     const sessions = await this.getSessions();
-    const session = sessions.find(s => s.id === id);
+    const session = sessions.find((s) => s.id === sessionId);
     return session?.status || 'unknown';
   }
 
   async sendText(payload: SendTextPayload): Promise<void> {
-    await this.request(`/api/sessions/${this.sessionId}/messages/send-text`, 'POST', payload);
+    const sessionId = await this.resolveSessionId();
+    await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', payload);
     this.logger.debug(`Sent text to ${payload.chatId}`);
   }
 
   async sendImage(payload: SendImagePayload): Promise<void> {
-    await this.request(`/api/sessions/${this.sessionId}/messages/send-image`, 'POST', {
+    const sessionId = await this.resolveSessionId();
+    await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', {
       chatId: payload.chatId,
       image: payload.image,
       caption: payload.caption,
@@ -98,7 +146,8 @@ export class OpenwaService {
   }
 
   async sendDocument(payload: SendDocumentPayload): Promise<void> {
-    await this.request(`/api/sessions/${this.sessionId}/messages/send-document`, 'POST', {
+    const sessionId = await this.resolveSessionId();
+    await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', {
       chatId: payload.chatId,
       document: payload.document,
       caption: payload.caption,
@@ -107,7 +156,8 @@ export class OpenwaService {
   }
 
   async sendTemplate(chatId: string, templateName: string, variables: Record<string, string>): Promise<void> {
-    await this.request(`/api/sessions/${this.sessionId}/messages/send-template`, 'POST', {
+    const sessionId = await this.resolveSessionId();
+    await this.request(`/api/sessions/${sessionId}/messages/send-template`, 'POST', {
       chatId,
       templateName,
       variables,
@@ -121,24 +171,30 @@ export class OpenwaService {
     return signature === expected;
   }
 
-  async listWebhooks(sessionId: string = this.sessionId): Promise<{ id: string; url: string }[]> {
+  async listWebhooks(sessionId: string): Promise<{ id: string; url: string }[]> {
     return this.request(`/api/sessions/${sessionId}/webhooks`);
   }
 
   async ensureWebhook(): Promise<void> {
+    const sessions = await this.getSessions();
+    const targets = sessions.filter((s) => ACTIVE_SESSION_STATUSES.has(s.status));
+    const list = targets.length > 0 ? targets : sessions;
+
+    if (list.length === 0) {
+      throw new Error('No OpenWA sessions found yet. Pair WhatsApp in the dashboard first.');
+    }
+
+    for (const session of list) {
+      await this.ensureWebhookForSession(session.id);
+    }
+  }
+
+  private async ensureWebhookForSession(sessionId: string): Promise<void> {
     const url = this.config.get(
       'OPENWA_WEBHOOK_URL',
       'http://backend-api:3000/api/webhooks/openwa',
     );
     const secret = this.config.get('OPENWA_WEBHOOK_SECRET', '');
-    const sessionId = this.sessionId;
-
-    const sessions = await this.getSessions();
-    if (!sessions.some((s) => s.id === sessionId)) {
-      throw new Error(
-        `Session "${sessionId}" not found in OpenWA. Create it in the dashboard or fix OPENWA_SESSION_ID.`,
-      );
-    }
 
     const existing = await this.listWebhooks(sessionId);
     const match = existing.find((w) => w.url === url);

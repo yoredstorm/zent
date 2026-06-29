@@ -43,19 +43,25 @@ services:
     restart: always
     networks:
       - app
-    # Sin puerto público: el dashboard solo debe entrar por openwa-ssl (HTTPS :2786).
-    # En producción OpenWA fuerza upgrade-insecure-requests vía Helmet; HTTP directo rompe los assets.
     volumes:
-      - openwa_prod:/home/openwa/.openwa
+      # Ruta correcta del image actual — persiste API keys (.api-key) y SQLite entre deploys
+      - openwa_prod:/app/data
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
-      REDIS_URL: redis://redis:6379
-      SESSION_DIR: /home/openwa/.openwa/sessions
-      HOOK_INTERVAL: "1000"
-      SERVER_PORT: "2785"
-      PUID: "1000"
-      PGID: "1000"
+      PORT: "2785"
+      # Misma key que OPENWA_API_KEY en Dokploy — no cambia entre redeploys
+      API_MASTER_KEY: ${OPENWA_API_KEY}
+      DATABASE_TYPE: postgres
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_USERNAME: ${POSTGRES_USER:-zent}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-zentp4ssw0rd!}
+      DATABASE_NAME: ${POSTGRES_DB:-zent}
+      DATABASE_SYNCHRONIZE: "false"
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SESSION_DATA_PATH: /app/data/sessions
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,9 +108,10 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-jwt-refresh-secret-default-key-for-prod}
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
+      # OPENWA_SESSION_ID es opcional — se auto-detecta la sesión activa
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       CORS_ORIGIN: "*"
     depends_on:
@@ -137,8 +144,8 @@ services:
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       WORKER_MODE: "true"
     depends_on:
@@ -200,6 +207,10 @@ services:
 
 volumes:
   postgres_prod:
+    name: zent_postgres_prod
   redis_prod:
+    name: zent_redis_prod
   openwa_prod:
+    name: zent_openwa_prod
   uploads_prod:
+    name: zent_uploads_prod
