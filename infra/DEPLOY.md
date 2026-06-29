@@ -1,5 +1,57 @@
 # Verificación post-deploy (VPS / Dokploy)
 
+## Reset completo (empezar de cero)
+
+Borra **todos** los contenedores y volúmenes del stack. Pierdes: DB, sesión WhatsApp, uploads, dashboards Grafana.
+
+### 1. Environment en Dokploy (copiar tal cual)
+
+**Importante:** si la contraseña tiene `@`, en `DATABASE_URL` debe ir codificada como `%40`:
+
+```env
+POSTGRES_USER=inventario
+POSTGRES_PASSWORD=Jaredcito2025@1
+POSTGRES_DB=inventario
+DATABASE_URL=postgresql://inventario:Jaredcito2025%401@postgres:5432/inventario
+JWT_SECRET=jwt-secret-prod-2024
+JWT_REFRESH_SECRET=jwt-refresh-prod-2024
+ADMIN_EMAIL=the.ares.p@gmail.com
+ADMIN_PASSWORD=Jaredcito2025@1
+ADMIN_FORCE_RESET=true
+API_MASTER_KEY=owa_k1_...
+OPENWA_API_KEY=owa_k1_...
+OPENWA_WEBHOOK_SECRET=webhook-secret-2024
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=Jaredcito2025@1
+```
+
+Mal: `...Jaredcito2025@1@postgres...` (el `@` del password rompe la URL).  
+Bien: `...Jaredcito2025%401@postgres...`
+
+### 2. En Dokploy → Terminal
+
+```bash
+# Parar y borrar contenedores del proyecto (ajusta el prefijo si hace falta)
+docker ps -a --format '{{.Names}}' | grep -E 'zent|inventario|backend|openwa|grafana|postgres' | xargs -r docker rm -f
+
+# Borrar volúmenes nombrados del stack
+docker volume rm -f zent_postgres_prod zent_redis_prod zent_openwa_prod zent_uploads_prod zent_loki_data zent_prometheus_data zent_grafana_data 2>/dev/null || true
+```
+
+### 3. Redeploy en Dokploy
+
+Deploy de nuevo. Luego verificar:
+
+```bash
+curl -s http://localhost:3001/api/health
+curl -s http://localhost:8080/api/health
+```
+
+Login: `:8080` con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.  
+OpenWA: escanear QR de nuevo en `https://IP:2786` (volumen WA también se borró).
+
+---
+
 ## Troubleshooting rápido
 
 ### CPU 0% en Dokploy y login 500
