@@ -1,0 +1,163 @@
+networks:
+  internal:
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-inventario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-inventario}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inventario} -d ${POSTGRES_DB:-inventario}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:latest
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "2785:2785"
+    volumes:
+      - openwa_data:/home/openwa/.openwa
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inventario}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-inventario}
+      REDIS_URL: redis://redis:6379
+      SESSION_DIR: /home/openwa/.openwa/sessions
+      HOOK_INTERVAL: "1000"
+      SERVER_PORT: "2785"
+      PUID: "1000"
+      PGID: "1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2785/api/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  backend-api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "3001:3000"
+    volumes:
+      - uploads_data:/app/uploads
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inventario}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-inventario}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-changeme}
+      OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
+      UPLOADS_DIR: /app/uploads
+      CORS_ORIGIN: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      openwa:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  bot-worker:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - uploads_data:/app/uploads
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inventario}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-inventario}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
+      UPLOADS_DIR: /app/uploads
+      WORKER_MODE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      openwa:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    depends_on:
+      - backend-api
+
+volumes:
+  postgres_data:
+  redis_data:
+  openwa_data:
+  uploads_data:

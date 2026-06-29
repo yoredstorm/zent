@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  VENDEDOR
+  AGENTE
+}
+
+enum OrderStatus {
+  NUEVO
+  EN_GESTION
+  CONFIRMADO
+  EN_DELIVERY
+  COMPLETADO
+  CANCELADO
+}
+
+enum OrderSource {
+  WHATSAPP
+  DASHBOARD
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum ChatState {
+  MENU_PRINCIPAL
+  CATALOGO_PDF
+  SELECCION_CATEGORIA
+  LISTADO_PRODUCTOS
+  CARRITO
+  CONFIRMAR_PEDIDO
+  DATOS_ENTREGA
+  PEDIDO_CREADO
+  HANDOFF_HUMANO
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(VENDEDOR)
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  nombre      String    @unique
+  orden       Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id            String          @id @default(uuid())
+  sku           String          @unique
+  nombre        String
+  descripcion   String?
+  categoryId    String
+  category      Category        @relation(fields: [categoryId], references: [id])
+  costPrice     Decimal         @db.Decimal(10, 2)
+  salePrice     Decimal         @db.Decimal(10, 2)
+  stock         Int             @default(0)
+  minStock      Int             @default(0)
+  isActive      Boolean         @default(true)
+  isOutOfStock  Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  images        ProductImage[]
+  orderItems    OrderItem[]
+  movements     InventoryMovement[]
+
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("product_images")
+}
+
+model CatalogPdf {
+  id        String   @id @default(uuid())
+  url       String
+  isActive  Boolean  @default(false)
+  uploadedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("catalog_pdfs")
+}
+
+model InventoryMovement {
+  id        String       @id @default(uuid())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id])
+  type      MovementType
+  quantity  Int
+  reason    String?
+  orderId   String?
+  createdAt DateTime     @default(now())
+
+  @@map("inventory_movements")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  customerName   String
+  customerPhone  String
+  address        String?
+  reference      String?
+  status         OrderStatus @default(NUEVO)
+  source         OrderSource @default(WHATSAPP)
+  subtotal       Decimal     @db.Decimal(10, 2)
+  total          Decimal     @db.Decimal(10, 2)
+  deliveryCost   Decimal?    @db.Decimal(10, 2)
+  paymentMethod  String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  items          OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  costAtSale  Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  @@map("order_items")
+}
+
+model ChatSession {
+  id                String    @id @default(uuid())
+  chatId            String    @unique
+  customerName      String?
+  customerPhone     String?
+  state             ChatState @default(MENU_PRINCIPAL)
+  cartJson          String?   @db.Text
+  lastInteractionAt DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("chat_sessions")
+}
