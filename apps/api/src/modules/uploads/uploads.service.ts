@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,15 +17,27 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 @Injectable()
-export class UploadsService {
+export class UploadsService implements OnModuleInit {
+  private readonly logger = new Logger(UploadsService.name);
   private readonly uploadsDir: string;
   private readonly publicBaseUrl: string;
 
   constructor(private config: ConfigService) {
     this.uploadsDir = this.config.get('UPLOADS_DIR', './uploads');
     this.publicBaseUrl = this.config.get('PUBLIC_API_URL', 'http://localhost:3000/api').replace(/\/$/, '');
-    fs.mkdirSync(path.join(this.uploadsDir, 'pdf'), { recursive: true });
-    fs.mkdirSync(path.join(this.uploadsDir, 'images'), { recursive: true });
+  }
+
+  onModuleInit() {
+    this.ensureDirs();
+  }
+
+  private ensureDirs() {
+    try {
+      fs.mkdirSync(path.join(this.uploadsDir, 'pdf'), { recursive: true });
+      fs.mkdirSync(path.join(this.uploadsDir, 'images'), { recursive: true });
+    } catch (err: any) {
+      this.logger.warn(`Could not create uploads directories: ${err?.message}`);
+    }
   }
 
   getUploadsDir(): string {
@@ -51,7 +63,12 @@ export class UploadsService {
     const ext = EXT_BY_MIME[file.mimetype] || path.extname(file.originalname) || '';
     const filename = `${randomUUID()}${ext}`;
     const filepath = path.join(this.uploadsDir, type, filename);
-    fs.writeFileSync(filepath, file.buffer);
+    try {
+      this.ensureDirs();
+      fs.writeFileSync(filepath, file.buffer);
+    } catch (err: any) {
+      throw new BadRequestException(`No se pudo guardar el archivo: ${err?.message}`);
+    }
 
     return {
       url: `${this.publicBaseUrl}/uploads/${type}/${filename}`,

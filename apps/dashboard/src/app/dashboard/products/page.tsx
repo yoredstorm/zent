@@ -31,13 +31,17 @@ export default function ProductsPage() {
       if (editing) {
         await api.put(`/products/${editing.id}`, form);
         toast.success('Producto actualizado');
+        setShowForm(false);
+        setEditing(null);
+        setProductImages([]);
+        setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
       } else {
-        await api.post('/products', form);
-        toast.success('Producto creado');
+        const created = await api.post('/products', form);
+        toast.success('Producto creado — ahora puedes subir fotos');
+        setEditing(created);
+        setProductImages(created.images || []);
+        setShowForm(true);
       }
-      setShowForm(false);
-      setEditing(null);
-      setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
       loadProducts();
     } catch {
       toast.error('Error al guardar');
@@ -114,7 +118,10 @@ export default function ProductsPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Productos</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">Productos</h1>
+          <p className="text-sm text-gray-500 mt-1">Para subir fotos, haz clic en <strong>Editar</strong> o <strong>Fotos</strong> en un producto.</p>
+        </div>
         <button onClick={() => { setShowForm(true); setEditing(null); setProductImages([]); setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
           + Nuevo Producto
         </button>
@@ -236,6 +243,7 @@ export default function ProductsPage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Editar</button>
+                  <button onClick={() => handleEdit(p)} className="text-green-600 hover:text-green-800 mr-3">Fotos</button>
                   <button onClick={() => handleDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
                 </td>
               </tr>
