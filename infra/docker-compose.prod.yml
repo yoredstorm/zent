@@ -85,12 +85,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-jwt-secret-default-key-for-prod}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-jwt-refresh-secret-default-key-for-prod}
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
       UPLOADS_DIR: /app/uploads
       CORS_ORIGIN: "*"
     depends_on:
