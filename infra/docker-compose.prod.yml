@@ -1,4 +1,5 @@
-# ─── Producción VPS 77.93.154.87 / Dokploy ───
+# ─── Producción VPS / Dokploy ───
+# Dokploy genera .env en el servidor desde Environment (no viene de git).
 # Uso: docker compose -f docker-compose.prod.yml up -d
 
 networks:
@@ -11,14 +12,16 @@ services:
     restart: always
     networks:
       - app
+    env_file:
+      - .env
     volumes:
       - postgres_prod:/var/lib/postgresql/data
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-zent}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zentp4ssw0rd!}
-      POSTGRES_DB: ${POSTGRES_DB:-zent}
+      POSTGRES_USER: ${POSTGRES_USER:-inventario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-inventario}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zent -d zent"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -44,19 +47,19 @@ services:
     networks:
       - app
     shm_size: "1gb"
+    env_file:
+      - .env
     volumes:
       - openwa_prod:/app/data
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # Poner AMBAS en Dokploy con el mismo valor (ver dokploy.env.example)
-      API_MASTER_KEY: ${API_MASTER_KEY}
-      OPENWA_API_KEY: ${OPENWA_API_KEY}
+      # OpenWA solo lee API_MASTER_KEY — misma key que OPENWA_API_KEY en Dokploy
+      API_MASTER_KEY: ${OPENWA_API_KEY}
       SESSION_DATA_PATH: /app/data/sessions
       PUPPETEER_HEADLESS: "true"
       PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
     healthcheck:
-      # La imagen OpenWA no trae wget; usar node como en su compose oficial
       test:
         [
           "CMD",
@@ -90,6 +93,8 @@ services:
     restart: always
     networks:
       - app
+    env_file:
+      - .env
     ports:
       - "3001:3000"
     volumes:
@@ -97,16 +102,15 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      JWT_SECRET: ${JWT_SECRET:-jwt-secret-default-key-for-prod}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-jwt-refresh-secret-default-key-for-prod}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
-      # OPENWA_SESSION_ID es opcional — se auto-detecta la sesión activa
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       CORS_ORIGIN: "*"
@@ -118,11 +122,17 @@ services:
       openwa:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   bot-worker:
     build:
@@ -131,11 +141,14 @@ services:
     restart: always
     networks:
       - app
+    env_file:
+      - .env
     volumes:
       - uploads_prod:/app/uploads
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
@@ -152,11 +165,17 @@ services:
       openwa:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3001/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   frontend:
     build:
