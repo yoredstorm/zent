@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
-export default function WhatsAppPage() {
+const OPENWA_URL = 'http://77.93.154.87:2785';
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState<string>('');
 
@@ -67,9 +67,9 @@ export default function WhatsAppPage() {
               <p className="text-sm text-blue-800 mb-2">
                 Para vincular WhatsApp, abre el dashboard de OpenWA:
               </p>
-              <a href="http://localhost:2785" target="_blank" rel="noopener noreferrer"
+              <a href={OPENWA_URL} target="_blank" rel="noopener noreferrer"
                 className="text-blue-600 font-medium hover:underline">
-                http://localhost:2785
+                {OPENWA_URL}
               </a>
               <p className="text-xs text-blue-600 mt-2">
                 Allí puedes crear una sesión y escanear el código QR con tu teléfono.
@@ -108,7 +108,7 @@ export default function WhatsAppPage() {
         <p className="text-gray-600 mb-4">
           Usa el dashboard de OpenWA para gestionar sesiones, ver mensajes y configurar webhooks.
         </p>
-        <a href="http://localhost:2785" target="_blank" rel="noopener noreferrer"
+        <a href={OPENWA_URL} target="_blank" rel="noopener noreferrer"
           className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
           Abrir OpenWA Dashboard →
         </a>
