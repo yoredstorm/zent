@@ -37,8 +37,8 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (service) (count_over_time({service=~\"backend-api|bot-worker|openwa|frontend|postgres|redis\"}[1m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (container) (count_over_time({container=~\".*backend-api.*|.*bot-worker.*|.*openwa.*|.*frontend.*|.*postgres.*|.*redis.*\"}[1m]))",
+          "legendFormat": "{{container}}",
           "refId": "A"
         }
       ],
@@ -64,8 +64,8 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (service) (count_over_time({service=~\"backend-api|bot-worker|openwa|frontend|postgres|redis\"} |~ \"(?i)(error|fatal|exception|failed)\" [1m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (container) (count_over_time({container=~\".*backend-api.*|.*bot-worker.*|.*openwa.*|.*frontend.*|.*postgres.*|.*redis.*\"} |~ \"(?i)(error|fatal|exception|failed)\" [1m]))",
+          "legendFormat": "{{container}}",
           "refId": "A"
         }
       ],
@@ -96,7 +96,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"backend-api\"}",
+          "expr": "{container=~\".*backend-api.*\"}",
           "refId": "A"
         }
       ],
@@ -118,7 +118,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"backend-api\"} |~ \"(?i)(webhook|enqueued|openwa|auth|login|seed|admin)\"",
+          "expr": "{container=~\".*backend-api.*\"} |~ \"(?i)(webhook|enqueued|openwa|auth|login|seed|admin)\"",
           "refId": "A"
         }
       ],
@@ -147,7 +147,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"bot-worker\"}",
+          "expr": "{container=~\".*bot-worker.*\"}",
           "refId": "A"
         }
       ],
@@ -176,7 +176,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=~\"openwa|openwa-ssl\"}",
+          "expr": "{container=~\".*openwa.*\"}",
           "refId": "A"
         }
       ],
@@ -205,7 +205,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"postgres\"}",
+          "expr": "{container=~\".*postgres.*\"}",
           "refId": "A"
         }
       ],
@@ -227,7 +227,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"frontend\"}",
+          "expr": "{container=~\".*frontend.*\"}",
           "refId": "A"
         }
       ],
@@ -256,7 +256,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=~\"backend-api|bot-worker|openwa|openwa-ssl|frontend|postgres|redis|promtail|loki\"} |~ \"(?i)(error|fatal|exception|failed|panic)\"",
+          "expr": "{container=~\".*backend-api.*|.*bot-worker.*|.*openwa.*|.*frontend.*|.*postgres.*|.*redis.*|.*promtail.*|.*loki.*\"} |~ \"(?i)(error|fatal|exception|failed|panic)\"",
           "refId": "A"
         }
       ],
@@ -272,14 +272,14 @@
       {
         "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values(service)",
+        "definition": "label_values(container)",
         "hide": 0,
         "includeAll": true,
-        "label": "Servicio",
+        "label": "Contenedor",
         "multi": true,
-        "name": "service",
+        "name": "container",
         "options": [],
-        "query": "label_values(service)",
+        "query": "label_values(container)",
         "refresh": 2,
         "type": "query"
       }
