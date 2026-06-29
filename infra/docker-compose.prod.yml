@@ -48,8 +48,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # Debe coincidir con OPENWA_API_KEY del stack en Dokploy (no leer .api-key del disco)
-      API_MASTER_KEY: ${OPENWA_API_KEY:?Define OPENWA_API_KEY en Dokploy}
+      # Variables desde Dokploy → Environment (no usa .env del repo)
+      API_MASTER_KEY: ${OPENWA_API_KEY:-changeme}
       DATABASE_TYPE: postgres
       DATABASE_HOST: postgres
       DATABASE_PORT: "5432"
@@ -142,8 +142,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       WORKER_MODE: "true"
