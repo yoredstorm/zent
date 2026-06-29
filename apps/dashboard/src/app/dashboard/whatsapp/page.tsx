@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
-const OPENWA_URL = 'https://77.93.154.87:8443/owa';
-
 export default function WhatsAppPage() {
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState<string>('');
@@ -14,7 +12,7 @@ export default function WhatsAppPage() {
 
   const loadStatus = async () => {
     try { const data = await api.get('/openwa/status'); setStatus(data); }
-    catch { setStatus({ status: 'error', message: 'No se pudo conectar con OpenWA' }); }
+    catch { setStatus({ status: 'error' }); }
   };
 
   const handleGetQR = async () => {
@@ -23,10 +21,6 @@ export default function WhatsAppPage() {
       if (data.qr) { setQr(data.qr); toast.success('QR generado'); }
       else { toast.error(data.error || 'No se pudo obtener el QR'); }
     } catch { toast.error('No se pudo obtener el QR'); }
-  };
-
-  const openOpenWA = () => {
-    window.open(OPENWA_URL);
   };
 
   const statusColors: Record<string, string> = {
@@ -61,12 +55,12 @@ export default function WhatsAppPage() {
               <p className="text-sm text-blue-800 mb-2">
                 Para vincular WhatsApp, abre el dashboard de OpenWA:
               </p>
-              <button onClick={openOpenWA}
+              <a href="http://77.93.154.87:2785" target="_blank" rel="noopener noreferrer"
                 className="text-blue-600 font-medium hover:underline">
-                {OPENWA_URL}
-              </button>
+                http://77.93.154.87:2785
+              </a>
               <p className="text-xs text-blue-600 mt-2">
-                Allí puedes crear una sesión y escanear el código QR con tu teléfono.
+                Abre esta URL en una nueva pestaña del navegador.
               </p>
             </div>
           )}
@@ -100,12 +94,14 @@ export default function WhatsAppPage() {
       <div className="mt-6 bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold mb-4">Dashboard de OpenWA</h2>
         <p className="text-gray-600 mb-4">
-          Usa el dashboard de OpenWA para gestionar sesiones, ver mensajes y configurar webhooks.
+          Gestiona sesiones, mensajes y webhooks desde el panel de OpenWA.
+          <br />
+          <span className="text-xs text-orange-600">Abrir en nueva pestaña: http://77.93.154.87:2785</span>
         </p>
-        <button onClick={openOpenWA}
+        <a href="http://77.93.154.87:2785" target="_blank" rel="noopener noreferrer"
           className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
           Abrir OpenWA Dashboard →
-        </button>
+        </a>
       </div>
     </div>
   );
