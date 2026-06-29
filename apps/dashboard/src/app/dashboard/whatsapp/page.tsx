@@ -10,31 +10,23 @@ export default function WhatsAppPage() {
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState<string>('');
 
-  useEffect(() => {
-    loadStatus();
-  }, []);
+  useEffect(() => { loadStatus(); }, []);
 
   const loadStatus = async () => {
-    try {
-      const data = await api.get('/openwa/status');
-      setStatus(data);
-    } catch {
-      setStatus({ status: 'error', message: 'No se pudo conectar con OpenWA' });
-    }
+    try { const data = await api.get('/openwa/status'); setStatus(data); }
+    catch { setStatus({ status: 'error', message: 'No se pudo conectar con OpenWA' }); }
   };
 
   const handleGetQR = async () => {
     try {
       const data = await api.get('/openwa/qr');
-      if (data.qr) {
-        setQr(data.qr);
-        toast.success('QR generado');
-      } else {
-        toast.error(data.error || 'No se pudo obtener el QR');
-      }
-    } catch {
-      toast.error('No se pudo obtener el QR');
-    }
+      if (data.qr) { setQr(data.qr); toast.success('QR generado'); }
+      else { toast.error(data.error || 'No se pudo obtener el QR'); }
+    } catch { toast.error('No se pudo obtener el QR'); }
+  };
+
+  const openOpenWA = () => {
+    window.open(OPENWA_URL, '_blank', 'noopener,noreferrer');
   };
 
   const statusColors: Record<string, string> = {
@@ -69,10 +61,10 @@ export default function WhatsAppPage() {
               <p className="text-sm text-blue-800 mb-2">
                 Para vincular WhatsApp, abre el dashboard de OpenWA:
               </p>
-              <a href={OPENWA_URL} target="_blank" rel="noopener noreferrer"
+              <button onClick={openOpenWA}
                 className="text-blue-600 font-medium hover:underline">
                 {OPENWA_URL}
-              </a>
+              </button>
               <p className="text-xs text-blue-600 mt-2">
                 Allí puedes crear una sesión y escanear el código QR con tu teléfono.
               </p>
@@ -110,10 +102,10 @@ export default function WhatsAppPage() {
         <p className="text-gray-600 mb-4">
           Usa el dashboard de OpenWA para gestionar sesiones, ver mensajes y configurar webhooks.
         </p>
-        <a href={OPENWA_URL} target="_blank" rel="noopener noreferrer"
+        <button onClick={openOpenWA}
           className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
           Abrir OpenWA Dashboard →
-        </a>
+        </button>
       </div>
     </div>
   );
