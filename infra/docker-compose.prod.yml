@@ -43,8 +43,8 @@ services:
     restart: always
     networks:
       - app
-    ports:
-      - "2785:2785"
+    # Sin puerto público: el dashboard solo debe entrar por openwa-ssl (HTTPS :2786).
+    # En producción OpenWA fuerza upgrade-insecure-requests vía Helmet; HTTP directo rompe los assets.
     volumes:
       - openwa_prod:/home/openwa/.openwa
     environment:
@@ -76,7 +76,8 @@ services:
     networks:
       - app
     ports:
-      - "2786:443"
+      - "2785:80"   # redirige a https://IP:2786
+      - "2786:443"  # dashboard OpenWA con TLS
     depends_on:
       - openwa
 
@@ -103,6 +104,7 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
+      OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
       CORS_ORIGIN: "*"
     depends_on:

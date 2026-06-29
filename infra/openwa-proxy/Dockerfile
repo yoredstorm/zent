@@ -11,6 +11,6 @@ RUN mkdir -p /etc/nginx/certs && \
     -subj "/CN=77.93.154.87" \
     -addext "subjectAltName=IP:77.93.154.87"
 
-EXPOSE 443
+EXPOSE 80 443
 
 CMD ["nginx", "-g", "daemon off;"]

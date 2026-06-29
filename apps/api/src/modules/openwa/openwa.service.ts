@@ -121,8 +121,43 @@ export class OpenwaService {
     return signature === expected;
   }
 
-  async setWebhook(sessionId: string, url: string): Promise<void> {
-    await this.request(`/api/sessions/${sessionId}/webhooks`, 'POST', { url, events: ['message.received'] });
+  async listWebhooks(sessionId: string = this.sessionId): Promise<{ id: string; url: string }[]> {
+    return this.request(`/api/sessions/${sessionId}/webhooks`);
+  }
+
+  async ensureWebhook(): Promise<void> {
+    const url = this.config.get(
+      'OPENWA_WEBHOOK_URL',
+      'http://backend-api:3000/api/webhooks/openwa',
+    );
+    const secret = this.config.get('OPENWA_WEBHOOK_SECRET', '');
+    const sessionId = this.sessionId;
+
+    const sessions = await this.getSessions();
+    if (!sessions.some((s) => s.id === sessionId)) {
+      throw new Error(
+        `Session "${sessionId}" not found in OpenWA. Create it in the dashboard or fix OPENWA_SESSION_ID.`,
+      );
+    }
+
+    const existing = await this.listWebhooks(sessionId);
+    const match = existing.find((w) => w.url === url);
+
+    const payload = {
+      url,
+      events: ['message.received'],
+      ...(secret ? { secret } : {}),
+      active: true,
+    };
+
+    if (match) {
+      await this.request(`/api/sessions/${sessionId}/webhooks/${match.id}`, 'PUT', payload);
+      this.logger.log(`Webhook updated for session "${sessionId}": ${url}`);
+      return;
+    }
+
+    await this.request(`/api/sessions/${sessionId}/webhooks`, 'POST', payload);
+    this.logger.log(`Webhook registered for session "${sessionId}": ${url}`);
   }
 
   getRedisClient(): Redis {

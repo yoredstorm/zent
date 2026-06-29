@@ -40,10 +40,25 @@ export class WhatsappBotController {
       }
     }
 
-    const chatId = body?.chatId || body?.from;
-    const messageBody = body?.body || body?.text || '';
-    const from = body?.from || body?.author || '';
-    const key = idempotencyKey || body?.id || `${chatId}-${Date.now()}`;
+    const event = body?.event as string | undefined;
+    const data = body?.data ?? body;
+
+    if (event && event !== 'message.received') {
+      return { status: 'ignored' };
+    }
+    if (data?.fromMe === true) {
+      return { status: 'ignored' };
+    }
+
+    const chatId = data?.chatId || data?.from || body?.chatId || body?.from;
+    const messageBody = data?.body || data?.text || body?.body || body?.text || '';
+    const from = data?.from || body?.from || body?.author || '';
+    const key =
+      idempotencyKey ||
+      body?.idempotencyKey ||
+      data?.id ||
+      body?.id ||
+      `${chatId}-${Date.now()}`;
 
     if (!chatId || !messageBody) {
       return { status: 'ignored' };
