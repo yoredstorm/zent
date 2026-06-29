@@ -43,8 +43,9 @@ export class SeedService implements OnApplicationBootstrap {
       } else {
         this.logger.log(`Admin already exists: ${email}`);
       }
-    } catch (err) {
-      this.logger.error(`Bootstrap failed: ${err.message}`);
+    } catch (err: any) {
+      const detail = err?.stderr?.toString?.() || err?.message || String(err);
+      this.logger.error(`Bootstrap failed: ${detail}`);
     }
   }
 }

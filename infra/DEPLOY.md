@@ -2,6 +2,46 @@
 
 ## Troubleshooting rápido
 
+### CPU 0% en Dokploy y login 500
+
+Si Grafana (`:3002`) y Prometheus (`:9090`) responden pero `:3001` no, **`backend-api` no está corriendo** (no es un problema de contraseña del dashboard).
+
+En Dokploy → **Terminal** o SSH:
+
+```bash
+docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -E "backend|bot-worker|postgres"
+docker logs $(docker ps -aq -f name=backend-api | head -1) --tail 100
+```
+
+| Log | Causa | Solución |
+|---|---|---|
+| `DATABASE_URL is not set` | Env no llega al contenedor | Pegar env en Dokploy, redeploy |
+| `PrismaClientInitializationError` / `password authentication failed` | Password de Postgres en volumen ≠ `DATABASE_URL` | Ver sección Postgres abajo |
+| `Error: Cannot find module` / build failed | Build de API falló en VPS | Ver logs de build en Dokploy |
+| Contenedor no existe | `docker compose` no levantó backend-api | Revisar deploy logs en Dokploy |
+
+Comprobar desde el VPS:
+
+```bash
+curl -s http://localhost:3001/api/health   # debe responder JSON, no "connection refused"
+curl -s http://localhost:8080/api/health   # debe ser igual (proxy Next.js)
+```
+
+### Postgres: password del volumen no coincide
+
+Si el volumen `zent_postgres_prod` se creó con otra contraseña, cambiar `POSTGRES_PASSWORD` en Dokploy **no actualiza** la DB existente.
+
+**Opción A** — Ajustar `DATABASE_URL` a la contraseña real del volumen (si la recuerdas).
+
+**Opción B** — Reset (borra datos):
+
+```bash
+docker rm -f $(docker ps -aq -f name=postgres)
+docker volume rm zent_postgres_prod
+```
+
+Redeploy con `POSTGRES_PASSWORD=changeme` y `DATABASE_URL=postgresql://inventario:changeme@postgres:5432/inventario`.
+
 ### Login dashboard devuelve 500 (no 401)
 
 Un **500** en `:8080` casi siempre significa que el **frontend no puede hablar con `backend-api`**, no que la contraseña sea incorrecta (eso sería **401**).

@@ -101,7 +101,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      # Secrets (DATABASE_URL, JWT_*, OPENWA_*) vienen del .env de Dokploy
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in Dokploy Environment}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required in Dokploy Environment}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-false}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
@@ -113,8 +118,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openwa:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -142,6 +145,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in Dokploy Environment}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
@@ -152,8 +158,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openwa:
-        condition: service_started
     healthcheck:
       test:
         [
