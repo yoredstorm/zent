@@ -14,14 +14,15 @@ services:
     volumes:
       - postgres_prod:/var/lib/postgresql/data
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-zent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zentp4ssw0rd!}
+      POSTGRES_DB: ${POSTGRES_DB:-zent}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U zent -d zent"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -48,7 +49,7 @@ services:
       - openwa_prod:/home/openwa/.openwa
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
       REDIS_URL: redis://redis:6379
       SESSION_DIR: /home/openwa/.openwa/sessions
       HOOK_INTERVAL: "1000"
@@ -81,7 +82,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       JWT_SECRET: ${JWT_SECRET}
@@ -117,7 +118,7 @@ services:
       - uploads_prod:/app/uploads
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zent}:${POSTGRES_PASSWORD:-zentp4ssw0rd!}@postgres:5432/${POSTGRES_DB:-zent}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
