@@ -43,15 +43,18 @@ services:
     restart: always
     networks:
       - app
+    shm_size: "1gb"
     volumes:
       - openwa_prod:/app/data
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # Desde Dokploy → Environment (OPENWA_API_KEY). Sin default "changeme": OpenWA lo rechaza en prod.
-      API_MASTER_KEY: ${OPENWA_API_KEY}
+      # Poner AMBAS en Dokploy con el mismo valor (ver dokploy.env.example)
+      API_MASTER_KEY: ${API_MASTER_KEY}
+      OPENWA_API_KEY: ${OPENWA_API_KEY}
       SESSION_DATA_PATH: /app/data/sessions
-      # SQLite en /app/data — no comparte Postgres con Zent (evita crash por password "changeme")
+      PUPPETEER_HEADLESS: "true"
+      PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
     healthcheck:
       # La imagen OpenWA no trae wget; usar node como en su compose oficial
       test:
@@ -100,7 +103,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-jwt-secret-default-key-for-prod}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-jwt-refresh-secret-default-key-for-prod}
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
+      OPENWA_API_KEY: ${OPENWA_API_KEY}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       # OPENWA_SESSION_ID es opcional — se auto-detecta la sesión activa
@@ -136,8 +139,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
-      OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
-      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-default}
+      OPENWA_API_KEY: ${OPENWA_API_KEY}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       UPLOADS_DIR: /app/uploads
       WORKER_MODE: "true"
