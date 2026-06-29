@@ -14,6 +14,7 @@ import { OpenwaModule } from './modules/openwa/openwa.module';
 import { WhatsappBotModule } from './modules/whatsapp-bot/whatsapp-bot.module';
 import { CatalogPdfModule } from './modules/catalog-pdf/catalog-pdf.module';
 import { HealthController } from './health.controller';
+import { SeedService } from './seed.service';
 
 @Module({
   imports: [
@@ -31,6 +32,6 @@ import { HealthController } from './health.controller';
     CatalogPdfModule,
   ],
   controllers: [AppController, HealthController],
-  providers: [AppService],
+  providers: [AppService, SeedService],
 })
 export class AppModule {}

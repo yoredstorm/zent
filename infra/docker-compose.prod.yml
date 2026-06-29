@@ -150,11 +150,39 @@ services:
       - app
     ports:
       - "8080:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-http.rule=Host(`77.93.154.87`)"
+      - "traefik.http.routers.frontend-http.entrypoints=web"
+      - "traefik.http.routers.frontend-http.service=frontend-svc"
+      - "traefik.http.routers.frontend-https.rule=Host(`77.93.154.87`)"
+      - "traefik.http.routers.frontend-https.entrypoints=websecure"
+      - "traefik.http.routers.frontend-https.tls=true"
+      - "traefik.http.routers.frontend-https.service=frontend-svc"
+      - "traefik.http.services.frontend-svc.loadbalancer.server.port=3000"
     environment:
       NEXT_PUBLIC_API_URL: http://77.93.154.87:3001/api
-      NEXT_PUBLIC_APP_URL: http://77.93.154.87:3000
+      NEXT_PUBLIC_APP_URL: http://77.93.154.87:8080
     depends_on:
       - backend-api
+
+  traefik:
+    image: traefik:v3.2
+    restart: always
+    networks:
+      - app
+    ports:
+      - "443:443"
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=infra_app"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--api.insecure=true"
+      - "--log.level=INFO"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   postgres_prod:
