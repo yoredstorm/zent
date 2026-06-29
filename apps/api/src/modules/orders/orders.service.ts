@@ -2,10 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { UpdateOrderStatusDto } from './dto/order.dto';
+import { OpenwaService } from '../openwa/openwa.service';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private openwa: OpenwaService,
+  ) {}
 
   async findAll(filters?: { status?: string; source?: string }) {
     return this.prisma.order.findMany({
@@ -14,6 +18,7 @@ export class OrdersService {
         ...(filters?.source && { source: filters.source as any }),
       },
       include: {
+        customer: true,
         items: { include: { product: { include: { images: true } } } },
       },
       orderBy: { createdAt: 'desc' },
@@ -24,6 +29,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
+        customer: true,
         items: { include: { product: { include: { images: true } } } },
       },
     });
@@ -36,6 +42,8 @@ export class OrdersService {
     customerPhone: string;
     address?: string;
     reference?: string;
+    customerId?: string;
+    chatId?: string;
     items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
   }) {
     const subtotal = data.items.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
@@ -48,6 +56,8 @@ export class OrdersService {
           customerPhone: data.customerPhone,
           address: data.address,
           reference: data.reference,
+          customerId: data.customerId,
+          chatId: data.chatId,
           subtotal,
           total,
           source: 'WHATSAPP',
@@ -60,11 +70,13 @@ export class OrdersService {
       });
 
       for (const item of data.items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        const newStock = (product?.stock ?? 0) - item.quantity;
         await tx.product.update({
           where: { id: item.productId },
           data: {
             stock: { decrement: item.quantity },
-            isOutOfStock: true,
+            isOutOfStock: newStock <= 0,
           },
         });
         await tx.inventoryMovement.create({
@@ -83,7 +95,7 @@ export class OrdersService {
   }
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto) {
-    return this.prisma.order.update({
+    const order = await this.prisma.order.update({
       where: { id },
       data: {
         status: dto.status,
@@ -93,6 +105,19 @@ export class OrdersService {
       },
       include: { items: true },
     });
+
+    if (dto.status === 'COMPLETADO' && order.chatId) {
+      try {
+        await this.openwa.sendText({
+          chatId: order.chatId,
+          text: `✅ Tu pedido #${order.id.slice(0, 8)} fue entregado. ¡Gracias por tu compra! 🙏\n\nEscribe *menu* para hacer un nuevo pedido.`,
+        });
+      } catch {
+        // OpenWA may be unavailable; order status still updated
+      }
+    }
+
+    return order;
   }
 
   async getStats() {

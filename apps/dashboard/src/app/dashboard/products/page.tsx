@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -11,6 +11,9 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
+  const [productImages, setProductImages] = useState<any[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadProducts();
@@ -45,6 +48,7 @@ export default function ProductsPage() {
 
   const handleEdit = (product: any) => {
     setEditing(product);
+    setProductImages(product.images || []);
     setForm({
       sku: product.sku,
       nombre: product.nombre,
@@ -56,6 +60,35 @@ export default function ProductsPage() {
       minStock: product.minStock,
     });
     setShowForm(true);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editing) return;
+    setUploadingImage(true);
+    try {
+      const { url } = await api.upload('/uploads/image', file);
+      const image = await api.post(`/products/${editing.id}/images`, { url });
+      setProductImages((prev) => [...prev, image]);
+      toast.success('Imagen subida');
+      loadProducts();
+    } catch {
+      toast.error('Error al subir imagen');
+    } finally {
+      setUploadingImage(false);
+      if (imageRef.current) imageRef.current.value = '';
+    }
+  };
+
+  const handleDeleteImage = async (imageId: string) => {
+    try {
+      await api.delete(`/products/images/${imageId}`);
+      setProductImages((prev) => prev.filter((i) => i.id !== imageId));
+      toast.success('Imagen eliminada');
+      loadProducts();
+    } catch {
+      toast.error('Error al eliminar imagen');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -82,7 +115,7 @@ export default function ProductsPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Productos</h1>
-        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+        <button onClick={() => { setShowForm(true); setEditing(null); setProductImages([]); setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
           + Nuevo Producto
         </button>
       </div>
@@ -129,6 +162,34 @@ export default function ProductsPage() {
             <div className="md:col-span-2 bg-gray-50 p-4 rounded">
               <p className="text-sm text-gray-600">Ganancia: <span className="font-bold text-green-600">S/ {profit.toFixed(2)}</span> ({margin}% margen)</p>
             </div>
+            {editing && (
+              <div className="md:col-span-2 border-t pt-4">
+                <h3 className="font-medium text-gray-800 mb-3">Fotos del producto</h3>
+                <div className="flex flex-wrap gap-3 mb-3">
+                  {productImages.map((img: any) => (
+                    <div key={img.id} className="relative group">
+                      <img src={img.url} alt="" className="w-20 h-20 object-cover rounded border" />
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteImage(img.id)}
+                        className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 text-xs opacity-0 group-hover:opacity-100"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <input ref={imageRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageUpload} />
+                <button
+                  type="button"
+                  onClick={() => imageRef.current?.click()}
+                  disabled={uploadingImage}
+                  className="bg-gray-100 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-200 disabled:opacity-50"
+                >
+                  {uploadingImage ? 'Subiendo...' : '+ Agregar foto'}
+                </button>
+              </div>
+            )}
             <div className="md:col-span-2 flex gap-2">
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Guardar</button>
               <button type="button" onClick={() => setShowForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300">Cancelar</button>
@@ -142,6 +203,7 @@ export default function ProductsPage() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Foto</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Costo</th>
@@ -155,6 +217,13 @@ export default function ProductsPage() {
             {products.map((p: any) => (
               <tr key={p.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{p.sku}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {p.images?.[0] ? (
+                    <img src={p.images[0].url} alt="" className="w-10 h-10 object-cover rounded" />
+                  ) : (
+                    <span className="text-gray-300 text-xs">—</span>
+                  )}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{p.nombre}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{p.category?.nombre}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">S/ {Number(p.costPrice).toFixed(2)}</td>

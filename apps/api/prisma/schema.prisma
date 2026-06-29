@@ -128,10 +128,13 @@ model InventoryMovement {
 
 model Order {
   id             String      @id @default(uuid())
+  customerId     String?
+  customer       Customer?   @relation(fields: [customerId], references: [id])
   customerName   String
   customerPhone  String
   address        String?
   reference      String?
+  chatId         String?
   status         OrderStatus @default(NUEVO)
   source         OrderSource @default(WHATSAPP)
   subtotal       Decimal     @db.Decimal(10, 2)
@@ -167,9 +170,25 @@ model ChatSession {
   customerPhone     String?
   state             ChatState @default(MENU_PRINCIPAL)
   cartJson          String?   @db.Text
+  contextJson       String?   @db.Text
   lastInteractionAt DateTime  @default(now())
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@map("chat_sessions")
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  phone        String    @unique
+  name         String
+  address      String?
+  reference    String?
+  firstOrderAt DateTime?
+  lastOrderAt  DateTime?
+  orders       Order[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("customers")
 }

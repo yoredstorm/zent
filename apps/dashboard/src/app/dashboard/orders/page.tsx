@@ -62,7 +62,12 @@ export default function OrdersPage() {
               {orders.map((o: any) => (
                 <tr key={o.id} onClick={() => setSelected(o)} className={`cursor-pointer hover:bg-gray-50 ${selected?.id === o.id ? 'bg-blue-50' : ''}`}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">#{o.id.slice(0, 8)}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{o.customerName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div>{o.customerName}</div>
+                    {o.customerId && (
+                      <span className="text-xs text-green-600">En cartera</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">S/ {Number(o.total).toFixed(2)}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[o.status]}`}>{o.status}</span>
@@ -79,6 +84,13 @@ export default function OrdersPage() {
             <h2 className="text-xl font-bold mb-4">Pedido #{selected.id.slice(0, 8)}</h2>
             <div className="space-y-3 text-sm">
               <div><span className="font-medium">Cliente:</span> {selected.customerName}</div>
+              {selected.customerId && (
+                <div>
+                  <a href={`/dashboard/customers`} className="text-blue-600 text-xs hover:underline">
+                    Ver en cartera de clientes
+                  </a>
+                </div>
+              )}
               <div><span className="font-medium">Teléfono:</span> {selected.customerPhone}</div>
               <div><span className="font-medium">Dirección:</span> {selected.address || 'N/A'}</div>
               <div><span className="font-medium">Referencia:</span> {selected.reference || 'N/A'}</div>

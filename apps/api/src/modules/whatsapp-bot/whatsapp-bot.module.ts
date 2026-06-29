@@ -4,9 +4,11 @@ import { WhatsappBotController } from './whatsapp-bot.controller';
 import { WhatsappBotWorker } from './whatsapp-bot.worker';
 import { CartService } from './cart.service';
 import { ChatSessionService } from './chat-session.service';
+import { CustomersModule } from '../customers/customers.module';
 
 @Global()
 @Module({
+  imports: [CustomersModule],
   controllers: [WhatsappBotController],
   providers: [WhatsappBotService, WhatsappBotWorker, CartService, ChatSessionService],
   exports: [WhatsappBotService, CartService, ChatSessionService],

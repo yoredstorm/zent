@@ -28,6 +28,23 @@ export class ChatSessionService {
     });
   }
 
+  async updateContext(chatId: string, context: Record<string, any> | null) {
+    return this.prisma.chatSession.update({
+      where: { chatId },
+      data: { contextJson: context ? JSON.stringify(context) : null },
+    });
+  }
+
+  async getContext(chatId: string): Promise<Record<string, any>> {
+    const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
+    if (!session?.contextJson) return {};
+    try {
+      return JSON.parse(session.contextJson);
+    } catch {
+      return {};
+    }
+  }
+
   async updateCustomerData(chatId: string, data: { customerName?: string; customerPhone?: string }) {
     return this.prisma.chatSession.update({
       where: { chatId },

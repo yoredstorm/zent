@@ -13,6 +13,9 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { OpenwaModule } from './modules/openwa/openwa.module';
 import { WhatsappBotModule } from './modules/whatsapp-bot/whatsapp-bot.module';
 import { CatalogPdfModule } from './modules/catalog-pdf/catalog-pdf.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { HealthController } from './health.controller';
 import { SeedService } from './seed.service';
 
@@ -30,6 +33,9 @@ import { SeedService } from './seed.service';
     OpenwaModule,
     WhatsappBotModule,
     CatalogPdfModule,
+    UploadsModule,
+    CustomersModule,
+    AnalyticsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, SeedService],

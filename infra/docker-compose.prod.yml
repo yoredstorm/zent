@@ -112,6 +112,7 @@ services:
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
       CORS_ORIGIN: "*"
     depends_on:
       postgres:

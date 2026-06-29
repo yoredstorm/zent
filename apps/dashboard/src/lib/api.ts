@@ -63,4 +63,12 @@ export const api = {
     const res = await instance.patch(url, data, config);
     return res.data;
   },
+  upload: async <T = any>(url: string, file: File, fieldName = 'file'): Promise<T> => {
+    const formData = new FormData();
+    formData.append(fieldName, file);
+    const res = await instance.post(url, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
 };

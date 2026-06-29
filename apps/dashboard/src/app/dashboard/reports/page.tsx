@@ -9,12 +9,16 @@ export default function ReportsPage() {
   const [byCategory, setByCategory] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [daily, setDaily] = useState<any[]>([]);
+  const [topCustomers, setTopCustomers] = useState<any[]>([]);
+  const [newCustomersByMonth, setNewCustomersByMonth] = useState<any[]>([]);
 
   useEffect(() => {
     api.get('/reports/profit').then(setProfit).catch(console.error);
     api.get('/reports/profit-by-category').then(setByCategory).catch(console.error);
     api.get('/reports/top-products?limit=10').then(setTopProducts).catch(console.error);
     api.get('/reports/daily-profit?days=30').then(setDaily).catch(console.error);
+    api.get('/analytics/top-customers?limit=10').then(setTopCustomers).catch(console.error);
+    api.get('/analytics/new-customers-by-month?months=6').then(setNewCustomersByMonth).catch(console.error);
   }, []);
 
   return (
@@ -64,7 +68,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
         <div className="p-6 border-b">
           <h2 className="text-xl font-bold">Top 10 Productos Más Vendidos</h2>
         </div>
@@ -90,6 +94,47 @@ export default function ReportsPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="p-6 border-b">
+            <h2 className="text-xl font-bold">Top 10 Clientes por Gasto</h2>
+          </div>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pedidos</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Gastado</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {topCustomers.map((c: any, i: number) => (
+                <tr key={c.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{i + 1}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{c.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{c.totalOrders}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">S/ {c.totalSpent.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">Clientes Nuevos por Mes</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={newCustomersByMonth}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#8b5cf6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
