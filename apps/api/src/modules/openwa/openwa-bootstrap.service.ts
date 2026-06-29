@@ -23,10 +23,18 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     const retries = 6;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
+        await this.openwa.validateApiKey();
+        this.logger.log('OPENWA_API_KEY validated');
         await this.openwa.ensureWebhook();
         return;
       } catch (err: any) {
         const msg = err?.message || String(err);
+        if (attempt === 1 && msg.includes('401')) {
+          this.logger.error(
+            'OPENWA_API_KEY rejected. Use the same key in Dokploy for the whole stack. ' +
+              'If OpenWA was reset, delete volume zent_openwa_prod once and redeploy.',
+          );
+        }
         if (attempt < retries) {
           this.logger.warn(`Webhook setup attempt ${attempt}/${retries} failed: ${msg}`);
           await new Promise((r) => setTimeout(r, 5000));

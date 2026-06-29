@@ -7,6 +7,7 @@ interface WebhookJob {
   chatId: string;
   body: string;
   from: string;
+  waSessionId?: string;
   idempotencyKey: string;
 }
 
@@ -46,7 +47,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processJob(job: Job<WebhookJob>) {
-    const { chatId, body, from, idempotencyKey } = job.data;
+    const { chatId, body, from, waSessionId, idempotencyKey } = job.data;
 
     if (this.processedKeys.has(idempotencyKey)) {
       this.logger.debug(`Duplicate message ignored: ${idempotencyKey}`);
@@ -59,7 +60,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      await this.bot.handleMessage(chatId, body, from);
+      await this.bot.handleMessage(chatId, body, from, waSessionId);
     } catch (error: any) {
       this.logger.error(`Error processing message from ${chatId}: ${error.message}`);
       throw error;

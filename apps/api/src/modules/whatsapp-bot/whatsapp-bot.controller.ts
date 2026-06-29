@@ -53,12 +53,13 @@ export class WhatsappBotController {
     const chatId = data?.chatId || data?.from || body?.chatId || body?.from;
     const messageBody = data?.body || data?.text || body?.body || body?.text || '';
     const from = data?.from || body?.from || body?.author || '';
+    const waSessionId = (body?.sessionId as string | undefined)?.trim() || undefined;
     const key =
       idempotencyKey ||
       body?.idempotencyKey ||
       data?.id ||
       body?.id ||
-      `${chatId}-${Date.now()}`;
+      `${waSessionId ?? 'default'}-${chatId}-${Date.now()}`;
 
     if (!chatId || !messageBody) {
       return { status: 'ignored' };
@@ -68,6 +69,7 @@ export class WhatsappBotController {
       chatId,
       body: messageBody,
       from,
+      waSessionId,
       idempotencyKey: key,
     });
 

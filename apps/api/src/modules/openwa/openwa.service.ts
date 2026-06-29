@@ -11,18 +11,21 @@ export interface OpenWASession {
 interface SendTextPayload {
   chatId: string;
   text: string;
+  sessionId?: string;
 }
 
 interface SendImagePayload {
   chatId: string;
   image: { url?: string; base64?: string; mimetype?: string };
   caption?: string;
+  sessionId?: string;
 }
 
 interface SendDocumentPayload {
   chatId: string;
   document: { url?: string; base64?: string; mimetype?: string; filename?: string };
   caption?: string;
+  sessionId?: string;
 }
 
 const ACTIVE_SESSION_STATUSES = new Set(['ready', 'connected', 'authenticating']);
@@ -130,38 +133,51 @@ export class OpenwaService {
   }
 
   async sendText(payload: SendTextPayload): Promise<void> {
-    const sessionId = await this.resolveSessionId();
-    await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', payload);
-    this.logger.debug(`Sent text to ${payload.chatId}`);
+    const sessionId = payload.sessionId ?? (await this.resolveSessionId());
+    await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', {
+      chatId: payload.chatId,
+      text: payload.text,
+    });
+    this.logger.debug(`Sent text to ${payload.chatId} via session ${sessionId}`);
   }
 
   async sendImage(payload: SendImagePayload): Promise<void> {
-    const sessionId = await this.resolveSessionId();
+    const sessionId = payload.sessionId ?? (await this.resolveSessionId());
     await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', {
       chatId: payload.chatId,
       image: payload.image,
       caption: payload.caption,
     });
-    this.logger.debug(`Sent image to ${payload.chatId}`);
+    this.logger.debug(`Sent image to ${payload.chatId} via session ${sessionId}`);
   }
 
   async sendDocument(payload: SendDocumentPayload): Promise<void> {
-    const sessionId = await this.resolveSessionId();
+    const sessionId = payload.sessionId ?? (await this.resolveSessionId());
     await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', {
       chatId: payload.chatId,
       document: payload.document,
       caption: payload.caption,
     });
-    this.logger.debug(`Sent document to ${payload.chatId}`);
+    this.logger.debug(`Sent document to ${payload.chatId} via session ${sessionId}`);
   }
 
-  async sendTemplate(chatId: string, templateName: string, variables: Record<string, string>): Promise<void> {
-    const sessionId = await this.resolveSessionId();
-    await this.request(`/api/sessions/${sessionId}/messages/send-template`, 'POST', {
+  async sendTemplate(
+    chatId: string,
+    templateName: string,
+    variables: Record<string, string>,
+    sessionId?: string,
+  ): Promise<void> {
+    const sid = sessionId ?? (await this.resolveSessionId());
+    await this.request(`/api/sessions/${sid}/messages/send-template`, 'POST', {
       chatId,
       templateName,
       variables,
     });
+  }
+
+  /** Comprueba que OPENWA_API_KEY del env es aceptada por OpenWA. */
+  async validateApiKey(): Promise<void> {
+    await this.getSessions();
   }
 
   verifyWebhookSignature(signature: string, payload: string): boolean {
@@ -177,14 +193,11 @@ export class OpenwaService {
 
   async ensureWebhook(): Promise<void> {
     const sessions = await this.getSessions();
-    const targets = sessions.filter((s) => ACTIVE_SESSION_STATUSES.has(s.status));
-    const list = targets.length > 0 ? targets : sessions;
-
-    if (list.length === 0) {
+    if (sessions.length === 0) {
       throw new Error('No OpenWA sessions found yet. Pair WhatsApp in the dashboard first.');
     }
 
-    for (const session of list) {
+    for (const session of sessions) {
       await this.ensureWebhookForSession(session.id);
     }
   }

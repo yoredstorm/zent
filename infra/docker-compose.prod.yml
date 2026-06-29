@@ -44,13 +44,12 @@ services:
     networks:
       - app
     volumes:
-      # Ruta correcta del image actual — persiste API keys (.api-key) y SQLite entre deploys
       - openwa_prod:/app/data
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # Misma key que OPENWA_API_KEY en Dokploy — no cambia entre redeploys
-      API_MASTER_KEY: ${OPENWA_API_KEY}
+      # Debe coincidir con OPENWA_API_KEY del stack en Dokploy (no leer .api-key del disco)
+      API_MASTER_KEY: ${OPENWA_API_KEY:?Define OPENWA_API_KEY en Dokploy}
       DATABASE_TYPE: postgres
       DATABASE_HOST: postgres
       DATABASE_PORT: "5432"
