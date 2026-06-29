@@ -1,8 +1,8 @@
-# ─── Producción VPS (77.93.154.87) ───
+# ─── Producción VPS 77.93.154.87 / Dokploy ───
 # Uso: docker compose -f docker-compose.prod.yml up -d
 
 networks:
-  traefik:
+  app:
     driver: bridge
 
 services:
@@ -10,7 +10,7 @@ services:
     image: postgres:16-alpine
     restart: always
     networks:
-      - traefik
+      - app
     volumes:
       - postgres_prod:/var/lib/postgresql/data
     environment:
@@ -27,7 +27,7 @@ services:
     image: redis:7-alpine
     restart: always
     networks:
-      - traefik
+      - app
     volumes:
       - redis_prod:/data
     command: redis-server --appendonly yes
@@ -41,7 +41,7 @@ services:
     image: ghcr.io/rmyndharis/openwa:latest
     restart: always
     networks:
-      - traefik
+      - app
     ports:
       - "2785:2785"
     volumes:
@@ -64,8 +64,8 @@ services:
       test: ["CMD-SHELL", "wget -qO- http://localhost:2785/api/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 90s
+      retries: 5
+      start_period: 60s
 
   backend-api:
     build:
@@ -73,14 +73,11 @@ services:
       dockerfile: Dockerfile
     restart: always
     networks:
-      - traefik
+      - app
+    ports:
+      - "3001:3000"
     volumes:
       - uploads_prod:/app/uploads
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`77.93.154.87`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.api.entrypoints=web"
-      - "traefik.http.services.api.loadbalancer.server.port=3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -94,7 +91,7 @@ services:
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET}
       UPLOADS_DIR: /app/uploads
-      CORS_ORIGIN: "http://77.93.154.87,http://localhost:3000"
+      CORS_ORIGIN: "*"
     depends_on:
       postgres:
         condition: service_healthy
@@ -115,7 +112,7 @@ services:
       dockerfile: Dockerfile.worker
     restart: always
     networks:
-      - traefik
+      - app
     volumes:
       - uploads_prod:/app/uploads
     environment:
@@ -149,41 +146,14 @@ services:
       dockerfile: Dockerfile
     restart: always
     networks:
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`77.93.154.87`)"
-      - "traefik.http.routers.frontend.entrypoints=web"
-      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - app
+    ports:
+      - "80:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://77.93.154.87/api
+      NEXT_PUBLIC_API_URL: http://77.93.154.87:3001/api
       NEXT_PUBLIC_APP_URL: http://77.93.154.87
     depends_on:
       - backend-api
-
-  traefik:
-    image: traefik:v3.2
-    restart: always
-    networks:
-      - traefik
-    ports:
-      - "80:80"
-      - "443:443"
-    command:
-      - "--api.insecure=false"
-      - "--api.dashboard=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=infra_traefik"
-      - "--entrypoints.web.address=:80"
-      - "--log.level=INFO"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.77.93.154.87`)"
-      - "traefik.http.routers.dashboard.entrypoints=web"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
 
 volumes:
   postgres_prod:
