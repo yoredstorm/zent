@@ -3,24 +3,28 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto, RefreshTokenDto } from './dto/auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { Public } from './decorators/public.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private auth: AuthService) {}
 
+  @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register new user' })
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
   }
 
+  @Public()
   @Post('login')
   @ApiOperation({ summary: 'Login user' })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
   }
 
+  @Public()
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   refresh(@Body() dto: RefreshTokenDto) {

@@ -1,5 +1,50 @@
 # Verificación post-deploy (VPS / Dokploy)
 
+## Troubleshooting rápido
+
+### Login dashboard devuelve 500 (no 401)
+
+Un **500** en `:8080` casi siempre significa que el **frontend no puede hablar con `backend-api`**, no que la contraseña sea incorrecta (eso sería **401**).
+
+Comprueba en el VPS:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}" | grep backend-api
+curl -s http://localhost:3001/api/health
+curl -s http://localhost:8080/api/health
+docker logs $(docker ps -q -f name=backend-api) --tail 80
+```
+
+| Síntoma | Causa habitual | Solución |
+|---|---|---|
+| `backend-api` en `Restarting` / `Exited` | `DATABASE_URL` vacía o Postgres caído | Revisar Environment en Dokploy (sin comentarios `#`), redeploy |
+| Logs: `PrismaClientInitializationError` | URL de DB incorrecta | `DATABASE_URL=postgresql://inventario:changeme@postgres:5432/inventario` |
+| `:3001/api/health` OK pero login 401 | Admin no creado o password vieja | `ADMIN_FORCE_RESET=true` y redeploy |
+| `:8080/api/health` 500 y `:3001` falla | API caída | Arreglar `backend-api` primero |
+
+**En Dokploy Environment:** no uses líneas con `#` (comentarios). Algunos paneles las interpretan mal. Pega solo variables `KEY=value`.
+
+### Grafana: "credenciales inválidas"
+
+`GF_SECURITY_ADMIN_PASSWORD` **solo se aplica en el primer arranque** cuando el volumen `zent_grafana_data` está vacío. Si Grafana ya arrancó antes con otra contraseña (p. ej. `admin`), cambiar el env **no actualiza** el login.
+
+**Opción A — reset sin borrar dashboards:**
+
+```bash
+docker exec -it $(docker ps -q -f name=grafana) grafana-cli admin reset-admin-password 'TU_NUEVA_PASSWORD'
+```
+
+**Opción B — volumen limpio (pierdes dashboards guardados):**
+
+```bash
+docker rm -f $(docker ps -q -f name=grafana)
+docker volume rm zent_grafana_data
+```
+
+Redeploy con `GF_SECURITY_ADMIN_USER=admin` y `GF_SECURITY_ADMIN_PASSWORD=...` en Environment.
+
+---
+
 ## 1. Servicios en ejecución
 
 ```bash
