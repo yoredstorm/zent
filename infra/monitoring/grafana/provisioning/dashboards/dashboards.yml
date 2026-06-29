@@ -1,0 +1,14 @@
+apiVersion: 1
+
+providers:
+  - name: Zent
+    orgId: 1
+    folder: Zent
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/zent
+      foldersFromFilesStructure: false

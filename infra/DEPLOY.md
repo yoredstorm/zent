@@ -158,18 +158,37 @@ curl -s http://77.93.154.87:3001/health   # bot-worker si expuesto internamente
 - Credenciales: `ADMIN_EMAIL` / `ADMIN_PASSWORD` de Dokploy
 - Con `ADMIN_FORCE_RESET=true` en el primer deploy se sincroniza la contraseña
 
-## 4. Grafana y logs
+## 4. Grafana — dashboards y logs
 
 - URL: http://77.93.154.87:3002
 - Usuario: `GF_SECURITY_ADMIN_USER` (default `admin`)
 - Contraseña: `GF_SECURITY_ADMIN_PASSWORD` de Dokploy
 
-Queries útiles en **Explore → Loki**:
+### Dashboards precargados (carpeta **Zent**)
+
+Tras redeploy, en **Dashboards → Zent** aparecen:
+
+| Dashboard | Contenido |
+|-----------|-----------|
+| **Zent - Logs** | API, bot-worker, OpenWA, postgres, frontend, errores globales |
+| **Zent - Métricas** | CPU, memoria, red y disco de contenedores (Prometheus/cAdvisor) |
+
+Si no aparecen: redeploy en Dokploy o reinicia el contenedor `grafana`.
+
+### Importar manualmente (alternativa)
+
+1. Grafana → **Dashboards** → **New** → **Import**
+2. Sube el JSON desde el repo:
+   - `infra/monitoring/grafana/dashboards/zent-logs.json`
+   - `infra/monitoring/grafana/dashboards/zent-metrics.json`
+
+### Explore → Loki (queries sueltas)
 
 ```
-{container=~".*backend-api.*"}
-{container=~".*bot-worker.*"}
-{container=~".*openwa.*"}
+{service="backend-api"}
+{service="bot-worker"}
+{service="openwa"}
+{service="backend-api"} |= "Enqueued message"
 ```
 
 Buscar: `OPENWA_API_KEY validated`, `Webhook registered`, `Enqueued message`
