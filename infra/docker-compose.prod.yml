@@ -53,11 +53,18 @@ services:
       SESSION_DATA_PATH: /app/data/sessions
       # SQLite en /app/data — no comparte Postgres con Zent (evita crash por password "changeme")
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:2785/api/health/ready || exit 1"]
+      # La imagen OpenWA no trae wget; usar node como en su compose oficial
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:2785/api/health/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 90s
+      retries: 8
+      start_period: 120s
 
   openwa-ssl:
     build:
@@ -71,7 +78,7 @@ services:
       - "2786:443"
     depends_on:
       openwa:
-        condition: service_healthy
+        condition: service_started
 
   backend-api:
     build:
