@@ -149,10 +149,10 @@ services:
     networks:
       - app
     ports:
-      - "80:3000"
+      - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://77.93.154.87:3001/api
-      NEXT_PUBLIC_APP_URL: http://77.93.154.87
+      NEXT_PUBLIC_APP_URL: http://77.93.154.87:3000
     depends_on:
       - backend-api
 
