@@ -48,30 +48,16 @@ services:
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # Variables desde Dokploy → Environment (no usa .env del repo)
-      API_MASTER_KEY: ${OPENWA_API_KEY:-changeme}
-      DATABASE_TYPE: postgres
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      DATABASE_USERNAME: ${POSTGRES_USER:-zent}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-zentp4ssw0rd!}
-      DATABASE_NAME: ${POSTGRES_DB:-zent}
-      DATABASE_SYNCHRONIZE: "false"
-      REDIS_ENABLED: "true"
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
+      # Desde Dokploy → Environment (OPENWA_API_KEY). Sin default "changeme": OpenWA lo rechaza en prod.
+      API_MASTER_KEY: ${OPENWA_API_KEY}
       SESSION_DATA_PATH: /app/data/sessions
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      # SQLite en /app/data — no comparte Postgres con Zent (evita crash por password "changeme")
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:2785/api/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
 
   openwa-ssl:
     build:
@@ -81,10 +67,11 @@ services:
     networks:
       - app
     ports:
-      - "2785:80"   # redirige a https://IP:2786
-      - "2786:443"  # dashboard OpenWA con TLS
+      - "2785:80"
+      - "2786:443"
     depends_on:
-      - openwa
+      openwa:
+        condition: service_healthy
 
   backend-api:
     build:
