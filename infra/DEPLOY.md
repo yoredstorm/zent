@@ -222,6 +222,55 @@ Respuesta esperada: `{"status":"queued"}`. Luego revisar logs de `bot-worker` en
 2. Webhook registrado automáticamente a `http://backend-api:3000/api/webhooks/openwa`
 3. Escribir `hola` o `menu` al número conectado
 
+### OpenWA Redis en producción (mensajes llegan pero el bot no responde)
+
+El stack usa **un solo Redis** (`redis` en compose). OpenWA debe conectarse a él; el modo **contenedor Redis integrado** del panel OpenWA no funciona en Docker Compose (queda **Desconectado**).
+
+**En el compose** (`docker-compose.prod.yml`), el servicio `openwa` debe tener:
+
+```yaml
+REDIS_URL: redis://redis:6379
+depends_on:
+  redis:
+    condition: service_healthy
+```
+
+**En el panel OpenWA** (https://77.93.154.87:2786 → REDIS):
+
+1. Habilitar Redis — ON
+2. **Usar contenedor Redis integrado** — OFF
+3. URL externa (si el panel la pide): `redis://redis:6379`
+4. Habilitar BullMQ — ON
+5. Guardar; reiniciar la sesión si lo pide
+
+El badge debe pasar de **Desconectado** a conectado. Al enviar un mensaje, las colas de webhooks deberían incrementar PENDIENTE/COMPLETADO.
+
+**Webhook:** no hace falta registrarlo a mano en la UI. `backend-api` lo registra al arrancar si `OPENWA_API_KEY` está definida. La URL debe ser interna: `http://backend-api:3000/api/webhooks/openwa` (no la IP pública).
+
+**Variables en Dokploy** (misma clave en ambos):
+
+```
+API_MASTER_KEY=owa_k1_...   # contenedor openwa
+OPENWA_API_KEY=owa_k1_...   # backend-api y bot-worker (mismo valor)
+OPENWA_WEBHOOK_SECRET=webhook-secret-2024
+```
+
+**Verificación en Grafana (Loki):**
+
+| Query | OK si aparece |
+|-------|----------------|
+| `{service="backend-api"} \|= "Webhook registered"` | Webhook registrado |
+| `{service="backend-api"} \|= "Enqueued message"` | Mensaje recibido de OpenWA |
+| `{service="bot-worker"} \|= "WhatsApp bot worker started"` | Worker activo |
+| `{service="bot-worker"} \|= "Error processing"` | Bot falló al responder (revisar stack trace) |
+
+**Checklist tras redeploy:**
+
+1. Redeploy en Dokploy con los cambios de `docker-compose.prod.yml`
+2. Panel OpenWA → REDIS: integrado OFF, URL `redis://redis:6379`, BullMQ ON → badge **conectado**
+3. Loki: `Webhook registered` y `WhatsApp bot worker started` al arrancar
+4. Enviar `hola` o `menu` por WhatsApp → Loki debe mostrar `Enqueued message` y respuesta del bot
+
 ## 8. OpenWA API key desincronizada
 
 Si el login OpenWA falla con 401:

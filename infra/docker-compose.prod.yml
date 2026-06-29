@@ -51,10 +51,14 @@ services:
       - .env
     volumes:
       - openwa_prod:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # API_MASTER_KEY viene SOLO del .env de Dokploy (no usar ${} — vacío pisa el .env)
+      # API_MASTER_KEY viene SOLO del .env de Dokploy (debe ser igual que OPENWA_API_KEY)
+      REDIS_URL: redis://redis:6379
       SESSION_DATA_PATH: /app/data/sessions
       PUPPETEER_HEADLESS: "true"
       PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
@@ -110,6 +114,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
@@ -152,6 +158,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
+      OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
       WORKER_MODE: "true"
     depends_on:
