@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
 const OPENWA_URL = 'http://77.93.154.87:2785';
+
+export default function WhatsAppPage() {
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState<string>('');
 
