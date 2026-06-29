@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
-const OPENWA_URL = 'https://77.93.154.87:2786';
+const OPENWA_URL = 'https://77.93.154.87:8443/owa';
 
 export default function WhatsAppPage() {
   const [status, setStatus] = useState<any>(null);

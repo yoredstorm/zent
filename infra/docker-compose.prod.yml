@@ -47,9 +47,12 @@ services:
       - "2785:2785"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.openwa.rule=Host(`77.93.154.87`)"
-      - "traefik.http.routers.openwa.entrypoints=owa"
+      - "traefik.http.routers.openwa.rule=Host(`77.93.154.87`) && PathPrefix(`/owa`)"
+      - "traefik.http.routers.openwa.entrypoints=websecure"
       - "traefik.http.routers.openwa.tls=true"
+      - "traefik.http.routers.openwa.priority=200"
+      - "traefik.http.routers.openwa.middlewares=owa-strip"
+      - "traefik.http.middlewares.owa-strip.stripprefix.prefixes=/owa"
       - "traefik.http.services.openwa.loadbalancer.server.port=2785"
     volumes:
       - openwa_prod:/home/openwa/.openwa
@@ -165,6 +168,7 @@ services:
       - "traefik.http.routers.frontend-https.entrypoints=websecure"
       - "traefik.http.routers.frontend-https.tls=true"
       - "traefik.http.routers.frontend-https.service=frontend-svc"
+      - "traefik.http.routers.frontend-https.priority=100"
       - "traefik.http.services.frontend-svc.loadbalancer.server.port=3000"
     environment:
       NEXT_PUBLIC_API_URL: http://77.93.154.87:3001/api
@@ -179,14 +183,12 @@ services:
       - app
     ports:
       - "8443:443"
-      - "2786:2786"
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=infra_app"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.owa.address=:2786"
       - "--api.insecure=true"
       - "--log.level=INFO"
     volumes:
