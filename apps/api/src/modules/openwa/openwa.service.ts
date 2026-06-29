@@ -59,9 +59,25 @@ export class OpenwaService {
 
     const response = await fetch(url, options);
     if (!response.ok) {
-      throw new Error(`OpenWA API error: ${response.status} ${response.statusText}`);
+      const detail = await response.text().catch(() => '');
+      const msg = detail ? `${response.status} ${response.statusText}: ${detail.slice(0, 300)}` : `${response.status} ${response.statusText}`;
+      throw new Error(`OpenWA API error: ${msg}`);
     }
     return response.json();
+  }
+
+  /** OpenWA fetches media server-side; use internal API URL for our uploads (SSRF_ALLOWED_HOSTS). */
+  private resolveMediaUrl(url?: string): string | undefined {
+    if (!url) return undefined;
+    const internalBase = this.config.get('INTERNAL_API_URL', 'http://backend-api:3000/api').replace(/\/$/, '');
+    const publicBase = this.config.get('PUBLIC_API_URL', '').replace(/\/$/, '');
+    if (publicBase && url.startsWith(`${publicBase}/`)) {
+      return url.replace(publicBase, internalBase);
+    }
+    if (url.startsWith('/api/uploads/')) {
+      return `${internalBase}${url.slice('/api'.length)}`;
+    }
+    return url;
   }
 
   /** Resuelve la sesión activa; OPENWA_SESSION_ID es opcional. */
@@ -143,21 +159,45 @@ export class OpenwaService {
 
   async sendImage(payload: SendImagePayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
-    await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', {
+    const body: Record<string, string> = {
       chatId: payload.chatId,
-      image: payload.image,
-      caption: payload.caption,
-    });
+    };
+    if (payload.image.url) {
+      body.url = this.resolveMediaUrl(payload.image.url)!;
+      if (payload.image.mimetype) body.mimetype = payload.image.mimetype;
+    } else if (payload.image.base64) {
+      body.base64 = payload.image.base64;
+      if (payload.image.mimetype) body.mimetype = payload.image.mimetype;
+    }
+    if (payload.caption) body.caption = payload.caption;
+    await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', body);
     this.logger.debug(`Sent image to ${payload.chatId} via session ${sessionId}`);
   }
 
   async sendDocument(payload: SendDocumentPayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
-    await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', {
+    const body: Record<string, string> = {
       chatId: payload.chatId,
-      document: payload.document,
-      caption: payload.caption,
-    });
+    };
+    if (payload.document.url) {
+      body.url = this.resolveMediaUrl(payload.document.url)!;
+      if (payload.document.mimetype) body.mimetype = payload.document.mimetype;
+      if (payload.document.filename) {
+        body.filename = payload.document.filename;
+      } else {
+        try {
+          body.filename = decodeURIComponent(new URL(payload.document.url).pathname.split('/').pop() || 'document.pdf');
+        } catch {
+          body.filename = 'document.pdf';
+        }
+      }
+    } else if (payload.document.base64) {
+      body.base64 = payload.document.base64;
+      if (payload.document.mimetype) body.mimetype = payload.document.mimetype;
+      if (payload.document.filename) body.filename = payload.document.filename;
+    }
+    if (payload.caption) body.caption = payload.caption;
+    await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', body);
     this.logger.debug(`Sent document to ${payload.chatId} via session ${sessionId}`);
   }
 
