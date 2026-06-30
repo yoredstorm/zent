@@ -16,9 +16,19 @@ export class SeedService implements OnApplicationBootstrap {
   async onApplicationBootstrap() {
     try {
       this.logger.log('Running prisma db push...');
-      execSync('npx prisma db push --skip-generate', { cwd: '/app', stdio: 'pipe' });
+      execSync('npx prisma db push --skip-generate', {
+        cwd: process.cwd(),
+        stdio: 'pipe',
+        env: process.env,
+      });
       this.logger.log('DB schema synced');
+    } catch (err: any) {
+      const detail = err?.stderr?.toString?.() || err?.message || String(err);
+      this.logger.error(`DB schema sync failed: ${detail}`);
+      throw new Error(`DB schema sync failed: ${detail}`);
+    }
 
+    try {
       await this.prisma.$connect();
 
       const email = this.config.get('ADMIN_EMAIL', 'the.ares.p@gmail.com');
@@ -66,7 +76,7 @@ export class SeedService implements OnApplicationBootstrap {
       }
     } catch (err: any) {
       const detail = err?.stderr?.toString?.() || err?.message || String(err);
-      this.logger.error(`Bootstrap failed: ${detail}`);
+      this.logger.error(`Seed/bootstrap failed: ${detail}`);
     }
   }
 }

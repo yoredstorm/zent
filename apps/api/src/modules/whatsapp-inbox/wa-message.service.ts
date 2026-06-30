@@ -280,6 +280,17 @@ export class WaMessageService {
   }
 
   async listConversations(filter?: 'handoff' | 'orders'): Promise<WaConversationSummary[]> {
+    try {
+      return await this.buildConversationList(filter);
+    } catch (err: any) {
+      this.logger.error(`listConversations failed: ${err?.message || err}`);
+      throw err;
+    }
+  }
+
+  private async buildConversationList(
+    filter?: 'handoff' | 'orders',
+  ): Promise<WaConversationSummary[]> {
     const recentMessages = await this.prisma.waMessage.findMany({
       orderBy: { createdAt: 'desc' },
       take: 800,
@@ -313,9 +324,10 @@ export class WaMessageService {
         extractPhoneFromWaId(waChatId);
 
       let customerName: string | null = null;
-      if (!session?.waContactName && phone) {
+      const phoneDigits = phone?.replace(/\D/g, '') ?? '';
+      if (!session?.waContactName && phoneDigits.length >= 8) {
         const customer = await this.prisma.customer.findUnique({
-          where: { phone: normalizePhone(phone) },
+          where: { phone: normalizePhone(phone!) },
         });
         customerName = customer?.name ?? null;
       }
@@ -327,7 +339,11 @@ export class WaMessageService {
           const resolved = await this.openwa.resolveContactName(waChatId, waSessionId);
           if (resolved) {
             waContactName = resolved;
-            await this.upsertWaContactName(waChatId, waSessionId, resolved);
+            try {
+              await this.upsertWaContactName(waChatId, waSessionId, resolved);
+            } catch (upsertErr) {
+              this.logger.warn(`Could not save waContactName: ${upsertErr}`);
+            }
           }
         } catch {
           /* best-effort */
@@ -345,10 +361,10 @@ export class WaMessageService {
       }
 
       let hasNewOrder = false;
-      if (phone) {
+      if (phoneDigits.length >= 8) {
         const recentOrder = await this.prisma.order.findFirst({
           where: {
-            customerPhone: { contains: phone.slice(-9) },
+            customerPhone: { contains: phoneDigits.slice(-9) },
             status: 'NUEVO',
             createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
           },

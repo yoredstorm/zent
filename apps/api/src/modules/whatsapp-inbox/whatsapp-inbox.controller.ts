@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WaMessageService } from './wa-message.service';
@@ -10,6 +10,8 @@ import { SendWaMediaDto } from './dto/send-media.dto';
 @Controller('whatsapp')
 @UseGuards(JwtAuthGuard)
 export class WhatsappInboxController {
+  private readonly logger = new Logger(WhatsappInboxController.name);
+
   constructor(
     private waMessages: WaMessageService,
     private openwa: OpenwaService,
@@ -17,8 +19,13 @@ export class WhatsappInboxController {
 
   @Get('conversations')
   @ApiOperation({ summary: 'List WhatsApp conversations' })
-  listConversations(@Query('filter') filter?: 'handoff' | 'orders') {
-    return this.waMessages.listConversations(filter);
+  async listConversations(@Query('filter') filter?: 'handoff' | 'orders') {
+    try {
+      return await this.waMessages.listConversations(filter);
+    } catch (err: any) {
+      this.logger.error(`GET conversations failed: ${err?.message}`, err?.stack);
+      throw err;
+    }
   }
 
   @Get('conversations/:chatId/meta')

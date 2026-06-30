@@ -66,6 +66,8 @@ export function parseOpenWaMessage(raw: OpenWaChatMessage) {
   const mimeType = raw.mimetype || raw.mimeType || raw.media?.mimetype || raw.media?.mimeType || null;
   const textBody = (raw.body || raw.text || '').trim();
   const body = textBody || caption || mediaPlaceholder(messageType);
+  const rawDate = raw.timestamp ? new Date(raw.timestamp) : new Date();
+  const createdAt = Number.isNaN(rawDate.getTime()) ? new Date() : rawDate;
 
   return {
     waMessageId: raw.id || null,
@@ -75,6 +77,6 @@ export function parseOpenWaMessage(raw: OpenWaChatMessage) {
     mediaUrl,
     mimeType,
     fromMe: raw.fromMe === true,
-    createdAt: raw.timestamp ? new Date(raw.timestamp) : new Date(),
+    createdAt,
   };
 }
