@@ -121,6 +121,7 @@ services:
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
+      STORE_NAME: ${STORE_NAME:-Zent}
       CORS_ORIGIN: "*"
     depends_on:
       postgres:
@@ -164,6 +165,7 @@ services:
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       UPLOADS_DIR: /app/uploads
+      STORE_NAME: ${STORE_NAME:-Zent}
       WORKER_MODE: "true"
     depends_on:
       postgres:

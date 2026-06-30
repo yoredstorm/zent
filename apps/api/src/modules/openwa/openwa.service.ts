@@ -222,6 +222,21 @@ export class OpenwaService {
     return session?.status || 'unknown';
   }
 
+  /** Resuelve @lid → teléfono vía API OpenWA (best-effort). */
+  async resolveContactPhone(contactId: string, sessionId?: string): Promise<string | null> {
+    const sid = sessionId ?? (await this.resolveSessionId());
+    const encoded = encodeURIComponent(contactId);
+    try {
+      const data = await this.request<{ phone: string | null }>(
+        `/api/sessions/${sid}/contacts/${encoded}/phone`,
+      );
+      return data.phone?.trim() || null;
+    } catch (err: any) {
+      this.logger.warn(`Could not resolve phone for ${contactId}: ${err?.message}`);
+      return null;
+    }
+  }
+
   async sendText(payload: SendTextPayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
     await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', {

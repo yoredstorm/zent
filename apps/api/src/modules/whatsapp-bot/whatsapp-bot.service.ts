@@ -1,16 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AsyncLocalStorage } from 'async_hooks';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { CartService } from './cart.service';
 import { ChatSessionService } from './chat-session.service';
 import { CustomersService, normalizePhone } from '../customers/customers.service';
+import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { ChatState } from '@prisma/client';
 
 interface BotContext {
   chatId: string;
   stateKey: string;
   waSessionId?: string;
+  contactPhone: string | null;
 }
 
 interface BrowseContext {
@@ -38,12 +41,34 @@ export class WhatsappBotService {
     private cart: CartService,
     private chatSession: ChatSessionService,
     private customers: CustomersService,
+    private config: ConfigService,
   ) {}
 
-  async handleMessage(chatId: string, body: string, from: string, waSessionId?: string) {
+  private get storeName(): string {
+    return this.config.get('STORE_NAME', 'Zent').trim() || 'Zent';
+  }
+
+  /** Aviso solo cuando el stock está en o por debajo del mínimo configurado. */
+  private lowStockHint(stock: number, minStock: number): string {
+    if (stock <= minStock) return ' *¡Quedan pocas unidades!*';
+    return '';
+  }
+
+  async handleMessage(
+    chatId: string,
+    body: string,
+    from: string,
+    waSessionId?: string,
+    senderPhone?: string,
+  ) {
     const stateKey = waSessionId ? `${waSessionId}::${chatId}` : chatId;
-    return this.ctx.run({ chatId, stateKey, waSessionId }, () =>
-      this.processMessage(body, from),
+    let contactPhone = resolvePhoneFromIds(chatId, from, senderPhone);
+    if (!contactPhone && (chatId.includes('@lid') || from.includes('@lid'))) {
+      const resolved = await this.openwa.resolveContactPhone(from || chatId, waSessionId);
+      contactPhone = resolved ? normalizePhone(resolved) : null;
+    }
+    return this.ctx.run({ chatId, stateKey, waSessionId, contactPhone }, () =>
+      this.processMessage(body),
     );
   }
 
@@ -75,7 +100,7 @@ export class WhatsappBotService {
     });
   }
 
-  private async processMessage(body: string, from: string) {
+  private async processMessage(body: string) {
     const session = await this.chatSession.getOrCreate(this.c.stateKey);
     const text = body.trim().toLowerCase();
 
@@ -107,10 +132,10 @@ export class WhatsappBotService {
         await this.handleCarrito(text);
         break;
       case ChatState.CONFIRMAR_PEDIDO:
-        await this.handleConfirmarPedido(text, from);
+        await this.handleConfirmarPedido(text);
         break;
       case ChatState.DATOS_ENTREGA:
-        await this.handleDatosEntrega(text, from);
+        await this.handleDatosEntrega(text);
         break;
       case ChatState.PEDIDO_CREADO:
         await this.showMainMenu();
@@ -124,7 +149,7 @@ export class WhatsappBotService {
   private async showMainMenu() {
     await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
     const text =
-      '¡Hola! 👋 Bienvenido a nuestra tienda.\n\n' +
+      `¡Hola! 👋 Bienvenido a *${this.storeName}*.\n\n` +
       'Para empezar, elige cómo ver el catálogo:\n\n' +
       '1️⃣ Ver catálogo completo (PDF)\n' +
       '2️⃣ Ver productos por categoría\n' +
@@ -238,7 +263,7 @@ export class WhatsappBotService {
 
     let msg = '📦 *Productos disponibles:*\n\n';
     products.forEach((p, i) => {
-      msg += `${i + 1}. ${p.nombre} — S/ ${p.salePrice} (stock: ${p.stock})\n`;
+      msg += `${i + 1}. ${p.nombre} — S/ ${p.salePrice}${this.lowStockHint(p.stock, p.minStock)}\n`;
     });
     msg +=
       '\n*Comandos:*\n' +
@@ -317,7 +342,7 @@ export class WhatsappBotService {
     const caption =
       `*${product.nombre}*\n` +
       `💰 Precio: S/ ${product.salePrice}\n` +
-      `📦 Stock: ${product.stock}\n` +
+      (product.stock <= product.minStock ? `⚠️ *¡Quedan pocas unidades!*\n` : '') +
       (product.descripcion ? `📝 ${product.descripcion}\n` : '') +
       `\nPara agregar: *agregar ${index + 1} [cantidad]*`;
 
@@ -419,9 +444,9 @@ export class WhatsappBotService {
     await this.txt(text);
   }
 
-  private async handleConfirmarPedido(text: string, from: string) {
+  private async handleConfirmarPedido(text: string) {
     if (text === 'si' || text === 'sí' || text === 'confirmar') {
-      await this.iniciarDatosEntrega(from);
+      await this.iniciarDatosEntrega();
     } else if (text === 'carrito') {
       await this.mostrarCarrito();
     } else {
@@ -429,9 +454,9 @@ export class WhatsappBotService {
     }
   }
 
-  private async iniciarDatosEntrega(from: string) {
-    const phone = normalizePhone(from);
-    const existing = await this.customers.findByPhone(phone);
+  private async iniciarDatosEntrega() {
+    const phone = this.c.contactPhone;
+    const existing = phone ? await this.customers.findByPhone(phone) : null;
 
     if (existing && existing.address) {
       const checkoutData: CheckoutData = { mode: 'confirm_saved' };
@@ -458,13 +483,15 @@ export class WhatsappBotService {
     await this.txt('📝 Para completar tu pedido necesito algunos datos:\n\n1️⃣ *Nombre completo:*');
   }
 
-  private async handleDatosEntrega(text: string, from: string) {
+  private async handleDatosEntrega(text: string) {
     const session = await this.chatSession.getOrCreate(this.c.stateKey);
     const data: CheckoutData = session.cartJson ? JSON.parse(session.cartJson) : { step: 0, mode: 'full' };
 
     if (data.mode === 'confirm_saved') {
       if (text === '1' || text === 'si' || text === 'sí') {
-        const existing = await this.customers.findByPhone(from);
+        const existing = this.c.contactPhone
+          ? await this.customers.findByPhone(this.c.contactPhone)
+          : null;
         if (existing) {
           await this.crearPedido({
             customerName: existing.name,
@@ -494,7 +521,9 @@ export class WhatsappBotService {
     }
 
     if (data.mode === 'address_only') {
-      const existing = await this.customers.findByPhone(from);
+      const existing = this.c.contactPhone
+        ? await this.customers.findByPhone(this.c.contactPhone)
+        : null;
       if (data.step === 1) {
         data.address = bodyTrim(text);
         data.step = 2;
@@ -506,7 +535,7 @@ export class WhatsappBotService {
         data.reference = bodyTrim(text);
         await this.crearPedido({
           customerName: existing?.name ?? 'Cliente',
-          customerPhone: existing?.phone ?? normalizePhone(from),
+          customerPhone: existing?.phone ?? this.c.contactPhone ?? '',
           address: data.address,
           reference: data.reference,
         });
@@ -528,9 +557,18 @@ export class WhatsappBotService {
       await this.chatSession.updateState(this.c.stateKey, ChatState.DATOS_ENTREGA, {
         cartJson: JSON.stringify(data),
       });
-      await this.txt(`3️⃣ *Teléfono de contacto:* (o escribe "mismo" para usar ${from})`);
+      const phoneHint = formatPhoneDisplay(this.c.contactPhone);
+      await this.txt(`3️⃣ *Teléfono de contacto:* (o escribe "mismo" para usar ${phoneHint})`);
     } else if (data.step === 2) {
-      data.customerPhone = text === 'mismo' ? normalizePhone(from) : bodyTrim(text);
+      if (text === 'mismo') {
+        if (!this.c.contactPhone) {
+          await this.txt('No pude detectar tu número. Escríbelo con código de país, ej: 51987654321');
+          return;
+        }
+        data.customerPhone = this.c.contactPhone;
+      } else {
+        data.customerPhone = normalizePhone(bodyTrim(text));
+      }
       data.step = 3;
       await this.chatSession.updateState(this.c.stateKey, ChatState.DATOS_ENTREGA, {
         cartJson: JSON.stringify(data),

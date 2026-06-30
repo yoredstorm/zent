@@ -55,6 +55,12 @@ export class WhatsappBotController {
     const chatId = data?.chatId || data?.from || body?.chatId || body?.from;
     const messageBody = data?.body || data?.text || body?.body || body?.text || '';
     const from = data?.from || body?.from || body?.author || '';
+    const senderPhone =
+      data?.senderPhone ||
+      data?.contact?.phone ||
+      data?.contact?.number ||
+      body?.senderPhone ||
+      undefined;
     const waSessionId = (body?.sessionId as string | undefined)?.trim() || undefined;
     const key =
       idempotencyKey ||
@@ -72,6 +78,7 @@ export class WhatsappBotController {
       chatId,
       body: messageBody,
       from,
+      senderPhone,
       waSessionId,
       idempotencyKey: key,
     });

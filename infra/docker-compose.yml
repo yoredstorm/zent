@@ -93,6 +93,7 @@ services:
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
       UPLOADS_DIR: /app/uploads
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001/api}
+      STORE_NAME: ${STORE_NAME:-Zent}
       CORS_ORIGIN: "*"
     depends_on:
       postgres:
@@ -127,6 +128,7 @@ services:
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
       UPLOADS_DIR: /app/uploads
+      STORE_NAME: ${STORE_NAME:-Zent}
       WORKER_MODE: "true"
     depends_on:
       postgres:
