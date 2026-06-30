@@ -72,7 +72,7 @@ export class WaMessageService {
   }
 
   async existsByWaMessageId(waMessageId: string): Promise<boolean> {
-    const row = await this.prisma.waMessage.findUnique({
+    const row = await this.prisma.waMessage.findFirst({
       where: { waMessageId },
       select: { id: true },
     });

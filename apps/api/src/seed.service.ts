@@ -16,7 +16,7 @@ export class SeedService implements OnApplicationBootstrap {
   async onApplicationBootstrap() {
     try {
       this.logger.log('Running prisma db push...');
-      execSync('npx prisma db push --skip-generate', {
+      execSync('npx prisma db push --skip-generate --accept-data-loss', {
         cwd: process.cwd(),
         stdio: 'pipe',
         env: process.env,

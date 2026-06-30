@@ -194,9 +194,10 @@ model WaMessage {
   mediaUrl     String?
   mimeType     String?
   caption      String?  @db.Text
-  waMessageId  String?  @unique
+  waMessageId  String?
   createdAt    DateTime @default(now())
 
+  @@index([waMessageId])
   @@index([chatId, createdAt])
   @@map("wa_messages")
 }
