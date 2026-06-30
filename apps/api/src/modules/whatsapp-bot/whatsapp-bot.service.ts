@@ -159,6 +159,17 @@ export class WhatsappBotService {
     );
   }
 
+  private formatCartDeletePrompt(cart: { items: { nombre: string; quantity: number }[] }): string {
+    const lines = cart.items.map(
+      (item, i) => `${formatKeycap(i + 1)} ${item.nombre} — ${item.quantity}x`,
+    );
+    return (
+      '*¿Qué producto eliminar?*\n\n' +
+      lines.join('\n') +
+      `\n\nEscribe el número del 1 al ${cart.items.length}:`
+    );
+  }
+
   /** Pie reutilizable tras agregar al carrito. */
   private seguirComprandoHint(): string {
     return (
@@ -720,7 +731,7 @@ export class WhatsappBotService {
         await this.txt('✅ Producto eliminado');
         await this.mostrarCarrito();
       } else {
-        await this.txt(`Número inválido. Escribe un número del 1 al ${cart.items.length}.`);
+        await this.txt(`Número inválido.\n\n${this.formatCartDeletePrompt(cart)}`);
       }
       return;
     }
@@ -744,10 +755,10 @@ export class WhatsappBotService {
           await this.txt('✅ Producto eliminado');
           await this.mostrarCarrito();
         } else {
-          await this.txt(`Número inválido. Escribe un número del 1 al ${cart.items.length}:`);
+          await this.txt(`Número inválido.\n\n${this.formatCartDeletePrompt(cart)}`);
         }
       } else {
-        await this.txt(`Escribe el número del producto a eliminar (1–${cart.items.length}):`);
+        await this.txt(this.formatCartDeletePrompt(cart));
       }
       return;
     }
@@ -759,7 +770,7 @@ export class WhatsappBotService {
     if (text === '2') {
       const cart = await this.cart.getCart(this.c.stateKey);
       await this.saveBrowseContext({ ...sessionCtx, awaitCartDelete: true } as BrowseContext);
-      await this.txt(`¿Qué producto eliminar?\n\nEscribe el número del 1 al ${cart.items.length}:`);
+      await this.txt(this.formatCartDeletePrompt(cart));
       return;
     }
     if (text === '3') {
