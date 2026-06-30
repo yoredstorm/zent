@@ -151,11 +151,11 @@ export default function WhatsAppPage() {
     });
   }, [filter]);
 
-  const loadMessages = useCallback(async (chatId: string, showLoader = true) => {
+  const loadMessages = useCallback(async (chatId: string, showLoader = true, sync = false) => {
     if (showLoader) setLoadingMessages(true);
     try {
       const rows = await api.get<WaMessage[]>(
-        `/whatsapp/conversations/${encodeChatId(chatId)}/messages?limit=80&sync=1`,
+        `/whatsapp/conversations/${encodeChatId(chatId)}/messages?limit=80${sync ? '&sync=1' : '&sync=0'}`,
       );
       setMessages(rows.reverse());
     } catch {
@@ -211,7 +211,7 @@ export default function WhatsAppPage() {
     setSelected(c);
     setPendingFile(null);
     setMessages([]);
-    loadMessages(c.chatId);
+    loadMessages(c.chatId, true, true);
     loadMeta(c.chatId);
   };
 

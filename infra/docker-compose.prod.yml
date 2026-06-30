@@ -124,6 +124,7 @@ services:
       UPLOADS_DIR: /app/uploads
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
       STORE_NAME: ${STORE_NAME:-Zent}
+      VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
       CORS_ORIGIN: "*"
     depends_on:
       postgres:
@@ -170,6 +171,7 @@ services:
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-true}
       UPLOADS_DIR: /app/uploads
       STORE_NAME: ${STORE_NAME:-Zent}
+      VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
       WORKER_MODE: "true"
     depends_on:
       postgres:

@@ -7,6 +7,7 @@ import { CartService } from './cart.service';
 import { ChatSessionService } from './chat-session.service';
 import { CustomersService, normalizePhone } from '../customers/customers.service';
 import { OrdersService } from '../orders/orders.service';
+import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { CartHoldService } from '../inventory/cart-hold.service';
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
@@ -61,6 +62,7 @@ export class WhatsappBotService {
     private chatSession: ChatSessionService,
     private customers: CustomersService,
     private orders: OrdersService,
+    private vendorNotify: VendorNotifyService,
     private stock: StockReservationService,
     private cartHold: CartHoldService,
     private config: ConfigService,
@@ -129,9 +131,10 @@ export class WhatsappBotService {
       `${formatKeycap(1)} Ver más productos de esta categoría\n` +
       `${formatKeycap(2)} Cambiar categoría\n` +
       `${formatKeycap(3)} Ver mi carrito\n` +
-      `${formatKeycap(4)} Menú inicio\n` +
+      `${formatKeycap(4)} Confirmar pedido\n` +
       `${formatKeycap(5)} Hablar con un asesor\n\n` +
-      'Escribe el número de tu opción:'
+      'Escribe el número de tu opción:\n' +
+      '_(Escribe *menu* para volver al inicio)_'
     );
   }
 
@@ -153,7 +156,7 @@ export class WhatsappBotService {
     }
     if (text === '4') {
       await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
-      await this.showMainMenu();
+      await this.confirmarPedido();
       return true;
     }
     if (text === '5') {
@@ -633,6 +636,7 @@ export class WhatsappBotService {
       text += `${formatKeycap(i + 1)} ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
     });
     text += `💰 *Total: S/ ${cart.total.toFixed(2)}*`;
+    text += '\n\n_Para finalizar tu compra, elige la opción *1*._';
     text += this.cartMenuHint();
 
     const sessionCtx = await this.chatSession.getContext(this.c.stateKey);
@@ -961,6 +965,13 @@ export class WhatsappBotService {
     }
     msg += 'Por favor espera. Cuéntale tu pedido y lo registrará por ti.';
     await this.txt(msg);
+
+    void this.vendorNotify.notifyHandoffRequest({
+      chatId: this.c.chatId,
+      customerName: existing?.name ?? undefined,
+      customerPhone: existing?.phone ?? phone ?? undefined,
+      waSessionId: this.c.waSessionId,
+    });
   }
 }
 

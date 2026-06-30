@@ -77,10 +77,42 @@ export class VendorNotifyService {
     }
 
     const text = this.buildNewOrderMessage(order);
+    await this.sendToVendors(phones, text, `order ${order.id.slice(0, 8)}`);
+  }
+
+  async notifyHandoffRequest(data: {
+    chatId: string;
+    customerName?: string | null;
+    customerPhone?: string | null;
+    waSessionId?: string;
+  }): Promise<void> {
+    const phones = this.getVendorPhones();
+    if (phones.length === 0) return;
+
+    const name = data.customerName?.trim() || 'Cliente';
+    const phone = data.customerPhone?.trim() || 'sin teléfono';
+    const text =
+      `👤 *Cliente pide asesor humano*\n\n` +
+      `*Nombre:* ${name}\n` +
+      `*Tel:* ${phone}\n` +
+      `*Chat:* ${data.chatId}\n\n` +
+      `Atiéndelo desde el inbox de WhatsApp en el dashboard.`;
+
+    await this.sendToVendors(phones, text, `handoff ${data.chatId}`);
+  }
+
+  private async sendToVendors(phones: string[], text: string, label: string): Promise<void> {
     for (const phone of phones) {
       try {
-        await this.openwa.sendText({ chatId: this.toChatId(phone), text });
-        this.logger.log(`Vendor notified for order ${order.id.slice(0, 8)} → ${phone}`);
+        const resolved = await this.openwa.resolveChatIdForPhone(phone);
+        const chatId = resolved ?? this.toChatId(phone);
+        if (!resolved) {
+          this.logger.warn(
+            `Vendor phone ${phone} may not have WhatsApp — sending to ${chatId} anyway`,
+          );
+        }
+        await this.openwa.sendText({ chatId, text, source: 'bot' });
+        this.logger.log(`Vendor notified (${label}) → ${phone} (${chatId})`);
       } catch (err) {
         this.logger.warn(`Vendor notify failed (${phone}): ${err}`);
       }

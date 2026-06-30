@@ -10,6 +10,6 @@ import { InventoryModule } from '../inventory/inventory.module';
   imports: [forwardRef(() => OpenwaModule), CustomersModule, InventoryModule],
   controllers: [OrdersController],
   providers: [OrdersService, VendorNotifyService],
-  exports: [OrdersService],
+  exports: [OrdersService, VendorNotifyService],
 })
 export class OrdersModule {}

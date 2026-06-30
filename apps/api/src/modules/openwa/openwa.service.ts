@@ -288,12 +288,37 @@ export class OpenwaService {
     if (opts?.before) params.set('before', opts.before);
     const qs = params.toString();
     const path = `/api/sessions/${sessionId}/chats/${encoded}/messages${qs ? `?${qs}` : ''}`;
-    const result = await this.request<OpenWaChatMessage[] | { data: OpenWaChatMessage[] }>(path);
+    const result = await this.request<
+      OpenWaChatMessage[] | { success?: boolean; data: OpenWaChatMessage[] }
+    >(path);
+    return this.unwrapMessageList(result);
+  }
+
+  private unwrapMessageList(
+    result: OpenWaChatMessage[] | { success?: boolean; data: OpenWaChatMessage[] },
+  ): OpenWaChatMessage[] {
     if (Array.isArray(result)) return result;
-    if (result && Array.isArray((result as { data: OpenWaChatMessage[] }).data)) {
-      return (result as { data: OpenWaChatMessage[] }).data;
-    }
+    if (result && Array.isArray(result.data)) return result.data;
     return [];
+  }
+
+  /** Valida que el número tenga WhatsApp y devuelve el chatId correcto (@c.us). */
+  async resolveChatIdForPhone(phone: string, sessionId?: string): Promise<string | null> {
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 9) return null;
+    const sid = sessionId ?? (await this.resolveSessionId());
+    try {
+      const data = await this.request<{ exists?: boolean; chatId?: string; data?: { exists?: boolean; chatId?: string } }>(
+        `/api/sessions/${sid}/contacts/check/${digits}`,
+      );
+      const payload = data.data ?? data;
+      if (payload.chatId?.trim()) return payload.chatId.trim();
+      if (payload.exists) return `${digits}@c.us`;
+      return null;
+    } catch (err: any) {
+      this.logger.debug(`contacts/check failed for ${digits}: ${err?.message}`);
+      return `${digits}@c.us`;
+    }
   }
 
   async sendText(payload: SendTextPayload): Promise<void> {

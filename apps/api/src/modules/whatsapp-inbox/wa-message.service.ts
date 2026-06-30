@@ -43,6 +43,7 @@ export class WaMessageService {
   private readonly logger = new Logger(WaMessageService.name);
   private readonly lastSyncAt = new Map<string, number>();
   private static readonly SYNC_THROTTLE_MS = 30_000;
+  private chatHistoryApiUnavailable = false;
 
   constructor(
     private prisma: PrismaService,
@@ -190,6 +191,10 @@ export class WaMessageService {
 
   async syncFromOpenWA(convId: string, opts?: { limit?: number; force?: boolean }) {
     const decoded = decodeURIComponent(convId);
+    if (this.chatHistoryApiUnavailable && !opts?.force) {
+      return { synced: 0, skipped: true, reason: 'history_api_unavailable' };
+    }
+
     const limit = opts?.limit ?? 80;
     const now = Date.now();
     const last = this.lastSyncAt.get(decoded) ?? 0;
@@ -208,10 +213,27 @@ export class WaMessageService {
       }
     }
 
+    let chatIdForApi = waChatId;
+    if (waChatId.includes('@lid')) {
+      const phone = await this.openwa.resolveContactPhone(waChatId, sessionId);
+      if (phone) chatIdForApi = `${normalizePhone(phone)}@c.us`;
+    }
+
     let remoteMessages: Awaited<ReturnType<OpenwaService['getChatMessages']>>;
     try {
-      remoteMessages = await this.openwa.getChatMessages(sessionId, waChatId, { limit });
+      remoteMessages = await this.openwa.getChatMessages(sessionId, chatIdForApi, { limit });
+      if (remoteMessages.length === 0 && chatIdForApi !== waChatId) {
+        remoteMessages = await this.openwa.getChatMessages(sessionId, waChatId, { limit });
+      }
     } catch (err) {
+      const msg = String(err);
+      if (msg.includes('404')) {
+        this.chatHistoryApiUnavailable = true;
+        this.logger.log(
+          'OpenWA chat history endpoint not available — sync disabled; messages still arrive via webhook',
+        );
+        return { synced: 0, skipped: true, reason: 'history_api_unavailable' };
+      }
       this.logger.warn(`syncFromOpenWA failed for ${waChatId}: ${err}`);
       return { synced: 0, error: true };
     }
