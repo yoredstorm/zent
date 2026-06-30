@@ -9,6 +9,15 @@ import { CustomersService, normalizePhone } from '../customers/customers.service
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { ChatState } from '@prisma/client';
 
+export type BotPluginAction = 'sendPdf' | 'showCategories' | 'showCart' | 'handoff';
+
+export interface BotActionContext {
+  chatId: string;
+  from: string;
+  sessionId?: string;
+  senderPhone?: string;
+}
+
 interface BotContext {
   chatId: string;
   stateKey: string;
@@ -46,6 +55,38 @@ export class WhatsappBotService {
 
   private get storeName(): string {
     return this.config.get('STORE_NAME', 'Zent').trim() || 'Zent';
+  }
+
+  private get zentFlowPluginEnabled(): boolean {
+    return this.config.get('ZENT_FLOW_PLUGIN_ENABLED', 'false') === 'true';
+  }
+
+  async runAction(action: BotPluginAction, ctx: BotActionContext): Promise<void> {
+    const stateKey = ctx.sessionId ? `${ctx.sessionId}::${ctx.chatId}` : ctx.chatId;
+    let contactPhone = resolvePhoneFromIds(ctx.chatId, ctx.from, ctx.senderPhone);
+    if (!contactPhone && (ctx.chatId.includes('@lid') || ctx.from.includes('@lid'))) {
+      const resolved = await this.openwa.resolveContactPhone(ctx.from || ctx.chatId, ctx.sessionId);
+      contactPhone = resolved ? normalizePhone(resolved) : null;
+    }
+    return this.ctx.run(
+      { chatId: ctx.chatId, stateKey, waSessionId: ctx.sessionId, contactPhone },
+      async () => {
+        switch (action) {
+          case 'sendPdf':
+            await this.enviarCatalogoPDF();
+            break;
+          case 'showCategories':
+            await this.mostrarCategorias();
+            break;
+          case 'showCart':
+            await this.mostrarCarrito();
+            break;
+          case 'handoff':
+            await this.handoffHumano();
+            break;
+        }
+      },
+    );
   }
 
   /** Aviso solo cuando el stock está en o por debajo del mínimo configurado. */
@@ -109,15 +150,21 @@ export class WhatsappBotService {
       return;
     }
 
-    const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
-    if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
-      await this.showMainMenu();
-      return;
+    if (!this.zentFlowPluginEnabled) {
+      const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
+      if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
+        await this.showMainMenu();
+        return;
+      }
     }
 
     switch (session.state) {
       case ChatState.MENU_PRINCIPAL:
-        await this.handleMenuPrincipal(text);
+        if (this.zentFlowPluginEnabled) {
+          await this.txt('Escribe *menu* para ver las opciones.');
+        } else {
+          await this.handleMenuPrincipal(text);
+        }
         break;
       case ChatState.CATALOGO_PDF:
         await this.showMainMenu();
@@ -138,7 +185,12 @@ export class WhatsappBotService {
         await this.handleDatosEntrega(text);
         break;
       case ChatState.PEDIDO_CREADO:
-        await this.showMainMenu();
+        if (this.zentFlowPluginEnabled) {
+          await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
+          await this.txt('Escribe *menu* para hacer un nuevo pedido.');
+        } else {
+          await this.showMainMenu();
+        }
         break;
       case ChatState.HANDOFF_HUMANO:
         await this.txt('Un asesor te atenderá pronto. Por favor espera.');

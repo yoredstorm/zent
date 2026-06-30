@@ -1,0 +1,80 @@
+{
+  "id": "zent-flow",
+  "name": "Zent Flow",
+  "version": "1.0.0",
+  "type": "extension",
+  "main": "dist/index.js",
+  "description": "Interactive menu bot for Zent e-commerce: configurable greeting and menu tree; dynamic actions delegate to the Zent API (PDF, categories, cart, handoff).",
+  "author": "Zent",
+  "license": "MIT",
+  "status": "stable",
+  "minOpenWAVersion": "0.7.0",
+  "testedOpenWAVersion": "0.7.0",
+  "keywords": ["menu", "flow", "zent", "ecommerce", "whatsapp", "openwa"],
+  "permissions": ["messages:send", "net:fetch"],
+  "sessionScoped": true,
+  "sessions": ["*"],
+  "hooks": ["message:received"],
+  "net": {
+    "allow": ["backend-api:3000", "localhost:3000", "localhost:3001", "127.0.0.1:3000", "127.0.0.1:3001"]
+  },
+  "configUi": {
+    "entry": "config/index.html",
+    "height": 680
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "triggers": {
+        "type": "array",
+        "title": "Trigger words",
+        "description": "Words that start the flow (case-insensitive). At least one required.",
+        "items": { "type": "string" }
+      },
+      "greeting": {
+        "type": "textarea",
+        "required": true,
+        "title": "Greeting + menu"
+      },
+      "respondInGroups": {
+        "type": "boolean",
+        "default": false,
+        "title": "Also respond in group chats"
+      },
+      "zentApiUrl": {
+        "type": "string",
+        "required": true,
+        "title": "Zent API base URL",
+        "description": "e.g. http://backend-api:3000 (Docker internal)"
+      },
+      "zentApiSecret": {
+        "type": "string",
+        "required": true,
+        "secret": true,
+        "title": "Zent plugin secret",
+        "description": "Must match BOT_PLUGIN_SECRET on backend-api"
+      },
+      "options": {
+        "type": "array",
+        "title": "Menu options",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "title": "Key" },
+            "text": { "type": "textarea", "title": "Reply text (static nodes)" },
+            "action": {
+              "type": "string",
+              "title": "Zent action",
+              "enum": ["", "sendPdf", "showCategories", "showCart", "handoff"]
+            },
+            "options": {
+              "type": "array",
+              "title": "Sub-options",
+              "items": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

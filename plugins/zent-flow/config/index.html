@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zent Flow Config</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; font-size: 14px; background: #f8f9fa; color: #212529; padding: 16px; }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-weight: 500; margin-bottom: 4px; }
+    input[type="text"], textarea, select {
+      width: 100%; padding: 7px 10px; border: 1px solid #ced4da; border-radius: 5px;
+      font-size: 14px; font-family: inherit; background: #fff;
+    }
+    textarea { resize: vertical; min-height: 64px; }
+    .check-row { display: flex; align-items: center; gap: 8px; }
+    .section-title { font-weight: 600; font-size: 13px; text-transform: uppercase; color: #6c757d; margin: 18px 0 8px; }
+    .node { background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+    .node-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+    .node-key { width: 72px; flex-shrink: 0; }
+    .node-text { flex: 1; min-width: 160px; min-height: 48px; }
+    .node-action { width: 140px; flex-shrink: 0; }
+    .node-actions { display: flex; flex-direction: column; gap: 4px; }
+    .children { margin-left: 20px; margin-top: 8px; padding-left: 12px; border-left: 2px solid #e9ecef; }
+    button { cursor: pointer; font-size: 12px; border-radius: 4px; border: 1px solid transparent; padding: 4px 9px; }
+    .btn-add { background: #e8f0fe; color: #2d5fc4; }
+    .btn-remove { background: #fdecea; color: #b91c1c; }
+    .btn-add-root { background: #e6f4ea; color: #1a7a3a; font-size: 13px; padding: 6px 14px; margin-bottom: 12px; }
+    .btn-save { background: #4f7fff; color: #fff; font-size: 14px; padding: 9px 24px; font-weight: 600; margin-top: 16px; }
+    .btn-save:disabled { opacity: 0.55; }
+    #feedback { margin-top: 10px; padding: 8px 12px; border-radius: 5px; font-size: 13px; display: none; }
+    #feedback.ok { background: #d4edda; color: #155724; display: block; }
+    #feedback.err { background: #f8d7da; color: #721c24; display: block; }
+    .hint { font-size: 11px; color: #868e96; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <h1>Zent Flow Editor</h1>
+
+  <div class="field">
+    <label for="triggers">Trigger words</label>
+    <input type="text" id="triggers" placeholder="hola, menu, inicio, 0" />
+    <div class="hint">Comma-separated. Case-insensitive.</div>
+  </div>
+
+  <div class="field">
+    <label for="greeting">Greeting / opening menu</label>
+    <textarea id="greeting" rows="6"></textarea>
+  </div>
+
+  <div class="field check-row">
+    <input type="checkbox" id="respondInGroups" />
+    <label for="respondInGroups">Also respond in group chats</label>
+  </div>
+
+  <div class="field">
+    <label for="zentApiUrl">Zent API base URL</label>
+    <input type="text" id="zentApiUrl" placeholder="http://backend-api:3000" />
+  </div>
+
+  <div class="field">
+    <label for="zentApiSecret">Zent plugin secret</label>
+    <input type="text" id="zentApiSecret" placeholder="BOT_PLUGIN_SECRET" />
+  </div>
+
+  <div class="section-title">Menu options</div>
+  <button type="button" class="btn-add-root" id="addRoot">+ Add option</button>
+  <div id="tree" class="tree"></div>
+
+  <button type="button" class="btn-save" id="saveBtn">Save</button>
+  <div id="feedback"></div>
+
+  <script>
+(function () {
+  var ACTIONS = [
+    { v: '', l: '(static text)' },
+    { v: 'sendPdf', l: 'sendPdf' },
+    { v: 'showCategories', l: 'showCategories' },
+    { v: 'showCart', l: 'showCart' },
+    { v: 'handoff', l: 'handoff' }
+  ];
+
+  function el(tag, attrs, children) {
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { e[k] = attrs[k]; });
+    if (children) children.forEach(function (c) { if (c) e.appendChild(c); });
+    return e;
+  }
+
+  function actionSelect(val) {
+    var s = el('select', { className: 'node-action' });
+    ACTIONS.forEach(function (a) {
+      var o = el('option', { value: a.v, textContent: a.l });
+      if (a.v === (val || '')) o.selected = true;
+      s.appendChild(o);
+    });
+    return s;
+  }
+
+  function renderNode(node) {
+    var keyIn = el('input', { type: 'text', className: 'node-key', placeholder: 'Key (e.g. 1)', value: node.key || '' });
+    var textIn = el('textarea', { className: 'node-text', placeholder: 'Reply text (static nodes)' });
+    textIn.value = node.text || '';
+    var actionIn = actionSelect(node.action || '');
+    var removeBtn = el('button', { className: 'btn-remove', type: 'button', textContent: 'Remove' });
+    var addChildBtn = el('button', { className: 'btn-add', type: 'button', textContent: '+ Sub-option' });
+    var children = el('div', { className: 'children' });
+    (node.options || []).forEach(function (child) { children.appendChild(renderNode(child)); });
+    function updateVis() { children.style.display = children.childElementCount ? '' : 'none'; }
+    updateVis();
+    addChildBtn.addEventListener('click', function () {
+      children.appendChild(renderNode({}));
+      updateVis();
+    });
+    var nodeDiv = el('div', { className: 'node' }, [
+      el('div', { className: 'node-header' }, [
+        keyIn, textIn, actionIn, el('div', { className: 'node-actions' }, [removeBtn, addChildBtn])
+      ]),
+      children
+    ]);
+    removeBtn.addEventListener('click', function () {
+      var parent = nodeDiv.parentNode;
+      parent.removeChild(nodeDiv);
+      if (parent.classList && parent.classList.contains('children')) {
+        parent.style.display = parent.childElementCount ? '' : 'none';
+      }
+    });
+    return nodeDiv;
+  }
+
+  function assembleNodes(containerEl) {
+    var result = [];
+    for (var i = 0; i < containerEl.children.length; i++) {
+      var nodeDiv = containerEl.children[i];
+      var key = (nodeDiv.querySelector('.node-key') || {}).value || '';
+      key = key.trim();
+      if (!key) continue;
+      var text = (nodeDiv.querySelector('.node-text') || {}).value || '';
+      var action = (nodeDiv.querySelector('.node-action') || {}).value || '';
+      var node = { key: key, text: text };
+      if (action) node.action = action;
+      var childrenEl = nodeDiv.querySelector('.children');
+      var childNodes = childrenEl ? assembleNodes(childrenEl) : [];
+      if (childNodes.length) node.options = childNodes;
+      result.push(node);
+    }
+    return result;
+  }
+
+  function assembleConfig() {
+    var triggersRaw = document.getElementById('triggers').value;
+    var triggers = triggersRaw.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+    return {
+      triggers: triggers,
+      greeting: document.getElementById('greeting').value,
+      respondInGroups: document.getElementById('respondInGroups').checked,
+      zentApiUrl: document.getElementById('zentApiUrl').value.trim(),
+      zentApiSecret: document.getElementById('zentApiSecret').value,
+      options: assembleNodes(document.getElementById('tree'))
+    };
+  }
+
+  function populateConfig(cfg) {
+    var c = cfg && typeof cfg === 'object' ? cfg : {};
+    var triggers = Array.isArray(c.triggers) ? c.triggers : (c.trigger ? [c.trigger] : []);
+    document.getElementById('triggers').value = triggers.join(', ');
+    document.getElementById('greeting').value = typeof c.greeting === 'string' ? c.greeting : '';
+    document.getElementById('respondInGroups').checked = !!c.respondInGroups;
+    document.getElementById('zentApiUrl').value = typeof c.zentApiUrl === 'string' ? c.zentApiUrl : '';
+    document.getElementById('zentApiSecret').value = typeof c.zentApiSecret === 'string' ? c.zentApiSecret : '';
+    var tree = document.getElementById('tree');
+    tree.textContent = '';
+    (Array.isArray(c.options) ? c.options : []).forEach(function (node) {
+      if (node && typeof node === 'object') tree.appendChild(renderNode(node));
+    });
+  }
+
+  var saveBtn = document.getElementById('saveBtn');
+  var feedback = document.getElementById('feedback');
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || typeof data.type !== 'string') return;
+    if (data.type === 'config:value') populateConfig(data.config);
+    else if (data.type === 'config:saved') {
+      feedback.textContent = 'Saved!';
+      feedback.className = 'ok';
+      saveBtn.disabled = false;
+    } else if (data.type === 'config:error') {
+      feedback.textContent = data.message || 'Save failed.';
+      feedback.className = 'err';
+      saveBtn.disabled = false;
+    }
+  });
+
+  saveBtn.addEventListener('click', function () {
+    saveBtn.disabled = true;
+    feedback.className = '';
+    parent.postMessage({ type: 'config:save', config: assembleConfig() }, '*');
+  });
+
+  document.getElementById('addRoot').addEventListener('click', function () {
+    document.getElementById('tree').appendChild(renderNode({}));
+  });
+
+  parent.postMessage({ type: 'config:get' }, '*');
+})();
+  </script>
+</body>
+</html>

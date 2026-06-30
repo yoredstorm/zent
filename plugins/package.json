@@ -1,0 +1,12 @@
+{
+  "name": "zent-openwa-plugins",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "scripts": {
+    "package": "node package.mjs zent-flow",
+    "package:zent-flow": "node package.mjs zent-flow"
+  }
+}

@@ -119,6 +119,8 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
+      BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}}
+      ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-true}
       UPLOADS_DIR: /app/uploads
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
       STORE_NAME: ${STORE_NAME:-Zent}
@@ -164,6 +166,8 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
+      BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}}
+      ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-true}
       UPLOADS_DIR: /app/uploads
       STORE_NAME: ${STORE_NAME:-Zent}
       WORKER_MODE: "true"
