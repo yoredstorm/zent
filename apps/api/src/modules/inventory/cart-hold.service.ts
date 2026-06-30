@@ -14,6 +14,7 @@ export interface CartHoldRecord {
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
+  expiryWarnSent?: boolean;
 }
 
 export interface CartHoldListItem extends CartHoldRecord {
@@ -25,6 +26,8 @@ export interface CartHoldListItem extends CartHoldRecord {
 export class CartHoldService implements OnModuleInit {
   private redis: Redis;
   private readonly keyPrefix = 'cart:hold:';
+  private readonly metaPrefix = 'cart:hold:meta:';
+  private readonly cartKeyPrefix = 'cart:';
   private ttlSeconds: number;
   private onChange?: (stateKey: string) => void;
 
@@ -48,6 +51,14 @@ export class CartHoldService implements OnModuleInit {
 
   private key(stateKey: string): string {
     return `${this.keyPrefix}${stateKey}`;
+  }
+
+  private metaKey(stateKey: string): string {
+    return `${this.metaPrefix}${stateKey}`;
+  }
+
+  private cartKey(stateKey: string): string {
+    return `${this.cartKeyPrefix}${stateKey}`;
   }
 
   async syncFromCart(
@@ -81,14 +92,80 @@ export class CartHoldService implements OnModuleInit {
       createdAt,
       updatedAt: now.toISOString(),
       expiresAt,
+      expiryWarnSent: false,
     };
 
     await this.redis.setex(this.key(stateKey), this.ttlSeconds, JSON.stringify(record));
+    await this.redis.setex(
+      this.metaKey(stateKey),
+      this.ttlSeconds + 120,
+      JSON.stringify({
+        stateKey,
+        chatId: record.chatId,
+        contactPhone: record.contactPhone,
+        customerName: record.customerName,
+        total: record.total,
+        itemCount: record.items.reduce((n, i) => n + i.quantity, 0),
+      }),
+    );
     this.onChange?.(stateKey);
+  }
+
+  async markExpiryWarnSent(stateKey: string): Promise<void> {
+    const redisKey = this.key(stateKey);
+    const [data, ttl] = await Promise.all([this.redis.get(redisKey), this.redis.ttl(redisKey)]);
+    if (!data || ttl <= 0) return;
+    const record = JSON.parse(data) as CartHoldRecord;
+    record.expiryWarnSent = true;
+    record.updatedAt = new Date().toISOString();
+    await this.redis.setex(redisKey, ttl, JSON.stringify(record));
+  }
+
+  async listExpiredNotifyMetas(): Promise<
+    Array<{
+      stateKey: string;
+      chatId: string;
+      contactPhone: string | null;
+      customerName?: string | null;
+      total: number;
+      itemCount: number;
+    }>
+  > {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await this.redis.scan(cursor, 'MATCH', `${this.metaPrefix}*`, 'COUNT', 100);
+      cursor = next;
+      keys.push(...batch);
+    } while (cursor !== '0');
+
+    const expired: Array<{
+      stateKey: string;
+      chatId: string;
+      contactPhone: string | null;
+      customerName?: string | null;
+      total: number;
+      itemCount: number;
+    }> = [];
+
+    for (const key of keys) {
+      const stateKey = key.slice(this.metaPrefix.length);
+      const holdExists = await this.redis.exists(this.key(stateKey));
+      if (holdExists) continue;
+      const data = await this.redis.get(key);
+      if (!data) continue;
+      expired.push(JSON.parse(data));
+    }
+    return expired;
+  }
+
+  async clearExpiredCart(stateKey: string): Promise<void> {
+    await this.redis.del(this.metaKey(stateKey), this.cartKey(stateKey));
   }
 
   async release(stateKey: string): Promise<void> {
     const existed = await this.redis.del(this.key(stateKey));
+    await this.redis.del(this.metaKey(stateKey));
     if (existed > 0) this.onChange?.(stateKey);
   }
 

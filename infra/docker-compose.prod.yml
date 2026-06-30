@@ -172,6 +172,8 @@ services:
       UPLOADS_DIR: /app/uploads
       STORE_NAME: ${STORE_NAME:-Zent}
       VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
+      CART_HOLD_TTL_MINUTES: ${CART_HOLD_TTL_MINUTES:-30}
+      CART_HOLD_WARN_MINUTES: ${CART_HOLD_WARN_MINUTES:-5}
       WORKER_MODE: "true"
     depends_on:
       postgres:
