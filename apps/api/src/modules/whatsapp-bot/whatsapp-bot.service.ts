@@ -624,6 +624,7 @@ export class WhatsappBotService {
   }
 
   private async mostrarCarrito() {
+    await this.syncCartHold();
     const cart = await this.cart.getCart(this.c.stateKey);
     if (cart.items.length === 0) {
       await this.txt('🛒 Tu carrito está vacío.\n\nEscribe *menu* para ver productos.');

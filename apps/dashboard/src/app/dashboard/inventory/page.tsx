@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useRealtime } from '@/lib/useRealtime';
@@ -144,6 +145,15 @@ export default function InventoryPage() {
           </table>
         )}
 
+        {tab === 'carts' && (
+          <p className="px-4 py-2 text-xs text-gray-500 border-b bg-purple-50">
+            Carritos de WhatsApp con stock reservado. También en{' '}
+            <Link href="/dashboard/whatsapp" className="text-purple-700 hover:underline">
+              WhatsApp → Carritos activos
+            </Link>
+            .
+          </p>
+        )}
         {tab === 'carts' && (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

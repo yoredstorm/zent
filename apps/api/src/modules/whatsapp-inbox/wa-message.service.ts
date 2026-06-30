@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { normalizePhone } from '../customers/customers.service';
 import { OpenwaService } from '../openwa/openwa.service';
+import { CartHoldService, CartHoldListItem } from '../inventory/cart-hold.service';
 import { extractPhoneFromWaId } from '../whatsapp-bot/wa-contact.util';
 import { ChatState } from '@prisma/client';
 import {
@@ -28,7 +29,13 @@ export interface WaConversationSummary {
   needsHandoff: boolean;
   hasNewOrder: boolean;
   unreadHint: boolean;
+  hasActiveCart: boolean;
+  cartItemCount: number;
+  cartTotal: number | null;
+  cartMinutesLeft: number | null;
 }
+
+export type WaConversationFilter = 'handoff' | 'orders' | 'carts';
 
 export interface WaMediaFields {
   messageType?: string;
@@ -50,6 +57,7 @@ export class WaMessageService {
     private realtime: RealtimeService,
     @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
+    private cartHold: CartHoldService,
   ) {}
 
   private canonicalWaChatId(chatId: string): string {
@@ -301,7 +309,7 @@ export class WaMessageService {
     );
   }
 
-  async listConversations(filter?: 'handoff' | 'orders'): Promise<WaConversationSummary[]> {
+  async listConversations(filter?: WaConversationFilter): Promise<WaConversationSummary[]> {
     try {
       return await this.buildConversationList(filter);
     } catch (err: any) {
@@ -311,8 +319,11 @@ export class WaMessageService {
   }
 
   private async buildConversationList(
-    filter?: 'handoff' | 'orders',
+    filter?: WaConversationFilter,
   ): Promise<WaConversationSummary[]> {
+    const activeHolds = await this.cartHold.listActiveHolds();
+    const holdByKey = this.indexCartHolds(activeHolds);
+
     const recentMessages = await this.prisma.waMessage.findMany({
       orderBy: { createdAt: 'desc' },
       take: 800,
@@ -331,6 +342,10 @@ export class WaMessageService {
 
     const sessionMap = new Map(sessions.map((s) => [s.chatId, s]));
     const convIds = new Set<string>([...lastByConv.keys(), ...sessions.map((s) => s.chatId)]);
+    for (const hold of activeHolds) {
+      convIds.add(hold.stateKey);
+      convIds.add(buildConversationId(hold.chatId, parseWaConversationId(hold.stateKey).waSessionId));
+    }
 
     const summaries: WaConversationSummary[] = [];
     let enrichBudget = 8;
@@ -397,9 +412,13 @@ export class WaMessageService {
 
       const chatState = session?.state ?? null;
       const needsHandoff = chatState === 'HANDOFF_HUMANO';
+      const hold = this.findCartHold(holdByKey, convId, waChatId, waSessionId);
+      const hasActiveCart = !!hold;
+      const cartItemCount = hold?.items.reduce((n, i) => n + i.quantity, 0) ?? 0;
 
       if (filter === 'handoff' && !needsHandoff) continue;
       if (filter === 'orders' && !hasNewOrder) continue;
+      if (filter === 'carts' && !hasActiveCart) continue;
 
       const displaySession = session
         ? { ...session, waContactName: waContactName ?? session.waContactName }
@@ -415,14 +434,20 @@ export class WaMessageService {
         customerName: session?.customerName ?? customerName,
         lastMessage: last
           ? messagePreview(last.body, last.messageType, last.caption)
-          : '(sin mensajes)',
-        lastMessageAt: (last?.createdAt ?? session?.lastInteractionAt ?? new Date()).toISOString(),
+          : hasActiveCart
+            ? `🛒 Carrito: ${cartItemCount} ítem(s) — S/ ${Number(hold!.total).toFixed(2)}`
+            : '(sin mensajes)',
+        lastMessageAt: (last?.createdAt ?? (hold ? new Date(hold.updatedAt) : session?.lastInteractionAt) ?? new Date()).toISOString(),
         lastDirection: last?.direction ?? 'IN',
         lastSource: last?.source ?? 'customer',
         chatState,
         needsHandoff,
         hasNewOrder,
         unreadHint: last?.direction === 'IN' && last?.source === 'customer',
+        hasActiveCart,
+        cartItemCount,
+        cartTotal: hold?.total ?? null,
+        cartMinutesLeft: hold?.minutesLeft ?? null,
       });
     }
 
@@ -497,6 +522,14 @@ export class WaMessageService {
         })
       : null;
 
+    const activeCart =
+      this.findCartHold(
+        this.indexCartHolds(await this.cartHold.listActiveHolds()),
+        decoded,
+        waChatId,
+        waSessionId,
+      ) ?? null;
+
     const contactDisplayName = this.resolveDisplayName(
       session,
       customer?.name ?? null,
@@ -511,7 +544,33 @@ export class WaMessageService {
       session,
       customer,
       openOrder,
+      activeCart,
     };
+  }
+
+  private indexCartHolds(holds: CartHoldListItem[]): Map<string, CartHoldListItem> {
+    const map = new Map<string, CartHoldListItem>();
+    for (const hold of holds) {
+      map.set(hold.stateKey, hold);
+      const { waSessionId, waChatId } = parseWaConversationId(hold.stateKey);
+      map.set(buildConversationId(waChatId, waSessionId), hold);
+      map.set(waChatId, hold);
+      if (hold.chatId) map.set(hold.chatId, hold);
+    }
+    return map;
+  }
+
+  private findCartHold(
+    holdByKey: Map<string, CartHoldListItem>,
+    convId: string,
+    waChatId: string,
+    waSessionId: string | null,
+  ): CartHoldListItem | undefined {
+    return (
+      holdByKey.get(convId) ??
+      holdByKey.get(buildConversationId(waChatId, waSessionId)) ??
+      holdByKey.get(waChatId)
+    );
   }
 
   resolveSendTarget(convId: string) {

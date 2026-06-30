@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useRealtime } from '@/lib/useRealtime';
 
 type MainTab = 'inbox' | 'session';
-type InboxFilter = '' | 'handoff' | 'orders';
+type InboxFilter = '' | 'handoff' | 'orders' | 'carts';
 
 interface Conversation {
   chatId: string;
@@ -20,6 +20,10 @@ interface Conversation {
   chatState: string | null;
   needsHandoff: boolean;
   hasNewOrder: boolean;
+  hasActiveCart: boolean;
+  cartItemCount: number;
+  cartTotal: number | null;
+  cartMinutesLeft: number | null;
   unreadHint: boolean;
   lastSource: string;
 }
@@ -184,7 +188,12 @@ export default function WhatsAppPage() {
   useRealtime(
     useCallback(
       (event) => {
-        if (event.type === 'message.received' || event.type === 'message.sent') {
+        if (
+          event.type === 'message.received' ||
+          event.type === 'message.sent' ||
+          event.type === 'cart.hold.updated' ||
+          event.type === 'order.created'
+        ) {
           loadConversations();
           const chatId = event.payload?.chatId as string | undefined;
           if (chatId && selected?.chatId === chatId) {
@@ -331,7 +340,7 @@ export default function WhatsAppPage() {
           <div className="bg-white rounded-lg shadow flex flex-col overflow-hidden lg:col-span-1">
             <div className="p-3 border-b flex gap-2 flex-wrap items-center justify-between">
               <div className="flex gap-2 flex-wrap">
-                {(['', 'handoff', 'orders'] as const).map((f) => (
+                {(['', 'handoff', 'orders', 'carts'] as const).map((f) => (
                   <button
                     key={f || 'all'}
                     type="button"
@@ -340,7 +349,13 @@ export default function WhatsAppPage() {
                       filter === f ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                     }`}
                   >
-                    {f === '' ? 'Todas' : f === 'handoff' ? 'Handoff' : 'Pedidos nuevos'}
+                    {f === ''
+                      ? 'Todas'
+                      : f === 'handoff'
+                        ? 'Handoff'
+                        : f === 'orders'
+                          ? 'Pedidos nuevos'
+                          : 'Carritos activos'}
                   </button>
                 ))}
               </div>
@@ -382,6 +397,11 @@ export default function WhatsAppPage() {
                       {c.hasNewOrder && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
                           Pedido nuevo
+                        </span>
+                      )}
+                      {c.hasActiveCart && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                          Carrito{c.cartItemCount > 0 ? ` (${c.cartItemCount})` : ''}
                         </span>
                       )}
                       {c.unreadHint && (
@@ -441,12 +461,36 @@ export default function WhatsAppPage() {
                 </div>
 
                 {meta && (
-                  <div className="px-3 py-2 bg-gray-50 text-xs text-gray-600 border-b flex flex-wrap gap-3">
-                    {meta.session?.state && <span>Bot: {meta.session.state}</span>}
-                    {meta.customer && (
-                      <Link href="/dashboard/customers" className="text-blue-600 hover:underline">
-                        Ver cliente
+                  <div className="px-3 py-2 bg-gray-50 text-xs text-gray-600 border-b space-y-2">
+                    <div className="flex flex-wrap gap-3">
+                      {meta.session?.state && <span>Bot: {meta.session.state}</span>}
+                      {meta.customer && (
+                        <Link href="/dashboard/customers" className="text-blue-600 hover:underline">
+                          Ver cliente
+                        </Link>
+                      )}
+                      <Link href="/dashboard/inventory" className="text-blue-600 hover:underline">
+                        Inventario / carritos
                       </Link>
+                    </div>
+                    {meta.activeCart && (
+                      <div className="rounded-md border border-purple-200 bg-purple-50 p-2 text-purple-900">
+                        <div className="font-medium mb-1">
+                          🛒 Carrito incompleto — S/ {Number(meta.activeCart.total).toFixed(2)}
+                          {meta.activeCart.minutesLeft != null && (
+                            <span className="font-normal text-purple-700 ml-2">
+                              (expira en {meta.activeCart.minutesLeft} min)
+                            </span>
+                          )}
+                        </div>
+                        <ul className="space-y-0.5">
+                          {meta.activeCart.items.map((item: { productId: string; nombre: string; quantity: number; unitPrice: number }) => (
+                            <li key={item.productId}>
+                              {item.quantity}x {item.nombre} — S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 )}

@@ -19,7 +19,7 @@ export class WhatsappInboxController {
 
   @Get('conversations')
   @ApiOperation({ summary: 'List WhatsApp conversations' })
-  async listConversations(@Query('filter') filter?: 'handoff' | 'orders') {
+  async listConversations(@Query('filter') filter?: 'handoff' | 'orders' | 'carts') {
     try {
       return await this.waMessages.listConversations(filter);
     } catch (err: any) {
