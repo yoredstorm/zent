@@ -7,6 +7,7 @@ import { CartService } from './cart.service';
 import { ChatSessionService } from './chat-session.service';
 import { CustomersService, normalizePhone } from '../customers/customers.service';
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
+import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
 
 export type BotPluginAction = 'sendPdf' | 'showCategories' | 'showCart' | 'handoff';
@@ -304,15 +305,14 @@ export class WhatsappBotService {
 
     let msg = '📦 *Productos disponibles:*\n\n';
     products.forEach((p, i) => {
-      msg += `${i + 1}. ${p.nombre} — S/ ${p.salePrice}${this.lowStockHint(p.stock, p.minStock)}\n`;
+      msg += `${formatKeycap(i + 1)} ${p.nombre} — S/ ${p.salePrice}${this.lowStockHint(p.stock, p.minStock)}\n`;
     });
+    const exampleIdx = products.length > 1 ? 2 : 1;
     msg +=
-      '\n*Comandos:*\n' +
-      '• *ver [número]* — ver foto y detalle\n' +
-      '• *agregar [número] [cantidad]* — agregar al carrito\n' +
-      '• *carrito* — ver tu pedido\n' +
-      '• *categorias* — cambiar categoría\n' +
-      '• *menu* — inicio';
+      '\n*¿Qué quieres hacer?*\n' +
+      '• Escribe el *número* para ver foto y detalle\n' +
+      `• Escribe *${exampleIdx} 3* para agregar 3 unidades del producto ${exampleIdx}\n` +
+      '• *carrito* · *categorias* · *menu*';
 
     await this.txt(msg);
   }
@@ -357,11 +357,25 @@ export class WhatsappBotService {
       return;
     }
 
+    const addMatch = text.match(/^(\d+)\s+(\d+)$/);
+    if (addMatch) {
+      const productIndex = parseInt(addMatch[1]) - 1;
+      const quantity = parseInt(addMatch[2]) || 1;
+      await this.agregarAlCarrito(ctx, productIndex, quantity);
+      return;
+    }
+
+    if (/^\d+$/.test(text)) {
+      const productIndex = parseInt(text) - 1;
+      await this.mostrarProductoDetalle(ctx, productIndex);
+      return;
+    }
+
     await this.txt(
-      'Comando no reconocido.\n\n' +
-        '• *ver 1* — ver producto\n' +
-        '• *agregar 1 2* — agregar 2 unidades\n' +
-        '• *carrito* — ver pedido',
+      'No entendí tu mensaje.\n\n' +
+        '• Escribe un *número* para ver un producto\n' +
+        '• Escribe *2 3* para agregar 3 unidades del producto 2\n' +
+        '• *carrito* · *categorias* · *menu*',
     );
   }
 
@@ -380,12 +394,14 @@ export class WhatsappBotService {
       return;
     }
 
+    const num = index + 1;
     const caption =
       `*${product.nombre}*\n` +
       `💰 Precio: S/ ${product.salePrice}\n` +
       (product.stock <= product.minStock ? `⚠️ *¡Quedan pocas unidades!*\n` : '') +
       (product.descripcion ? `📝 ${product.descripcion}\n` : '') +
-      `\nPara agregar: *agregar ${index + 1} [cantidad]*`;
+      `\nPara agregar al carrito, escribe:\n` +
+      `*${num}* (1 unidad)  o  *${num} 3* (3 unidades)`;
 
     if (product.images.length > 0) {
       await this.img({ url: product.images[0].url }, caption);
@@ -436,13 +452,10 @@ export class WhatsappBotService {
 
     let text = '🛒 *Tu carrito:*\n\n';
     cart.items.forEach((item, i) => {
-      text += `${i + 1}. ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
+      text += `${formatKeycap(i + 1)} ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
     });
     text += `💰 *Total: S/ ${cart.total.toFixed(2)}*\n\n`;
-    text += 'Opciones:\n';
-    text += '✅ *confirmar* — Finalizar pedido\n';
-    text += '❌ *eliminar [número]* — Quitar producto\n';
-    text += '🔄 *menu* — Seguir comprando';
+    text += '✅ *confirmar* · ❌ *eliminar 1* · 🔄 *menu*';
 
     await this.chatSession.updateState(this.c.stateKey, ChatState.CARRITO);
     await this.txt(text);
