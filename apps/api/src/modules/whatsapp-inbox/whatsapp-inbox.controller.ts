@@ -43,10 +43,11 @@ export class WhatsappInboxController {
   @Post('conversations/:chatId/send')
   @ApiOperation({ summary: 'Send message as agent' })
   async sendMessage(@Param('chatId') chatId: string, @Body() dto: SendWaMessageDto) {
-    const decoded = decodeURIComponent(chatId);
+    const { waChatId, waSessionId } = this.waMessages.resolveSendTarget(chatId);
     await this.openwa.sendText({
-      chatId: decoded,
+      chatId: waChatId,
       text: dto.text,
+      sessionId: waSessionId,
       source: 'agent',
     });
     return { ok: true };

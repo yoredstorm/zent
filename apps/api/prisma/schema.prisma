@@ -170,6 +170,7 @@ model ChatSession {
   chatId            String    @unique
   customerName      String?
   customerPhone     String?
+  waContactName     String?
   state             ChatState @default(MENU_PRINCIPAL)
   cartJson          String?   @db.Text
   contextJson       String?   @db.Text

@@ -61,6 +61,15 @@ export class WhatsappBotController {
       body?.senderPhone ||
       undefined;
     const waSessionId = (body?.sessionId as string | undefined)?.trim() || undefined;
+    const contactName =
+      data?.notifyName ||
+      data?.pushName ||
+      data?.sender?.pushName ||
+      data?.contact?.name ||
+      data?.contact?.pushName ||
+      body?.notifyName ||
+      body?.pushName ||
+      undefined;
 
     if (!chatId || !messageBody) {
       this.logger.log(`Webhook ignored: missing chatId or body (chatId=${chatId ?? 'none'})`);
@@ -79,6 +88,7 @@ export class WhatsappBotController {
         fromMe: false,
         waSessionId,
         senderPhone,
+        contactName,
       });
     } catch (err) {
       this.logger.warn(`Failed to persist inbound message: ${err}`);

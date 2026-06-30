@@ -244,6 +244,21 @@ export class OpenwaService {
     }
   }
 
+  /** Nombre/alias de WhatsApp (pushName) vía API OpenWA. */
+  async resolveContactName(contactId: string, sessionId?: string): Promise<string | null> {
+    const sid = sessionId ?? (await this.resolveSessionId());
+    const encoded = encodeURIComponent(contactId);
+    try {
+      const data = await this.request<{ name?: string; pushName?: string; shortName?: string }>(
+        `/api/sessions/${sid}/contacts/${encoded}`,
+      );
+      return data.pushName?.trim() || data.name?.trim() || data.shortName?.trim() || null;
+    } catch (err: any) {
+      this.logger.debug(`Could not resolve contact name for ${contactId}: ${err?.message}`);
+      return null;
+    }
+  }
+
   async sendText(payload: SendTextPayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
     await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', {

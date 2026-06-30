@@ -11,7 +11,9 @@ type InboxFilter = '' | 'handoff' | 'orders';
 
 interface Conversation {
   chatId: string;
+  waChatId?: string;
   contactPhone: string | null;
+  contactDisplayName: string | null;
   customerName: string | null;
   lastMessage: string;
   lastMessageAt: string;
@@ -33,6 +35,20 @@ interface WaMessage {
 
 function encodeChatId(chatId: string) {
   return encodeURIComponent(chatId);
+}
+
+function displayName(c: Conversation): string {
+  return (
+    c.contactDisplayName ||
+    c.customerName ||
+    (c.contactPhone ? (c.contactPhone.startsWith('+') ? c.contactPhone : `+${c.contactPhone}`) : null) ||
+    'Contacto'
+  );
+}
+
+function formatPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  return phone.startsWith('+') ? phone : `+${phone}`;
 }
 
 function formatTime(iso: string) {
@@ -91,12 +107,19 @@ export default function WhatsAppPage() {
             loadMessages(chatId);
           } else if (event.type === 'message.received' && chatId) {
             toast.message('Nuevo mensaje de WhatsApp', {
-              description: chatId.replace(/@.*/, ''),
+              description: displayName(
+                conversations.find((c) => c.chatId === chatId) ?? {
+                  chatId,
+                  contactDisplayName: null,
+                  customerName: null,
+                  contactPhone: null,
+                } as Conversation,
+              ),
             });
           }
         }
       },
-      [loadConversations, loadMessages, selected?.chatId],
+      [loadConversations, loadMessages, selected?.chatId, conversations],
     ),
   );
 
@@ -214,9 +237,7 @@ export default function WhatsAppPage() {
                     }`}
                   >
                     <div className="flex justify-between items-start gap-2">
-                      <span className="font-medium text-sm truncate">
-                        {c.customerName || c.contactPhone || c.chatId.replace(/@.*/, '')}
-                      </span>
+                      <span className="font-medium text-sm truncate">{displayName(c)}</span>
                       <span className="text-xs text-gray-400 shrink-0">{formatTime(c.lastMessageAt)}</span>
                     </div>
                     <p className="text-xs text-gray-500 truncate mt-1">{c.lastMessage}</p>
@@ -252,10 +273,10 @@ export default function WhatsAppPage() {
               <>
                 <div className="p-3 border-b flex flex-wrap justify-between gap-2 items-center">
                   <div>
-                    <div className="font-semibold">
-                      {selected.customerName || selected.contactPhone || 'Cliente'}
-                    </div>
-                    <div className="text-xs text-gray-500">{selected.chatId}</div>
+                    <div className="font-semibold">{displayName(selected)}</div>
+                    {formatPhone(selected.contactPhone) && (
+                      <div className="text-xs text-gray-500">{formatPhone(selected.contactPhone)}</div>
+                    )}
                   </div>
                   {meta?.openOrder && (
                     <Link

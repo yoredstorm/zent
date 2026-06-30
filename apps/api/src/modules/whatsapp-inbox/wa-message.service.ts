@@ -1,14 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { normalizePhone } from '../customers/customers.service';
+import { OpenwaService } from '../openwa/openwa.service';
+import { extractPhoneFromWaId } from '../whatsapp-bot/wa-contact.util';
 import { ChatState } from '@prisma/client';
+import {
+  buildConversationId,
+  parseWaConversationId,
+  shortWaChatLabel,
+} from './wa-conversation.util';
 
 export type WaMessageSource = 'customer' | 'bot' | 'agent';
 
 export interface WaConversationSummary {
   chatId: string;
+  waChatId: string;
   contactPhone: string | null;
+  contactDisplayName: string | null;
   customerName: string | null;
   lastMessage: string;
   lastMessageAt: string;
@@ -22,10 +31,53 @@ export interface WaConversationSummary {
 
 @Injectable()
 export class WaMessageService {
+  private readonly logger = new Logger(WaMessageService.name);
+
   constructor(
     private prisma: PrismaService,
     private realtime: RealtimeService,
+    @Inject(forwardRef(() => OpenwaService))
+    private openwa: OpenwaService,
   ) {}
+
+  private canonicalWaChatId(chatId: string): string {
+    return parseWaConversationId(chatId).waChatId;
+  }
+
+  private conversationId(waChatId: string, waSessionId?: string | null): string {
+    return buildConversationId(waChatId, waSessionId);
+  }
+
+  private messageWhereForConversation(convId: string) {
+    const { waSessionId, waChatId } = parseWaConversationId(convId);
+    const or: Array<Record<string, unknown>> = [
+      { chatId: convId },
+      { chatId: waChatId },
+    ];
+    if (waSessionId) {
+      or.push({ chatId: waChatId, waSessionId });
+    }
+    return { OR: or };
+  }
+
+  private async upsertWaContactName(
+    waChatId: string,
+    waSessionId: string | null | undefined,
+    contactName?: string,
+  ) {
+    const name = contactName?.trim();
+    if (!name) return;
+    const stateKey = this.conversationId(waChatId, waSessionId);
+    await this.prisma.chatSession.upsert({
+      where: { chatId: stateKey },
+      create: {
+        chatId: stateKey,
+        waContactName: name,
+        state: ChatState.MENU_PRINCIPAL,
+      },
+      update: { waContactName: name },
+    });
+  }
 
   async logInbound(data: {
     chatId: string;
@@ -33,14 +85,16 @@ export class WaMessageService {
     fromMe?: boolean;
     waSessionId?: string;
     senderPhone?: string;
+    contactName?: string;
   }): Promise<void> {
+    const waChatId = this.canonicalWaChatId(data.chatId);
     const contactPhone = data.senderPhone
       ? normalizePhone(data.senderPhone)
-      : this.phoneFromChatId(data.chatId);
+      : extractPhoneFromWaId(waChatId);
 
     const msg = await this.prisma.waMessage.create({
       data: {
-        chatId: data.chatId,
+        chatId: waChatId,
         body: data.body,
         direction: 'IN',
         source: data.fromMe ? 'bot' : 'customer',
@@ -50,8 +104,11 @@ export class WaMessageService {
       },
     });
 
+    await this.upsertWaContactName(waChatId, data.waSessionId, data.contactName);
+
+    const convId = this.conversationId(waChatId, data.waSessionId);
     this.realtime.publish('message.received', {
-      chatId: data.chatId,
+      chatId: convId,
       messageId: msg.id,
       fromMe: data.fromMe ?? false,
     });
@@ -64,28 +121,40 @@ export class WaMessageService {
     waSessionId?: string;
     contactPhone?: string | null;
   }): Promise<void> {
+    const waChatId = this.canonicalWaChatId(data.chatId);
     const msg = await this.prisma.waMessage.create({
       data: {
-        chatId: data.chatId,
+        chatId: waChatId,
         body: data.body,
         direction: 'OUT',
         source: data.source,
         fromMe: true,
         waSessionId: data.waSessionId,
-        contactPhone: data.contactPhone ?? this.phoneFromChatId(data.chatId),
+        contactPhone: data.contactPhone ?? extractPhoneFromWaId(waChatId),
       },
     });
 
+    const convId = this.conversationId(waChatId, data.waSessionId);
     this.realtime.publish('message.sent', {
-      chatId: data.chatId,
+      chatId: convId,
       messageId: msg.id,
       source: data.source,
     });
   }
 
-  private phoneFromChatId(chatId: string): string | null {
-    const match = chatId.match(/^(\d+)@/);
-    return match ? match[1] : null;
+  private resolveDisplayName(
+    session: { waContactName?: string | null; customerName?: string | null } | null | undefined,
+    customerName: string | null,
+    phone: string | null,
+    waChatId: string,
+  ): string {
+    return (
+      session?.waContactName?.trim() ||
+      session?.customerName?.trim() ||
+      customerName?.trim() ||
+      (phone ? (phone.startsWith('+') ? phone : `+${phone}`) : null) ||
+      shortWaChatLabel(waChatId)
+    );
   }
 
   async listConversations(filter?: 'handoff' | 'orders'): Promise<WaConversationSummary[]> {
@@ -94,9 +163,10 @@ export class WaMessageService {
       take: 800,
     });
 
-    const lastByChat = new Map<string, (typeof recentMessages)[0]>();
+    const lastByConv = new Map<string, (typeof recentMessages)[0]>();
     for (const m of recentMessages) {
-      if (!lastByChat.has(m.chatId)) lastByChat.set(m.chatId, m);
+      const convId = this.conversationId(m.chatId, m.waSessionId);
+      if (!lastByConv.has(convId)) lastByConv.set(convId, m);
     }
 
     const sessions = await this.prisma.chatSession.findMany({
@@ -104,29 +174,52 @@ export class WaMessageService {
       take: 200,
     });
 
-    const chatIds = new Set<string>([
-      ...lastByChat.keys(),
-      ...sessions.map((s) => s.chatId),
-    ]);
-
     const sessionMap = new Map(sessions.map((s) => [s.chatId, s]));
+    const convIds = new Set<string>([...lastByConv.keys(), ...sessions.map((s) => s.chatId)]);
 
     const summaries: WaConversationSummary[] = [];
+    let enrichBudget = 8;
 
-    for (const chatId of chatIds) {
-      const last = lastByChat.get(chatId);
-      const session = sessionMap.get(chatId);
-      const phone =
+    for (const convId of convIds) {
+      const { waSessionId, waChatId } = parseWaConversationId(convId);
+      const last = lastByConv.get(convId);
+      const session = sessionMap.get(convId);
+
+      let phone =
         session?.customerPhone ??
         last?.contactPhone ??
-        this.phoneFromChatId(chatId);
+        extractPhoneFromWaId(waChatId);
 
-      let customerName = session?.customerName ?? null;
-      if (!customerName && phone) {
+      let customerName: string | null = null;
+      if (!session?.waContactName && phone) {
         const customer = await this.prisma.customer.findUnique({
           where: { phone: normalizePhone(phone) },
         });
         customerName = customer?.name ?? null;
+      }
+
+      let waContactName = session?.waContactName ?? null;
+      if (!waContactName && enrichBudget > 0 && waSessionId) {
+        enrichBudget -= 1;
+        try {
+          const resolved = await this.openwa.resolveContactName(waChatId, waSessionId);
+          if (resolved) {
+            waContactName = resolved;
+            await this.upsertWaContactName(waChatId, waSessionId, resolved);
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      if (!phone && waSessionId && waChatId.includes('@lid') && enrichBudget > 0) {
+        enrichBudget -= 1;
+        try {
+          const resolvedPhone = await this.openwa.resolveContactPhone(waChatId, waSessionId);
+          if (resolvedPhone) phone = normalizePhone(resolvedPhone);
+        } catch {
+          /* best-effort */
+        }
       }
 
       let hasNewOrder = false;
@@ -148,10 +241,18 @@ export class WaMessageService {
       if (filter === 'handoff' && !needsHandoff) continue;
       if (filter === 'orders' && !hasNewOrder) continue;
 
+      const displaySession = session
+        ? { ...session, waContactName: waContactName ?? session.waContactName }
+        : waContactName
+          ? { waContactName, customerName: null }
+          : null;
+
       summaries.push({
-        chatId,
+        chatId: convId,
+        waChatId,
         contactPhone: phone,
-        customerName,
+        contactDisplayName: this.resolveDisplayName(displaySession, customerName, phone, waChatId),
+        customerName: session?.customerName ?? customerName,
         lastMessage: last?.body ?? '(sin mensajes)',
         lastMessageAt: (last?.createdAt ?? session?.lastInteractionAt ?? new Date()).toISOString(),
         lastDirection: last?.direction ?? 'IN',
@@ -170,11 +271,11 @@ export class WaMessageService {
     return summaries.slice(0, 100);
   }
 
-  async listMessages(chatId: string, limit = 50, before?: string) {
-    const decoded = decodeURIComponent(chatId);
+  async listMessages(convId: string, limit = 50, before?: string) {
+    const decoded = decodeURIComponent(convId);
     return this.prisma.waMessage.findMany({
       where: {
-        chatId: decoded,
+        ...this.messageWhereForConversation(decoded),
         ...(before ? { createdAt: { lt: new Date(before) } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -182,22 +283,46 @@ export class WaMessageService {
     });
   }
 
-  async getConversationMeta(chatId: string) {
-    const decoded = decodeURIComponent(chatId);
-    const session = await this.prisma.chatSession.findUnique({
+  async getConversationMeta(convId: string) {
+    const decoded = decodeURIComponent(convId);
+    const { waSessionId, waChatId } = parseWaConversationId(decoded);
+
+    let session = await this.prisma.chatSession.findUnique({
       where: { chatId: decoded },
     });
-    const phone =
-      session?.customerPhone ?? this.phoneFromChatId(decoded);
+    if (!session && waSessionId) {
+      session = await this.prisma.chatSession.findUnique({
+        where: { chatId: buildConversationId(waChatId, waSessionId) },
+      });
+    }
+
+    let phone = session?.customerPhone ?? extractPhoneFromWaId(waChatId);
+    if (!phone && waSessionId && waChatId.includes('@lid')) {
+      const resolved = await this.openwa.resolveContactPhone(waChatId, waSessionId);
+      if (resolved) phone = normalizePhone(resolved);
+    }
+
+    if (!session?.waContactName && waSessionId) {
+      const resolvedName = await this.openwa.resolveContactName(waChatId, waSessionId);
+      if (resolvedName) {
+        await this.upsertWaContactName(waChatId, waSessionId, resolvedName);
+        session = await this.prisma.chatSession.findUnique({
+          where: { chatId: buildConversationId(waChatId, waSessionId) },
+        });
+      }
+    }
+
     const customer = phone
       ? await this.prisma.customer.findUnique({
           where: { phone: normalizePhone(phone) },
         })
       : null;
+
     const openOrder = phone
       ? await this.prisma.order.findFirst({
           where: {
             OR: [
+              { chatId: waChatId },
               { chatId: decoded },
               { customerPhone: { contains: phone.slice(-9) } },
             ],
@@ -207,11 +332,26 @@ export class WaMessageService {
         })
       : null;
 
+    const contactDisplayName = this.resolveDisplayName(
+      session,
+      customer?.name ?? null,
+      phone,
+      waChatId,
+    );
+
     return {
       chatId: decoded,
+      waChatId,
+      contactDisplayName,
       session,
       customer,
       openOrder,
     };
+  }
+
+  resolveSendTarget(convId: string) {
+    const decoded = decodeURIComponent(convId);
+    const { waSessionId, waChatId } = parseWaConversationId(decoded);
+    return { waChatId, waSessionId: waSessionId ?? undefined };
   }
 }
