@@ -14,7 +14,7 @@ export default function InventoryPage() {
   const [movements, setMovements] = useState<any[]>([]);
   const [tab, setTab] = useState<Tab>('stock');
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [liveConnected, setLiveConnected] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
 
   const loadAll = useCallback(() => {
     Promise.all([
@@ -40,7 +40,6 @@ export default function InventoryPage() {
   useRealtime(
     useCallback(
       (event) => {
-        setLiveConnected(true);
         if (
           event.type === 'stock.changed' ||
           event.type === 'cart.hold.updated' ||
@@ -52,6 +51,7 @@ export default function InventoryPage() {
       },
       [loadAll],
     ),
+    { onStatus: setLiveStatus },
   );
 
   return (
@@ -59,9 +59,29 @@ export default function InventoryPage() {
       <div className="flex flex-wrap gap-3 justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Inventario</h1>
         <div className="text-sm text-gray-500 flex items-center gap-3">
-          <span className={`inline-flex items-center gap-1 ${liveConnected ? 'text-green-600' : 'text-gray-400'}`}>
-            <span className={`w-2 h-2 rounded-full ${liveConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
-            {liveConnected ? 'En vivo' : 'Conectando…'}
+          <span
+            className={`inline-flex items-center gap-1 ${
+              liveStatus === 'connected'
+                ? 'text-green-600'
+                : liveStatus === 'disconnected'
+                  ? 'text-amber-600'
+                  : 'text-gray-400'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                liveStatus === 'connected'
+                  ? 'bg-green-500 animate-pulse'
+                  : liveStatus === 'disconnected'
+                    ? 'bg-amber-400'
+                    : 'bg-gray-300'
+              }`}
+            />
+            {liveStatus === 'connected'
+              ? 'En vivo'
+              : liveStatus === 'disconnected'
+                ? 'Sin conexión en vivo'
+                : 'Conectando…'}
           </span>
           {lastUpdate && (
             <span>Actualizado: {lastUpdate.toLocaleTimeString()}</span>

@@ -1,7 +1,8 @@
 import { Controller, Sse, Query, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
-import { Observable, map } from 'rxjs';
+import { Observable, interval, merge, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { RealtimeService } from './realtime.service';
 import { Public } from '../auth/decorators/public.decorator';
 
@@ -24,8 +25,10 @@ export class EventsController {
       throw new UnauthorizedException('invalid token');
     }
 
-    return this.realtime.events$.pipe(
-      map((event) => ({ data: event }) as MessageEvent),
-    );
+    return merge(
+      of({ type: 'connected', at: new Date().toISOString() }),
+      interval(25_000).pipe(map(() => ({ type: 'ping', at: new Date().toISOString() }))),
+      this.realtime.events$,
+    ).pipe(map((event) => ({ data: event }) as MessageEvent));
   }
 }
