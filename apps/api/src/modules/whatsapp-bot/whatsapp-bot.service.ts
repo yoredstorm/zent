@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AsyncLocalStorage } from 'async_hooks';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -6,6 +6,8 @@ import { OpenwaService } from '../openwa/openwa.service';
 import { CartService } from './cart.service';
 import { ChatSessionService } from './chat-session.service';
 import { CustomersService, normalizePhone } from '../customers/customers.service';
+import { OrdersService } from '../orders/orders.service';
+import { StockReservationService } from '../inventory/stock-reservation.service';
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
@@ -57,6 +59,8 @@ export class WhatsappBotService {
     private cart: CartService,
     private chatSession: ChatSessionService,
     private customers: CustomersService,
+    private orders: OrdersService,
+    private stock: StockReservationService,
     private config: ConfigService,
   ) {}
 
@@ -317,14 +321,40 @@ export class WhatsappBotService {
     await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
   }
 
+  /** Productos con stock disponible (físico menos reservas de pedidos pendientes). */
+  private async getProductsWithAvailability(categoryId?: string) {
+    const products = await this.prisma.product.findMany({
+      where: {
+        ...(categoryId ? { categoryId } : {}),
+        isActive: true,
+      },
+      orderBy: { nombre: 'asc' },
+      include: { images: { orderBy: { orden: 'asc' } } },
+    });
+
+    const available: Array<(typeof products)[number] & { availableStock: number }> = [];
+    for (const product of products) {
+      const availableStock = await this.stock.getAvailableStock(product.id);
+      if (availableStock > 0) {
+        available.push({ ...product, availableStock });
+      }
+    }
+    return available;
+  }
+
   private async mostrarCategorias() {
     const categories = await this.prisma.category.findMany({
       where: { isActive: true },
-      include: { products: { where: { isActive: true, stock: { gt: 0 } } } },
       orderBy: { orden: 'asc' },
     });
 
-    const withProducts = categories.filter((c) => c.products.length > 0);
+    const withProducts: { id: string; nombre: string; count: number }[] = [];
+    for (const cat of categories) {
+      const products = await this.getProductsWithAvailability(cat.id);
+      if (products.length > 0) {
+        withProducts.push({ id: cat.id, nombre: cat.nombre, count: products.length });
+      }
+    }
     if (withProducts.length === 0) {
       await this.txt('No hay productos disponibles en este momento.');
       await this.showMainMenu();
@@ -333,7 +363,7 @@ export class WhatsappBotService {
 
     let msg = '📂 *Categorías disponibles:*\n\n';
     withProducts.forEach((cat, i) => {
-      msg += `${i + 1}️⃣ ${cat.nombre} (${cat.products.length} productos)\n`;
+      msg += `${i + 1}️⃣ ${cat.nombre} (${cat.count} productos)\n`;
     });
     msg += '\nEscribe el número de la categoría:';
 
@@ -349,11 +379,14 @@ export class WhatsappBotService {
 
     const categories = await this.prisma.category.findMany({
       where: { isActive: true },
-      include: { products: { where: { isActive: true, stock: { gt: 0 } } } },
       orderBy: { orden: 'asc' },
     });
 
-    const withProducts = categories.filter((c) => c.products.length > 0);
+    const withProducts: typeof categories = [];
+    for (const cat of categories) {
+      const products = await this.getProductsWithAvailability(cat.id);
+      if (products.length > 0) withProducts.push(cat);
+    }
     const index = parseInt(text) - 1;
 
     if (isNaN(index) || index < 0 || index >= withProducts.length) {
@@ -365,10 +398,7 @@ export class WhatsappBotService {
   }
 
   private async mostrarProductosCategoria(categoryId: string) {
-    const products = await this.prisma.product.findMany({
-      where: { categoryId, isActive: true, stock: { gt: 0 } },
-      orderBy: { nombre: 'asc' },
-    });
+    const products = await this.getProductsWithAvailability(categoryId);
 
     if (products.length === 0) {
       await this.txt('No hay productos disponibles en esta categoría.');
@@ -387,7 +417,7 @@ export class WhatsappBotService {
 
     let msg = '📦 *Productos disponibles:*\n\n';
     products.forEach((p, i) => {
-      msg += `${formatKeycap(i + 1)} ${p.nombre} — S/ ${p.salePrice}${this.lowStockHint(p.stock, p.minStock)}\n`;
+      msg += `${formatKeycap(i + 1)} ${p.nombre} — S/ ${p.salePrice}${this.lowStockHint(p.availableStock, p.minStock)}\n`;
     });
     const exampleIdx = products.length > 1 ? 2 : 1;
     msg +=
@@ -510,10 +540,11 @@ export class WhatsappBotService {
 
     await this.saveBrowseContext({ ...ctx, viewingProductIndex: index, awaitPostAddMenu: undefined });
 
+    const availableStock = await this.stock.getAvailableStock(product.id);
     const caption =
       `*${product.nombre}*\n` +
       `💰 Precio: S/ ${product.salePrice}\n` +
-      (product.stock <= product.minStock ? `⚠️ *¡Quedan pocas unidades!*\n` : '') +
+      (availableStock <= product.minStock ? `⚠️ *¡Quedan pocas unidades!* (${availableStock} disp.)\n` : '') +
       (product.descripcion ? `📝 ${product.descripcion}\n` : '') +
       `\n¿Cuántas unidades deseas?\n` +
       `Escribe la *cantidad* (ej: *3*)\n\n` +
@@ -539,8 +570,19 @@ export class WhatsappBotService {
       await this.txt('Producto no encontrado.');
       return;
     }
-    if (product.stock < quantity) {
-      await this.txt(`Solo hay ${product.stock} unidades disponibles.`);
+
+    const cart = await this.cart.getCart(this.c.stateKey);
+    const inCart = cart.items.find((i) => i.productId === product.id)?.quantity ?? 0;
+    const available = await this.stock.getAvailableStock(product.id);
+    const canAdd = available - inCart;
+
+    if (canAdd < quantity) {
+      const hint = inCart > 0 ? ` (${inCart} ya en tu carrito)` : '';
+      await this.txt(
+        canAdd <= 0
+          ? `No hay unidades disponibles de *${product.nombre}* en este momento.${hint}`
+          : `Solo puedes agregar ${canAdd} unidad(es) de *${product.nombre}*.${hint}`,
+      );
       return;
     }
 
@@ -824,51 +866,34 @@ export class WhatsappBotService {
     reference?: string;
   }) {
     const cart = await this.cart.getCart(this.c.stateKey);
+    if (cart.items.length === 0) {
+      await this.txt('Tu carrito está vacío.');
+      return;
+    }
+
     const customer = await this.customers.upsertFromOrder(data);
 
-    const order = await this.prisma.order.create({
-      data: {
-        customerId: customer.id,
+    let order;
+    try {
+      order = await this.orders.create({
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         address: data.address,
         reference: data.reference,
+        customerId: customer.id,
         chatId: this.c.chatId,
-        subtotal: cart.subtotal,
-        total: cart.total,
         source: 'WHATSAPP',
-        status: 'NUEVO',
-        items: {
-          create: cart.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            requestedQuantity: item.quantity,
-            unitPrice: item.unitPrice,
-            costAtSale: item.costAtSale,
-          })),
-        },
-      },
-    });
-
-    for (const item of cart.items) {
-      const product = await this.prisma.product.findUnique({ where: { id: item.productId } });
-      const newStock = (product?.stock ?? 0) - item.quantity;
-      await this.prisma.product.update({
-        where: { id: item.productId },
-        data: {
-          stock: { decrement: item.quantity },
-          isOutOfStock: newStock <= 0,
-        },
-      });
-      await this.prisma.inventoryMovement.create({
-        data: {
+        items: cart.items.map((item) => ({
           productId: item.productId,
-          type: 'OUT',
           quantity: item.quantity,
-          reason: `Pedido WhatsApp ${order.id}`,
-          orderId: order.id,
-        },
+          unitPrice: item.unitPrice,
+          costAtSale: item.costAtSale,
+        })),
       });
+    } catch (err) {
+      const msg = err instanceof BadRequestException ? err.message : 'No se pudo registrar el pedido.';
+      await this.txt(`❌ ${msg}\n\nRevisa tu carrito o escribe *menu* para ver otras opciones.`);
+      return;
     }
 
     const summaryLines = cart.items.map((i) => `• ${i.quantity}x ${i.nombre}`).join('\n');
@@ -883,11 +908,12 @@ export class WhatsappBotService {
 
     await this.txt(
       `✅ ¡Pedido #${order.id.slice(0, 8)} registrado!\n\n` +
-        '📋 *Resumen final:*\n' +
+        '📋 *Resumen:*\n' +
         summaryLines +
         `\n💰 Total: S/ ${totalStr}\n\n` +
-        'Un asesor te contactará pronto para coordinar el envío 🚚\n\n' +
-        'Gracias por tu compra 🙏\n\nEscribe *menu* para un nuevo pedido.',
+        '⏳ *Pendiente de aceptación* por un asesor. Las unidades quedan reservadas hasta que confirmemos tu pedido.\n\n' +
+        'Te avisaremos cuando esté confirmado y en camino 🚚\n\n' +
+        'Escribe *menu* para un nuevo pedido.',
     );
   }
 

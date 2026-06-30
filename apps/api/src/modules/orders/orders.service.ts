@@ -4,6 +4,7 @@ import { OrderSource, OrderStatus } from '@prisma/client';
 import { UpdateOrderStatusDto, CreateOrderDto, UpdateOrderItemsDto } from './dto/order.dto';
 import { OpenwaService } from '../openwa/openwa.service';
 import { CustomersService } from '../customers/customers.service';
+import { StockReservationService } from '../inventory/stock-reservation.service';
 import { buildStatusNotifyMessage } from './order-notify.util';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private openwa: OpenwaService,
     private customers: CustomersService,
+    private stock: StockReservationService,
   ) {}
 
   async findAll(filters?: { status?: string; source?: string }) {
@@ -56,11 +58,6 @@ export class OrdersService {
       if (!product || !product.isActive) {
         throw new BadRequestException(`Producto no encontrado: ${item.productId}`);
       }
-      if (product.stock < item.quantity) {
-        throw new BadRequestException(
-          `Stock insuficiente para "${product.nombre}": hay ${product.stock}, pediste ${item.quantity}`,
-        );
-      }
       lineItems.push({
         productId: product.id,
         quantity: item.quantity,
@@ -69,6 +66,8 @@ export class OrdersService {
         nombre: product.nombre,
       });
     }
+
+    await this.stock.assertOrderItemsAvailable(lineItems);
 
     let customerId = dto.customerId;
     if (!customerId) {
@@ -81,22 +80,25 @@ export class OrdersService {
       customerId = customer.id;
     }
 
-    const order = await this.create({
-      customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      address: dto.address,
-      reference: dto.reference,
-      customerId,
-      chatId: dto.chatId,
-      notes: dto.notes,
-      source: 'DASHBOARD',
-      items: lineItems.map(({ productId, quantity, unitPrice, costAtSale }) => ({
-        productId,
-        quantity,
-        unitPrice,
-        costAtSale,
-      })),
-    });
+    const order = await this.create(
+      {
+        customerName: dto.customerName,
+        customerPhone: dto.customerPhone,
+        address: dto.address,
+        reference: dto.reference,
+        customerId,
+        chatId: dto.chatId,
+        notes: dto.notes,
+        source: 'DASHBOARD',
+        items: lineItems.map(({ productId, quantity, unitPrice, costAtSale }) => ({
+          productId,
+          quantity,
+          unitPrice,
+          costAtSale,
+        })),
+      },
+      { commitStock: true, status: 'CONFIRMADO' },
+    );
 
     if (dto.chatId) {
       try {
@@ -117,19 +119,25 @@ export class OrdersService {
     return this.findOne(order.id);
   }
 
-  async create(data: {
-    customerName: string;
-    customerPhone: string;
-    address?: string;
-    reference?: string;
-    customerId?: string;
-    chatId?: string;
-    notes?: string;
-    source?: OrderSource;
-    items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
-  }) {
+  async create(
+    data: {
+      customerName: string;
+      customerPhone: string;
+      address?: string;
+      reference?: string;
+      customerId?: string;
+      chatId?: string;
+      notes?: string;
+      source?: OrderSource;
+      items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
+    },
+    options?: { commitStock?: boolean; status?: OrderStatus },
+  ) {
+    await this.stock.assertOrderItemsAvailable(data.items);
+
     const subtotal = data.items.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
     const total = subtotal;
+    const status = options?.status ?? 'NUEVO';
 
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
@@ -144,7 +152,8 @@ export class OrdersService {
           subtotal,
           total,
           source: data.source ?? 'WHATSAPP',
-          status: 'NUEVO',
+          status,
+          stockCommitted: false,
           items: {
             create: data.items.map((item) => ({
               productId: item.productId,
@@ -158,25 +167,8 @@ export class OrdersService {
         include: { items: true },
       });
 
-      for (const item of data.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        const newStock = (product?.stock ?? 0) - item.quantity;
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: { decrement: item.quantity },
-            isOutOfStock: newStock <= 0,
-          },
-        });
-        await tx.inventoryMovement.create({
-          data: {
-            productId: item.productId,
-            type: 'OUT',
-            quantity: item.quantity,
-            reason: `Pedido ${order.id}`,
-            orderId: order.id,
-          },
-        });
+      if (options?.commitStock) {
+        await this.stock.commitOrderStock(order.id, tx);
       }
 
       return order;
@@ -202,11 +194,21 @@ export class OrdersService {
         const delta = line.quantity - existing.quantity;
         if (delta === 0) continue;
 
-        if (delta > 0) {
+        if (order.stockCommitted) {
+          if (delta > 0) {
+            const product = await tx.product.findUnique({ where: { id: existing.productId } });
+            if ((product?.stock ?? 0) < delta) {
+              throw new BadRequestException(
+                `Stock insuficiente para ajustar "${product?.nombre ?? existing.productId}"`,
+              );
+            }
+          }
+        } else if (delta > 0) {
           const product = await tx.product.findUnique({ where: { id: existing.productId } });
-          if ((product?.stock ?? 0) < delta) {
+          const available = await this.stock.getAvailableStock(existing.productId, id);
+          if (line.quantity > available) {
             throw new BadRequestException(
-              `Stock insuficiente para ajustar "${product?.nombre ?? existing.productId}"`,
+              `Stock insuficiente para ajustar "${product?.nombre ?? existing.productId}": disponible ${available}`,
             );
           }
         }
@@ -219,7 +221,7 @@ export class OrdersService {
           },
         });
 
-        if (delta !== 0) {
+        if (order.stockCommitted && delta !== 0) {
           const product = await tx.product.findUnique({ where: { id: existing.productId } });
           const stockAfter = (product?.stock ?? 0) - delta;
           await tx.product.update({
@@ -261,19 +263,32 @@ export class OrdersService {
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto) {
     const previous = await this.findOne(id);
+    const nextStatus = dto.status ?? previous.status;
 
-    const order = await this.prisma.order.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        ...(dto.deliveryCost !== undefined && { deliveryCost: dto.deliveryCost }),
-        ...(dto.paymentMethod && { paymentMethod: dto.paymentMethod }),
-        ...(dto.notes && { notes: dto.notes }),
-        ...(dto.deliveryCost !== undefined && {
-          total: Number(previous.subtotal) + dto.deliveryCost,
-        }),
-      },
-      include: { items: { include: { product: true } } },
+    const order = await this.prisma.$transaction(async (tx) => {
+      if (
+        this.stock.shouldRestoreStock(previous.status, nextStatus, previous.stockCommitted)
+      ) {
+        await this.stock.restoreOrderStock(id, tx);
+      }
+
+      if (this.stock.shouldCommitStock(previous.status, nextStatus, previous.stockCommitted)) {
+        await this.stock.commitOrderStock(id, tx);
+      }
+
+      return tx.order.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          ...(dto.deliveryCost !== undefined && { deliveryCost: dto.deliveryCost }),
+          ...(dto.paymentMethod && { paymentMethod: dto.paymentMethod }),
+          ...(dto.notes && { notes: dto.notes }),
+          ...(dto.deliveryCost !== undefined && {
+            total: Number(previous.subtotal) + dto.deliveryCost,
+          }),
+        },
+        include: { items: { include: { product: true } } },
+      });
     });
 
     if (dto.status && dto.status !== previous.status) {

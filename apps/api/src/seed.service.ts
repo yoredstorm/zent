@@ -43,6 +43,27 @@ export class SeedService implements OnApplicationBootstrap {
       } else {
         this.logger.log(`Admin already exists: ${email}`);
       }
+
+      const legacyOrders = await this.prisma.order.findMany({
+        where: { stockCommitted: false, status: { not: 'CANCELADO' } },
+        select: { id: true },
+      });
+      let migrated = 0;
+      for (const order of legacyOrders) {
+        const outMoves = await this.prisma.inventoryMovement.count({
+          where: { orderId: order.id, type: 'OUT' },
+        });
+        if (outMoves > 0) {
+          await this.prisma.order.update({
+            where: { id: order.id },
+            data: { stockCommitted: true },
+          });
+          migrated++;
+        }
+      }
+      if (migrated > 0) {
+        this.logger.log(`Migrated ${migrated} legacy orders to stockCommitted=true`);
+      }
     } catch (err: any) {
       const detail = err?.stderr?.toString?.() || err?.message || String(err);
       this.logger.error(`Bootstrap failed: ${detail}`);

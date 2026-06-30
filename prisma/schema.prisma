@@ -137,6 +137,7 @@ model Order {
   chatId         String?
   status         OrderStatus @default(NUEVO)
   source         OrderSource @default(WHATSAPP)
+  stockCommitted Boolean     @default(false)
   subtotal       Decimal     @db.Decimal(10, 2)
   total          Decimal     @db.Decimal(10, 2)
   deliveryCost   Decimal?    @db.Decimal(10, 2)

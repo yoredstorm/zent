@@ -3,9 +3,10 @@ import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { OpenwaModule } from '../openwa/openwa.module';
 import { CustomersModule } from '../customers/customers.module';
+import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
-  imports: [forwardRef(() => OpenwaModule), CustomersModule],
+  imports: [forwardRef(() => OpenwaModule), CustomersModule, InventoryModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],
