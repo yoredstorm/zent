@@ -8,13 +8,19 @@ export type { CartItem, Cart } from './cart.types';
 @Injectable()
 export class CartService {
   private redis: Redis;
-  private readonly TTL = 48 * 60 * 60;
+  private readonly ttlSeconds: number;
 
   constructor(private config: ConfigService) {
     this.redis = new Redis({
       host: this.config.get('REDIS_HOST', 'localhost'),
       port: parseInt(this.config.get('REDIS_PORT', '6379')),
     });
+    const ttlMinutes = parseInt(this.config.get('CART_HOLD_TTL_MINUTES', '30'), 10);
+    this.ttlSeconds = Math.max(60, ttlMinutes * 60);
+  }
+
+  getTtlSeconds(): number {
+    return this.ttlSeconds;
   }
 
   async getCart(chatId: string): Promise<Cart> {
@@ -33,7 +39,7 @@ export class CartService {
     }
     cart.subtotal = cart.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
     cart.total = cart.subtotal;
-    await this.redis.setex(`cart:${chatId}`, this.TTL, JSON.stringify(cart));
+    await this.redis.setex(`cart:${chatId}`, this.ttlSeconds, JSON.stringify(cart));
     return cart;
   }
 
@@ -42,7 +48,7 @@ export class CartService {
     cart.items = cart.items.filter(i => i.productId !== productId);
     cart.subtotal = cart.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
     cart.total = cart.subtotal;
-    await this.redis.setex(`cart:${chatId}`, this.TTL, JSON.stringify(cart));
+    await this.redis.setex(`cart:${chatId}`, this.ttlSeconds, JSON.stringify(cart));
     return cart;
   }
 
@@ -61,7 +67,7 @@ export class CartService {
     }
     cart.subtotal = cart.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
     cart.total = cart.subtotal;
-    await this.redis.setex(`cart:${chatId}`, this.TTL, JSON.stringify(cart));
+    await this.redis.setex(`cart:${chatId}`, this.ttlSeconds, JSON.stringify(cart));
     return cart;
   }
 }

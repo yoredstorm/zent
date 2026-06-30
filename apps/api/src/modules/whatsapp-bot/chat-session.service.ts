@@ -21,6 +21,11 @@ export class ChatSessionService {
     return session;
   }
 
+  /** Lee sesión sin actualizar lastInteractionAt (para detectar inactividad). */
+  async peek(chatId: string) {
+    return this.prisma.chatSession.findUnique({ where: { chatId } });
+  }
+
   async updateState(chatId: string, state: ChatState, extra?: Record<string, any>) {
     return this.prisma.chatSession.update({
       where: { chatId },

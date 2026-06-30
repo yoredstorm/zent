@@ -9,6 +9,7 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
   private readonly logger = new Logger(CartExpiryReminderService.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private isWorker = false;
 
   constructor(
     private config: ConfigService,
@@ -17,14 +18,12 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
   ) {}
 
   onModuleInit() {
-    if (this.config.get('WORKER_MODE', '') !== 'true') {
-      this.logger.log('Cart expiry reminders disabled (not bot-worker)');
-      return;
-    }
-
+    this.isWorker = this.config.get('WORKER_MODE', '') === 'true';
     const intervalMs = parseInt(this.config.get('CART_EXPIRY_CHECK_INTERVAL_SEC', '60'), 10) * 1000;
     this.timer = setInterval(() => void this.tick(), Math.max(15_000, intervalMs));
-    this.logger.log(`Cart expiry reminders enabled (every ${Math.max(15, intervalMs / 1000)}s)`);
+    this.logger.log(
+      `Cart expiry service started (worker=${this.isWorker}, every ${Math.max(15, intervalMs / 1000)}s)`,
+    );
     void this.tick();
   }
 
@@ -44,8 +43,10 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
     if (this.running) return;
     this.running = true;
     try {
+      await this.purgeOrphaned();
+      if (!this.isWorker) return;
       await this.sendExpiryWarnings();
-      await this.sendExpiredNotices();
+      await this.purgeExpiredAndNotify();
     } catch (err) {
       this.logger.warn(`Cart expiry tick failed: ${err}`);
     } finally {
@@ -85,7 +86,7 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
     }
   }
 
-  private async sendExpiredNotices() {
+  private async purgeExpiredAndNotify() {
     const expired = await this.cartHold.listExpiredNotifyMetas();
     for (const meta of expired) {
       const { waSessionId } = parseWaConversationId(meta.stateKey);
@@ -110,6 +111,13 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
       } finally {
         await this.cartHold.clearExpiredCart(meta.stateKey);
       }
+    }
+  }
+
+  private async purgeOrphaned() {
+    const count = await this.cartHold.purgeOrphanedCarts();
+    if (count > 0) {
+      this.logger.log(`Purged ${count} orphaned cart(s) (hold expired, cart remained)`);
     }
   }
 }

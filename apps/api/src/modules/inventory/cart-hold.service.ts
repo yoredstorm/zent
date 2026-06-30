@@ -161,6 +161,40 @@ export class CartHoldService implements OnModuleInit {
 
   async clearExpiredCart(stateKey: string): Promise<void> {
     await this.redis.del(this.metaKey(stateKey), this.cartKey(stateKey));
+    this.onChange?.(stateKey);
+  }
+
+  /** Carritos Redis sin reserva activa (hold expiró pero cart quedó). */
+  async listOrphanedCartStateKeys(): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await this.redis.scan(cursor, 'MATCH', `${this.cartKeyPrefix}*`, 'COUNT', 100);
+      cursor = next;
+      keys.push(...batch);
+    } while (cursor !== '0');
+
+    const orphaned: string[] = [];
+    for (const key of keys) {
+      if (key.startsWith(this.keyPrefix) || key.startsWith(this.metaPrefix)) continue;
+      const stateKey = key.slice(this.cartKeyPrefix.length);
+      if (!stateKey) continue;
+      const data = await this.redis.get(key);
+      if (!data) continue;
+      const parsed = JSON.parse(data) as Cart;
+      if (!parsed.items?.length) continue;
+      const holdExists = await this.redis.exists(this.key(stateKey));
+      if (!holdExists) orphaned.push(stateKey);
+    }
+    return orphaned;
+  }
+
+  async purgeOrphanedCarts(): Promise<number> {
+    const keys = await this.listOrphanedCartStateKeys();
+    for (const stateKey of keys) {
+      await this.clearExpiredCart(stateKey);
+    }
+    return keys.length;
   }
 
   async release(stateKey: string): Promise<void> {

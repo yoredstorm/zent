@@ -83,6 +83,41 @@ export class WhatsappBotService {
     });
   }
 
+  /** Tras expiración del hold o inactividad: vacía carrito, libera stock y reinicia bot. */
+  private async resetShoppingSession() {
+    await this.cart.clearCart(this.c.stateKey);
+    await this.cartHold.release(this.c.stateKey);
+    await this.cartHold.clearExpiredCart(this.c.stateKey);
+    await this.chatSession.updateContext(this.c.stateKey, null);
+    await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL, { cartJson: null });
+  }
+
+  /**
+   * Si el hold expiró pero el carrito Redis quedó, o pasó el TTL sin escribir,
+   * limpia todo antes de procesar el mensaje.
+   */
+  private async ensureSessionFresh(): Promise<'expired' | 'idle' | null> {
+    const session = await this.chatSession.peek(this.c.stateKey);
+    if (!session) return null;
+
+    const ttlMs = this.cartHold.getTtlSeconds() * 1000;
+    const idleMs = Date.now() - session.lastInteractionAt.getTime();
+    const cart = await this.cart.getCart(this.c.stateKey);
+    const hold = await this.cartHold.getHold(this.c.stateKey);
+    const cartOrphaned = cart.items.length > 0 && !hold;
+    const idleExpired = idleMs > ttlMs && session.state !== ChatState.PEDIDO_CREADO;
+
+    if (cartOrphaned) {
+      await this.resetShoppingSession();
+      return 'expired';
+    }
+    if (idleExpired) {
+      await this.resetShoppingSession();
+      return 'idle';
+    }
+    return null;
+  }
+
   async runAction(action: BotPluginAction, ctx: BotActionContext): Promise<void> {
     const stateKey = ctx.sessionId ? `${ctx.sessionId}::${ctx.chatId}` : ctx.chatId;
     let contactPhone = resolvePhoneFromIds(ctx.chatId, ctx.from, ctx.senderPhone);
@@ -224,16 +259,30 @@ export class WhatsappBotService {
   }
 
   private async processMessage(body: string) {
-    const session = await this.chatSession.getOrCreate(this.c.stateKey);
     const text = body.trim().toLowerCase();
+    const staleReason = await this.ensureSessionFresh();
+
+    const session = await this.chatSession.getOrCreate(this.c.stateKey);
+
+    const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
+    const isGreeting = greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0';
+
+    if (staleReason && !isGreeting) {
+      await this.txt(
+        staleReason === 'expired'
+          ? '⏱️ Tu carrito anterior expiró y el stock ya no está reservado. Empecemos de nuevo 👇'
+          : '⏱️ Pasó mucho tiempo sin actividad. Empecemos de nuevo 👇',
+      );
+      await this.showMainMenu();
+      return;
+    }
 
     if (text === 'asesor' || text === 'humano' || text === 'agente') {
       await this.handoffHumano();
       return;
     }
 
-    const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
-    if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
+    if (isGreeting) {
       await this.showMainMenu();
       return;
     }
@@ -624,8 +673,17 @@ export class WhatsappBotService {
   }
 
   private async mostrarCarrito() {
+    let cart = await this.cart.getCart(this.c.stateKey);
+    const hold = await this.cartHold.getHold(this.c.stateKey);
+    if (cart.items.length > 0 && !hold) {
+      await this.resetShoppingSession();
+      await this.txt('⏱️ Tu carrito expiró. Escribe *menu* para empezar de nuevo.');
+      await this.showMainMenu();
+      return;
+    }
+
     await this.syncCartHold();
-    const cart = await this.cart.getCart(this.c.stateKey);
+    cart = await this.cart.getCart(this.c.stateKey);
     if (cart.items.length === 0) {
       await this.txt('🛒 Tu carrito está vacío.\n\nEscribe *menu* para ver productos.');
       await this.showMainMenu();
