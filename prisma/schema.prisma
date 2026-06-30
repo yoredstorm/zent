@@ -190,6 +190,11 @@ model WaMessage {
   fromMe       Boolean  @default(false)
   waSessionId  String?
   contactPhone String?
+  messageType  String   @default("text")
+  mediaUrl     String?
+  mimeType     String?
+  caption      String?  @db.Text
+  waMessageId  String?  @unique
   createdAt    DateTime @default(now())
 
   @@index([chatId, createdAt])

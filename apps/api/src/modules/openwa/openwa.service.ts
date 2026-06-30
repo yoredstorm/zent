@@ -22,6 +22,7 @@ interface SendImagePayload {
   image: { url?: string; base64?: string; mimetype?: string };
   caption?: string;
   sessionId?: string;
+  source?: 'bot' | 'agent';
 }
 
 interface SendDocumentPayload {
@@ -29,6 +30,23 @@ interface SendDocumentPayload {
   document: { url?: string; base64?: string; mimetype?: string; filename?: string };
   caption?: string;
   sessionId?: string;
+  source?: 'bot' | 'agent';
+}
+
+export interface OpenWaChatMessage {
+  id?: string;
+  from?: string;
+  body?: string;
+  text?: string;
+  type?: string;
+  fromMe?: boolean;
+  hasMedia?: boolean;
+  caption?: string;
+  mediaUrl?: string;
+  mimetype?: string;
+  mimeType?: string;
+  timestamp?: string;
+  media?: { url?: string; mimetype?: string; mimeType?: string };
 }
 
 const ACTIVE_SESSION_STATUSES = new Set(['ready', 'connected', 'authenticating']);
@@ -259,6 +277,25 @@ export class OpenwaService {
     }
   }
 
+  async getChatMessages(
+    sessionId: string,
+    chatId: string,
+    opts?: { limit?: number; before?: string },
+  ): Promise<OpenWaChatMessage[]> {
+    const encoded = encodeURIComponent(chatId);
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.before) params.set('before', opts.before);
+    const qs = params.toString();
+    const path = `/api/sessions/${sessionId}/chats/${encoded}/messages${qs ? `?${qs}` : ''}`;
+    const result = await this.request<OpenWaChatMessage[] | { data: OpenWaChatMessage[] }>(path);
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray((result as { data: OpenWaChatMessage[] }).data)) {
+      return (result as { data: OpenWaChatMessage[] }).data;
+    }
+    return [];
+  }
+
   async sendText(payload: SendTextPayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
     await this.request(`/api/sessions/${sessionId}/messages/send-text`, 'POST', {
@@ -283,6 +320,20 @@ export class OpenwaService {
     const body = this.buildMediaBody(payload.chatId, payload.image, payload.caption);
     await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', body);
     this.logger.debug(`Sent image to ${payload.chatId} via session ${sessionId}`);
+    try {
+      await this.waMessages.logOutbound({
+        chatId: payload.chatId,
+        body: payload.caption?.trim() || '[imagen]',
+        source: payload.source ?? 'bot',
+        waSessionId: sessionId,
+        messageType: 'image',
+        mediaUrl: payload.image.url,
+        mimeType: payload.image.mimetype,
+        caption: payload.caption,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to log outbound WA image: ${err}`);
+    }
   }
 
   async sendDocument(payload: SendDocumentPayload): Promise<void> {
@@ -290,6 +341,20 @@ export class OpenwaService {
     const body = this.buildMediaBody(payload.chatId, payload.document, payload.caption);
     await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', body);
     this.logger.debug(`Sent document to ${payload.chatId} via session ${sessionId}`);
+    try {
+      await this.waMessages.logOutbound({
+        chatId: payload.chatId,
+        body: payload.caption?.trim() || '[documento]',
+        source: payload.source ?? 'bot',
+        waSessionId: sessionId,
+        messageType: 'document',
+        mediaUrl: payload.document.url,
+        mimeType: payload.document.mimetype,
+        caption: payload.caption,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to log outbound WA document: ${err}`);
+    }
   }
 
   async sendTemplate(

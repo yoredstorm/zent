@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -30,8 +30,14 @@ interface WaMessage {
   body: string;
   direction: string;
   source: string;
+  messageType?: string;
+  mediaUrl?: string | null;
+  mimeType?: string | null;
+  caption?: string | null;
   createdAt: string;
 }
+
+const QUICK_EMOJIS = ['😀', '😂', '👍', '❤️', '🙏', '✅', '🎉', '😊', '👋', '🔥'];
 
 function encodeChatId(chatId: string) {
   return encodeURIComponent(chatId);
@@ -60,6 +66,66 @@ function formatTime(iso: string) {
   return d.toLocaleDateString();
 }
 
+function resolveMediaSrc(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url;
+  }
+  if (url.startsWith('/api/')) return url;
+  if (url.startsWith('/')) return `/api${url}`;
+  return url;
+}
+
+function MessageBubble({ m }: { m: WaMessage }) {
+  const isOut = m.direction === 'OUT';
+  const type = m.messageType || 'text';
+  const mediaSrc = resolveMediaSrc(m.mediaUrl);
+
+  return (
+    <div className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow ${
+          isOut ? 'bg-green-100' : 'bg-white'
+        }`}
+      >
+        {isOut && (
+          <div className="text-[10px] text-gray-500 mb-1">
+            {m.source === 'agent' ? 'Asesor' : 'Bot'}
+          </div>
+        )}
+        {type === 'image' && mediaSrc && (
+          <a href={mediaSrc} target="_blank" rel="noopener noreferrer">
+            <img
+              src={mediaSrc}
+              alt={m.caption || 'imagen'}
+              className="max-w-full rounded mb-1 max-h-64 object-contain"
+            />
+          </a>
+        )}
+        {type === 'document' && mediaSrc && (
+          <a
+            href={mediaSrc}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline block mb-1"
+          >
+            📎 Documento
+          </a>
+        )}
+        {type !== 'text' && type !== 'image' && type !== 'document' && !mediaSrc && (
+          <div className="text-gray-500 italic mb-1">{m.body}</div>
+        )}
+        {(type === 'text' || m.caption || (type === 'image' && m.body && m.body !== '[imagen]')) && (
+          <div className="whitespace-pre-wrap break-words">
+            {type === 'text' ? m.body : m.caption || (m.body !== '[imagen]' && m.body !== '[documento]' ? m.body : '')}
+          </div>
+        )}
+        <div className="text-[10px] text-gray-400 mt-1 text-right">{formatTime(m.createdAt)}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function WhatsAppPage() {
   const [mainTab, setMainTab] = useState<MainTab>('inbox');
   const [filter, setFilter] = useState<InboxFilter>('');
@@ -69,24 +135,42 @@ export default function WhatsAppPage() {
   const [meta, setMeta] = useState<any>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState('');
   const [openwaUrl, setOpenwaUrl] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [showEmojis, setShowEmojis] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadConversations = useCallback(() => {
     const q = filter ? `?filter=${filter}` : '';
-    api.get(`/whatsapp/conversations${q}`).then(setConversations).catch(console.error);
+    api.get(`/whatsapp/conversations${q}`).then(setConversations).catch(() => {
+      toast.error('No se pudo cargar conversaciones');
+    });
   }, [filter]);
 
-  const loadMessages = useCallback((chatId: string) => {
-    api
-      .get(`/whatsapp/conversations/${encodeChatId(chatId)}/messages?limit=80`)
-      .then((rows) => setMessages(rows.reverse()))
-      .catch(console.error);
+  const loadMessages = useCallback(async (chatId: string, showLoader = true) => {
+    if (showLoader) setLoadingMessages(true);
+    try {
+      const rows = await api.get<WaMessage[]>(
+        `/whatsapp/conversations/${encodeChatId(chatId)}/messages?limit=80&sync=1`,
+      );
+      setMessages(rows.reverse());
+    } catch {
+      toast.error('No se pudieron cargar los mensajes');
+      setMessages([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
+
+  const loadMeta = useCallback((chatId: string) => {
     api
       .get(`/whatsapp/conversations/${encodeChatId(chatId)}/meta`)
       .then(setMeta)
-      .catch(console.error);
+      .catch(() => setMeta(null));
   }, []);
 
   useEffect(() => {
@@ -104,7 +188,7 @@ export default function WhatsAppPage() {
           loadConversations();
           const chatId = event.payload?.chatId as string | undefined;
           if (chatId && selected?.chatId === chatId) {
-            loadMessages(chatId);
+            loadMessages(chatId, false);
           } else if (event.type === 'message.received' && chatId) {
             toast.message('Nuevo mensaje de WhatsApp', {
               description: displayName(
@@ -125,18 +209,56 @@ export default function WhatsAppPage() {
 
   const selectConversation = (c: Conversation) => {
     setSelected(c);
+    setPendingFile(null);
+    setMessages([]);
     loadMessages(c.chatId);
+    loadMeta(c.chatId);
+  };
+
+  const handleSync = async () => {
+    if (!selected) return;
+    setSyncing(true);
+    try {
+      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/sync`);
+      await loadMessages(selected.chatId, false);
+      loadConversations();
+      toast.success('Conversación actualizada');
+    } catch {
+      toast.error('No se pudo sincronizar con OpenWA');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleSend = async () => {
-    if (!selected || !reply.trim()) return;
+    if (!selected || sending) return;
+    if (!reply.trim() && !pendingFile) return;
+
     setSending(true);
     try {
-      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/send`, {
-        text: reply.trim(),
-      });
-      setReply('');
-      loadMessages(selected.chatId);
+      if (pendingFile) {
+        const isPdf = pendingFile.type === 'application/pdf' || pendingFile.name.endsWith('.pdf');
+        const uploadPath = isPdf ? '/uploads/document' : '/uploads/image';
+        const uploaded = await api.upload<{ url: string; publicUrl?: string }>(
+          uploadPath,
+          pendingFile,
+        );
+        const mediaUrl = uploaded.publicUrl || uploaded.url;
+        await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/send-media`, {
+          type: isPdf ? 'document' : 'image',
+          url: mediaUrl,
+          caption: reply.trim() || undefined,
+          mimeType: pendingFile.type || undefined,
+        });
+        setPendingFile(null);
+        setReply('');
+      } else {
+        await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/send`, {
+          text: reply.trim(),
+        });
+        setReply('');
+      }
+      await loadMessages(selected.chatId, false);
       loadConversations();
     } catch {
       toast.error('No se pudo enviar el mensaje');
@@ -207,24 +329,34 @@ export default function WhatsAppPage() {
       {mainTab === 'inbox' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
           <div className="bg-white rounded-lg shadow flex flex-col overflow-hidden lg:col-span-1">
-            <div className="p-3 border-b flex gap-2 flex-wrap">
-              {(['', 'handoff', 'orders'] as const).map((f) => (
-                <button
-                  key={f || 'all'}
-                  type="button"
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1 rounded-full text-xs ${
-                    filter === f ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {f === '' ? 'Todas' : f === 'handoff' ? 'Handoff' : 'Pedidos nuevos'}
-                </button>
-              ))}
+            <div className="p-3 border-b flex gap-2 flex-wrap items-center justify-between">
+              <div className="flex gap-2 flex-wrap">
+                {(['', 'handoff', 'orders'] as const).map((f) => (
+                  <button
+                    key={f || 'all'}
+                    type="button"
+                    onClick={() => setFilter(f)}
+                    className={`px-3 py-1 rounded-full text-xs ${
+                      filter === f ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {f === '' ? 'Todas' : f === 'handoff' ? 'Handoff' : 'Pedidos nuevos'}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={loadConversations}
+                className="text-xs text-gray-500 hover:text-gray-800"
+                title="Refrescar lista"
+              >
+                ↻
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
                 <p className="p-4 text-sm text-gray-500 text-center">
-                  No hay conversaciones aún. Los mensajes aparecerán cuando los clientes escriban.
+                  No hay conversaciones aún. Abre un chat para sincronizar desde OpenWA.
                 </p>
               ) : (
                 conversations.map((c) => (
@@ -278,14 +410,34 @@ export default function WhatsAppPage() {
                       <div className="text-xs text-gray-500">{formatPhone(selected.contactPhone)}</div>
                     )}
                   </div>
-                  {meta?.openOrder && (
-                    <Link
-                      href="/dashboard/orders"
-                      className="text-xs text-blue-600 hover:underline"
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {meta?.openOrder && (
+                      <Link
+                        href="/dashboard/orders"
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Pedido #{meta.openOrder.id.slice(0, 8)} ({meta.openOrder.status})
+                      </Link>
+                    )}
+                    {openwaUrl && (
+                      <a
+                        href={openwaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-500 hover:text-blue-600"
+                      >
+                        Abrir en OpenWA
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSync}
+                      disabled={syncing}
+                      className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
                     >
-                      Pedido #{meta.openOrder.id.slice(0, 8)} ({meta.openOrder.status})
-                    </Link>
-                  )}
+                      {syncing ? 'Sincronizando…' : 'Actualizar'}
+                    </button>
+                  </div>
                 </div>
 
                 {meta && (
@@ -300,31 +452,79 @@ export default function WhatsAppPage() {
                 )}
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]/30">
-                  {messages.map((m) => {
-                    const isOut = m.direction === 'OUT';
-                    return (
-                      <div key={m.id} className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
-                        <div
-                          className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow ${
-                            isOut ? 'bg-green-100' : 'bg-white'
-                          }`}
-                        >
-                          {isOut && (
-                            <div className="text-[10px] text-gray-500 mb-1">
-                              {m.source === 'agent' ? 'Asesor' : 'Bot'}
-                            </div>
-                          )}
-                          <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                          <div className="text-[10px] text-gray-400 mt-1 text-right">
-                            {formatTime(m.createdAt)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {loadingMessages ? (
+                    <div className="text-center text-sm text-gray-400 py-8">
+                      Cargando mensajes desde OpenWA…
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div className="text-center text-sm text-gray-400 py-8">
+                      Sin mensajes. Pulsa Actualizar para sincronizar el historial.
+                    </div>
+                  ) : (
+                    messages.map((m) => <MessageBubble key={m.id} m={m} />)
+                  )}
                 </div>
 
-                <div className="p-3 border-t flex gap-2">
+                {pendingFile && (
+                  <div className="px-3 py-2 border-t bg-gray-50 text-xs flex justify-between items-center">
+                    <span>📎 {pendingFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingFile(null)}
+                      className="text-red-600 hover:underline"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                )}
+
+                <div className="p-3 border-t flex gap-2 items-end relative">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setPendingFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                    title="Adjuntar imagen o PDF"
+                  >
+                    📎
+                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojis((v) => !v)}
+                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                      title="Emoji"
+                    >
+                      😊
+                    </button>
+                    {showEmojis && (
+                      <div className="absolute bottom-full left-0 mb-1 bg-white border rounded-lg shadow p-2 flex gap-1 flex-wrap w-48 z-10">
+                        {QUICK_EMOJIS.map((e) => (
+                          <button
+                            key={e}
+                            type="button"
+                            className="text-lg hover:bg-gray-100 rounded p-1"
+                            onClick={() => {
+                              setReply((r) => r + e);
+                              setShowEmojis(false);
+                            }}
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <input
                     value={reply}
                     onChange={(e) => setReply(e.target.value)}
@@ -335,7 +535,7 @@ export default function WhatsAppPage() {
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={sending || !reply.trim()}
+                    disabled={sending || (!reply.trim() && !pendingFile)}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
                   >
                     Enviar

@@ -10,6 +10,7 @@ import {
   parseWaConversationId,
   shortWaChatLabel,
 } from './wa-conversation.util';
+import { messagePreview, parseOpenWaMessage } from './wa-message-mapper.util';
 
 export type WaMessageSource = 'customer' | 'bot' | 'agent';
 
@@ -29,9 +30,19 @@ export interface WaConversationSummary {
   unreadHint: boolean;
 }
 
+export interface WaMediaFields {
+  messageType?: string;
+  mediaUrl?: string | null;
+  mimeType?: string | null;
+  caption?: string | null;
+  waMessageId?: string | null;
+}
+
 @Injectable()
 export class WaMessageService {
   private readonly logger = new Logger(WaMessageService.name);
+  private readonly lastSyncAt = new Map<string, number>();
+  private static readonly SYNC_THROTTLE_MS = 30_000;
 
   constructor(
     private prisma: PrismaService,
@@ -60,6 +71,14 @@ export class WaMessageService {
     return { OR: or };
   }
 
+  async existsByWaMessageId(waMessageId: string): Promise<boolean> {
+    const row = await this.prisma.waMessage.findUnique({
+      where: { waMessageId },
+      select: { id: true },
+    });
+    return !!row;
+  }
+
   private async upsertWaContactName(
     waChatId: string,
     waSessionId: string | null | undefined,
@@ -79,18 +98,25 @@ export class WaMessageService {
     });
   }
 
-  async logInbound(data: {
-    chatId: string;
-    body: string;
-    fromMe?: boolean;
-    waSessionId?: string;
-    senderPhone?: string;
-    contactName?: string;
-  }): Promise<void> {
+  async logInbound(
+    data: {
+      chatId: string;
+      body: string;
+      fromMe?: boolean;
+      waSessionId?: string;
+      senderPhone?: string;
+      contactName?: string;
+    } & WaMediaFields,
+  ): Promise<void> {
     const waChatId = this.canonicalWaChatId(data.chatId);
     const contactPhone = data.senderPhone
       ? normalizePhone(data.senderPhone)
       : extractPhoneFromWaId(waChatId);
+
+    if (data.waMessageId) {
+      const exists = await this.existsByWaMessageId(data.waMessageId);
+      if (exists) return;
+    }
 
     const msg = await this.prisma.waMessage.create({
       data: {
@@ -101,6 +127,11 @@ export class WaMessageService {
         fromMe: data.fromMe ?? false,
         waSessionId: data.waSessionId,
         contactPhone,
+        messageType: data.messageType ?? 'text',
+        mediaUrl: data.mediaUrl ?? undefined,
+        mimeType: data.mimeType ?? undefined,
+        caption: data.caption ?? undefined,
+        waMessageId: data.waMessageId ?? undefined,
       },
     });
 
@@ -110,18 +141,27 @@ export class WaMessageService {
     this.realtime.publish('message.received', {
       chatId: convId,
       messageId: msg.id,
+      messageType: msg.messageType,
       fromMe: data.fromMe ?? false,
     });
   }
 
-  async logOutbound(data: {
-    chatId: string;
-    body: string;
-    source: WaMessageSource;
-    waSessionId?: string;
-    contactPhone?: string | null;
-  }): Promise<void> {
+  async logOutbound(
+    data: {
+      chatId: string;
+      body: string;
+      source: WaMessageSource;
+      waSessionId?: string;
+      contactPhone?: string | null;
+    } & WaMediaFields,
+  ): Promise<void> {
     const waChatId = this.canonicalWaChatId(data.chatId);
+
+    if (data.waMessageId) {
+      const exists = await this.existsByWaMessageId(data.waMessageId);
+      if (exists) return;
+    }
+
     const msg = await this.prisma.waMessage.create({
       data: {
         chatId: waChatId,
@@ -131,6 +171,11 @@ export class WaMessageService {
         fromMe: true,
         waSessionId: data.waSessionId,
         contactPhone: data.contactPhone ?? extractPhoneFromWaId(waChatId),
+        messageType: data.messageType ?? 'text',
+        mediaUrl: data.mediaUrl ?? undefined,
+        mimeType: data.mimeType ?? undefined,
+        caption: data.caption ?? undefined,
+        waMessageId: data.waMessageId ?? undefined,
       },
     });
 
@@ -138,8 +183,85 @@ export class WaMessageService {
     this.realtime.publish('message.sent', {
       chatId: convId,
       messageId: msg.id,
+      messageType: msg.messageType,
       source: data.source,
     });
+  }
+
+  async syncFromOpenWA(convId: string, opts?: { limit?: number; force?: boolean }) {
+    const decoded = decodeURIComponent(convId);
+    const limit = opts?.limit ?? 80;
+    const now = Date.now();
+    const last = this.lastSyncAt.get(decoded) ?? 0;
+    if (!opts?.force && now - last < WaMessageService.SYNC_THROTTLE_MS) {
+      return { synced: 0, skipped: true };
+    }
+
+    const { waSessionId, waChatId } = parseWaConversationId(decoded);
+    let sessionId = waSessionId;
+    if (!sessionId) {
+      try {
+        sessionId = await this.openwa.resolveSessionId();
+      } catch (err) {
+        this.logger.warn(`syncFromOpenWA: no session for ${decoded}: ${err}`);
+        return { synced: 0, skipped: true };
+      }
+    }
+
+    let remoteMessages: Awaited<ReturnType<OpenwaService['getChatMessages']>>;
+    try {
+      remoteMessages = await this.openwa.getChatMessages(sessionId, waChatId, { limit });
+    } catch (err) {
+      this.logger.warn(`syncFromOpenWA failed for ${waChatId}: ${err}`);
+      return { synced: 0, error: true };
+    }
+
+    let synced = 0;
+    for (const raw of remoteMessages) {
+      const parsed = parseOpenWaMessage(raw);
+      if (parsed.waMessageId) {
+        const exists = await this.existsByWaMessageId(parsed.waMessageId);
+        if (exists) continue;
+      }
+
+      const base = {
+        chatId: waChatId,
+        body: parsed.body,
+        waSessionId: sessionId,
+        messageType: parsed.messageType,
+        mediaUrl: parsed.mediaUrl,
+        mimeType: parsed.mimeType,
+        caption: parsed.caption,
+        waMessageId: parsed.waMessageId,
+      };
+
+      if (parsed.fromMe) {
+        await this.prisma.waMessage.create({
+          data: {
+            ...base,
+            direction: 'OUT',
+            source: 'bot',
+            fromMe: true,
+            createdAt: parsed.createdAt,
+          },
+        });
+      } else {
+        await this.prisma.waMessage.create({
+          data: {
+            ...base,
+            direction: 'IN',
+            source: 'customer',
+            fromMe: false,
+            contactPhone: extractPhoneFromWaId(waChatId),
+            createdAt: parsed.createdAt,
+          },
+        });
+      }
+      synced += 1;
+    }
+
+    this.lastSyncAt.set(decoded, now);
+    return { synced, skipped: false };
   }
 
   private resolveDisplayName(
@@ -253,7 +375,9 @@ export class WaMessageService {
         contactPhone: phone,
         contactDisplayName: this.resolveDisplayName(displaySession, customerName, phone, waChatId),
         customerName: session?.customerName ?? customerName,
-        lastMessage: last?.body ?? '(sin mensajes)',
+        lastMessage: last
+          ? messagePreview(last.body, last.messageType, last.caption)
+          : '(sin mensajes)',
         lastMessageAt: (last?.createdAt ?? session?.lastInteractionAt ?? new Date()).toISOString(),
         lastDirection: last?.direction ?? 'IN',
         lastSource: last?.source ?? 'customer',
@@ -271,8 +395,11 @@ export class WaMessageService {
     return summaries.slice(0, 100);
   }
 
-  async listMessages(convId: string, limit = 50, before?: string) {
+  async listMessages(convId: string, limit = 50, before?: string, sync = true) {
     const decoded = decodeURIComponent(convId);
+    if (sync) {
+      await this.syncFromOpenWA(decoded, { limit: Math.max(limit, 80) });
+    }
     return this.prisma.waMessage.findMany({
       where: {
         ...this.messageWhereForConversation(decoded),
