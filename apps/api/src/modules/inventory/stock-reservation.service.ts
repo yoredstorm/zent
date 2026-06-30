@@ -1,6 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { CartHoldService } from './cart-hold.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 /** Pedido del cliente confirmado; stock reservado, aún no descontado. */
 export const PENDING_ORDER_STATUSES: OrderStatus[] = ['NUEVO', 'EN_GESTION'];
@@ -10,11 +12,26 @@ export const ACCEPTED_ORDER_STATUSES: OrderStatus[] = ['CONFIRMADO', 'EN_DELIVER
 
 type Tx = Prisma.TransactionClient;
 
-@Injectable()
-export class StockReservationService {
-  constructor(private prisma: PrismaService) {}
+export interface AvailableStockOptions {
+  excludeOrderId?: string;
+  excludeStateKey?: string;
+}
 
-  async getReservedQuantity(productId: string, excludeOrderId?: string): Promise<number> {
+@Injectable()
+export class StockReservationService implements OnModuleInit {
+  constructor(
+    private prisma: PrismaService,
+    private cartHold: CartHoldService,
+    private realtime: RealtimeService,
+  ) {}
+
+  onModuleInit() {
+    this.cartHold.setChangeHandler((stateKey) => {
+      this.realtime.publish('cart.hold.updated', { stateKey });
+    });
+  }
+
+  async getOrderReservedQuantity(productId: string, excludeOrderId?: string): Promise<number> {
     const result = await this.prisma.orderItem.aggregate({
       where: {
         productId,
@@ -29,20 +46,32 @@ export class StockReservationService {
     return result._sum.quantity ?? 0;
   }
 
-  async getAvailableStock(productId: string, excludeOrderId?: string): Promise<number> {
+  /** @deprecated use getOrderReservedQuantity */
+  async getReservedQuantity(productId: string, excludeOrderId?: string): Promise<number> {
+    return this.getOrderReservedQuantity(productId, excludeOrderId);
+  }
+
+  async getCartReservedQuantity(productId: string, excludeStateKey?: string): Promise<number> {
+    return this.cartHold.getHeldQuantity(productId, excludeStateKey);
+  }
+
+  async getAvailableStock(productId: string, opts?: AvailableStockOptions | string): Promise<number> {
+    const options: AvailableStockOptions =
+      typeof opts === 'string' ? { excludeOrderId: opts } : (opts ?? {});
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) return 0;
-    const reserved = await this.getReservedQuantity(productId, excludeOrderId);
-    return Math.max(0, product.stock - reserved);
+    const orderReserved = await this.getOrderReservedQuantity(productId, options.excludeOrderId);
+    const cartReserved = await this.getCartReservedQuantity(productId, options.excludeStateKey);
+    return Math.max(0, product.stock - orderReserved - cartReserved);
   }
 
   async assertAvailable(
     productId: string,
     quantity: number,
-    excludeOrderId?: string,
+    opts?: AvailableStockOptions,
     productName?: string,
   ): Promise<void> {
-    const available = await this.getAvailableStock(productId, excludeOrderId);
+    const available = await this.getAvailableStock(productId, opts);
     if (quantity > available) {
       const label = productName ? `"${productName}"` : 'el producto';
       throw new BadRequestException(
@@ -54,6 +83,7 @@ export class StockReservationService {
   async assertOrderItemsAvailable(
     items: { productId: string; quantity: number }[],
     excludeOrderId?: string,
+    excludeStateKey?: string,
   ): Promise<void> {
     for (const item of items) {
       if (item.quantity <= 0) continue;
@@ -61,7 +91,7 @@ export class StockReservationService {
       await this.assertAvailable(
         item.productId,
         item.quantity,
-        excludeOrderId,
+        { excludeOrderId, excludeStateKey },
         product?.nombre,
       );
     }
@@ -106,6 +136,10 @@ export class StockReservationService {
       where: { id: orderId },
       data: { stockCommitted: true },
     });
+
+    if (!tx) {
+      this.realtime.publish('stock.changed', { orderId, action: 'commit' });
+    }
   }
 
   async restoreOrderStock(orderId: string, tx?: Tx): Promise<void> {
@@ -142,14 +176,15 @@ export class StockReservationService {
       where: { id: orderId },
       data: { stockCommitted: false },
     });
+
+    if (!tx) {
+      this.realtime.publish('stock.changed', { orderId, action: 'restore' });
+    }
   }
 
   shouldCommitStock(prev: OrderStatus, next: OrderStatus, stockCommitted: boolean): boolean {
     if (stockCommitted || next === 'CANCELADO') return false;
-    return (
-      PENDING_ORDER_STATUSES.includes(prev) &&
-      ACCEPTED_ORDER_STATUSES.includes(next)
-    );
+    return PENDING_ORDER_STATUSES.includes(prev) && ACCEPTED_ORDER_STATUSES.includes(next);
   }
 
   shouldRestoreStock(prev: OrderStatus, next: OrderStatus, stockCommitted: boolean): boolean {

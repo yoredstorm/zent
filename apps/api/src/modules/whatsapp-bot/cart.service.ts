@@ -1,20 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
+import type { CartItem, Cart } from './cart.types';
 
-export interface CartItem {
-  productId: string;
-  nombre: string;
-  quantity: number;
-  unitPrice: number;
-  costAtSale: number;
-}
-
-export interface Cart {
-  items: CartItem[];
-  subtotal: number;
-  total: number;
-}
+export type { CartItem, Cart } from './cart.types';
 
 @Injectable()
 export class CartService {

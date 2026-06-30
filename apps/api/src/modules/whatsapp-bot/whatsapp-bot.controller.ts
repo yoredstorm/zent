@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { OpenwaService } from '../openwa/openwa.service';
+import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
 import { Public } from '../auth/decorators/public.decorator';
 
 @ApiTags('webhooks')
@@ -14,6 +15,7 @@ export class WhatsappBotController {
   constructor(
     private config: ConfigService,
     private openwa: OpenwaService,
+    private waMessages: WaMessageService,
   ) {
     this.queue = new Queue('whatsapp-messages', {
       connection: {
@@ -47,14 +49,11 @@ export class WhatsappBotController {
       this.logger.log(`Webhook ignored: event=${event}`);
       return { status: 'ignored', reason: 'event' };
     }
-    if (data?.fromMe === true) {
-      this.logger.log('Webhook ignored: fromMe=true');
-      return { status: 'ignored', reason: 'fromMe' };
-    }
 
     const chatId = data?.chatId || data?.from || body?.chatId || body?.from;
     const messageBody = data?.body || data?.text || body?.body || body?.text || '';
     const from = data?.from || body?.from || body?.author || '';
+    const fromMe = data?.fromMe === true;
     const senderPhone =
       data?.senderPhone ||
       data?.contact?.phone ||
@@ -62,17 +61,35 @@ export class WhatsappBotController {
       body?.senderPhone ||
       undefined;
     const waSessionId = (body?.sessionId as string | undefined)?.trim() || undefined;
+
+    if (!chatId || !messageBody) {
+      this.logger.log(`Webhook ignored: missing chatId or body (chatId=${chatId ?? 'none'})`);
+      return { status: 'ignored', reason: 'missing_fields' };
+    }
+
+    if (fromMe) {
+      this.logger.log('Webhook ignored fromMe (already logged on send)');
+      return { status: 'ignored', reason: 'fromMe' };
+    }
+
+    try {
+      await this.waMessages.logInbound({
+        chatId,
+        body: messageBody,
+        fromMe: false,
+        waSessionId,
+        senderPhone,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to persist inbound message: ${err}`);
+    }
+
     const key =
       idempotencyKey ||
       body?.idempotencyKey ||
       data?.id ||
       body?.id ||
       `${waSessionId ?? 'default'}-${chatId}-${Date.now()}`;
-
-    if (!chatId || !messageBody) {
-      this.logger.log(`Webhook ignored: missing chatId or body (chatId=${chatId ?? 'none'})`);
-      return { status: 'ignored', reason: 'missing_fields' };
-    }
 
     await this.queue.add('message', {
       chatId,

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Toaster } from 'sonner';
+import { RealtimeToasts } from '@/components/RealtimeToasts';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         {children}
+        <RealtimeToasts />
         <Toaster position="top-right" richColors />
       </body>
     </html>

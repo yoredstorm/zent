@@ -19,6 +19,18 @@ export class InventoryController {
     return this.inventory.getCurrentStock();
   }
 
+  @Get('stock/live')
+  @ApiOperation({ summary: 'Stock with reservations (physical, carts, orders, available)' })
+  getLiveStock() {
+    return this.inventory.getLiveStock();
+  }
+
+  @Get('active-carts')
+  @ApiOperation({ summary: 'Active WhatsApp carts holding stock' })
+  getActiveCarts() {
+    return this.inventory.getActiveCarts();
+  }
+
   @Get('alerts')
   @ApiOperation({ summary: 'Get low stock alerts' })
   getLowStockAlerts() {

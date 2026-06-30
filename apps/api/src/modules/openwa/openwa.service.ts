@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,6 +14,7 @@ interface SendTextPayload {
   chatId: string;
   text: string;
   sessionId?: string;
+  source?: 'bot' | 'agent';
 }
 
 interface SendImagePayload {
@@ -40,6 +41,8 @@ const MIME_BY_EXT: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
+
 @Injectable()
 export class OpenwaService {
   private readonly logger = new Logger(OpenwaService.name);
@@ -48,7 +51,11 @@ export class OpenwaService {
   private cachedSessionId: string | null = null;
   private redis: Redis;
 
-  constructor(private config: ConfigService) {
+  constructor(
+    private config: ConfigService,
+    @Inject(forwardRef(() => WaMessageService))
+    private waMessages: WaMessageService,
+  ) {
     this.baseUrl = this.config.get('OPENWA_BASE_URL', 'http://openwa:2785');
     this.apiKey = this.config.get('OPENWA_API_KEY', '');
     this.redis = new Redis({
@@ -244,6 +251,16 @@ export class OpenwaService {
       text: payload.text,
     });
     this.logger.debug(`Sent text to ${payload.chatId} via session ${sessionId}`);
+    try {
+      await this.waMessages.logOutbound({
+        chatId: payload.chatId,
+        body: payload.text,
+        source: payload.source ?? 'bot',
+        waSessionId: sessionId,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to log outbound WA message: ${err}`);
+    }
   }
 
   async sendImage(payload: SendImagePayload): Promise<void> {

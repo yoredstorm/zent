@@ -9,7 +9,9 @@ import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { WhatsappInboxModule } from './modules/whatsapp-inbox/whatsapp-inbox.module';
 import { OpenwaModule } from './modules/openwa/openwa.module';
 import { WhatsappBotModule } from './modules/whatsapp-bot/whatsapp-bot.module';
 import { CatalogPdfModule } from './modules/catalog-pdf/catalog-pdf.module';
@@ -29,6 +31,8 @@ import { SeedService } from './seed.service';
     CategoriesModule,
     OrdersModule,
     InventoryModule,
+    RealtimeModule,
+    WhatsappInboxModule,
     ReportsModule,
     OpenwaModule,
     WhatsappBotModule,

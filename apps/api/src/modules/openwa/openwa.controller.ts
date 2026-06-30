@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 import { OpenwaService } from './openwa.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -7,7 +8,18 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @Controller('openwa')
 @UseGuards(JwtAuthGuard)
 export class OpenwaController {
-  constructor(private openwa: OpenwaService) {}
+  constructor(
+    private openwa: OpenwaService,
+    private config: ConfigService,
+  ) {}
+
+  @Get('config')
+  @ApiOperation({ summary: 'Public OpenWA dashboard URL for advanced settings' })
+  getConfig() {
+    return {
+      publicUrl: this.config.get('OPENWA_PUBLIC_URL', '').trim() || null,
+    };
+  }
 
   @Get('status')
   @ApiOperation({ summary: 'Get WhatsApp session status' })
@@ -15,7 +27,11 @@ export class OpenwaController {
     try {
       const sessions = await this.openwa.getSessions();
       if (sessions.length === 0) {
-        return { status: 'no_sessions', message: 'No hay sesiones. Crea una en el dashboard de OpenWA: http://localhost:2785', sessions: [] };
+        return {
+          status: 'no_sessions',
+          message: 'No hay sesiones activas.',
+          sessions: [],
+        };
       }
       const status = await this.openwa.getSessionStatus();
       return { status, sessions };

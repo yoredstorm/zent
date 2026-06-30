@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useRealtime } from '@/lib/useRealtime';
 
 const STATUS_COLORS: Record<string, string> = {
   NUEVO: 'bg-blue-100 text-blue-800',
@@ -42,14 +43,25 @@ export default function OrdersPage() {
   const [editLines, setEditLines] = useState<{ id: string; quantity: number }[]>([]);
   const [savingItems, setSavingItems] = useState(false);
 
-  useEffect(() => {
-    loadOrders();
-  }, [filter]);
-
-  const loadOrders = () => {
+  const loadOrders = useCallback(() => {
     const params = filter ? `?status=${filter}` : '';
     api.get(`/orders${params}`).then(setOrders).catch(console.error);
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  useRealtime(
+    useCallback(
+      (event) => {
+        if (event.type === 'order.created' || event.type === 'order.updated') {
+          loadOrders();
+        }
+      },
+      [loadOrders],
+    ),
+  );
 
   const openCreate = () => {
     setCustomer(emptyCustomer);

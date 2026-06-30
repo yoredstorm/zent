@@ -8,6 +8,7 @@ import { ChatSessionService } from './chat-session.service';
 import { CustomersService, normalizePhone } from '../customers/customers.service';
 import { OrdersService } from '../orders/orders.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
+import { CartHoldService } from '../inventory/cart-hold.service';
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
@@ -61,11 +62,23 @@ export class WhatsappBotService {
     private customers: CustomersService,
     private orders: OrdersService,
     private stock: StockReservationService,
+    private cartHold: CartHoldService,
     private config: ConfigService,
   ) {}
 
   private get storeName(): string {
     return this.config.get('STORE_NAME', 'Zent').trim() || 'Zent';
+  }
+
+  private async syncCartHold() {
+    const cart = await this.cart.getCart(this.c.stateKey);
+    const phone = this.c.contactPhone;
+    const existing = phone ? await this.customers.findByPhone(phone) : null;
+    await this.cartHold.syncFromCart(this.c.stateKey, cart, {
+      chatId: this.c.chatId,
+      contactPhone: phone,
+      customerName: existing?.name ?? null,
+    });
   }
 
   async runAction(action: BotPluginAction, ctx: BotActionContext): Promise<void> {
@@ -334,7 +347,9 @@ export class WhatsappBotService {
 
     const available: Array<(typeof products)[number] & { availableStock: number }> = [];
     for (const product of products) {
-      const availableStock = await this.stock.getAvailableStock(product.id);
+      const availableStock = await this.stock.getAvailableStock(product.id, {
+        excludeStateKey: this.c.stateKey,
+      });
       if (availableStock > 0) {
         available.push({ ...product, availableStock });
       }
@@ -540,7 +555,9 @@ export class WhatsappBotService {
 
     await this.saveBrowseContext({ ...ctx, viewingProductIndex: index, awaitPostAddMenu: undefined });
 
-    const availableStock = await this.stock.getAvailableStock(product.id);
+    const availableStock = await this.stock.getAvailableStock(product.id, {
+      excludeStateKey: this.c.stateKey,
+    });
     const caption =
       `*${product.nombre}*\n` +
       `💰 Precio: S/ ${product.salePrice}\n` +
@@ -571,17 +588,15 @@ export class WhatsappBotService {
       return;
     }
 
-    const cart = await this.cart.getCart(this.c.stateKey);
-    const inCart = cart.items.find((i) => i.productId === product.id)?.quantity ?? 0;
-    const available = await this.stock.getAvailableStock(product.id);
-    const canAdd = available - inCart;
+    const available = await this.stock.getAvailableStock(product.id, {
+      excludeStateKey: this.c.stateKey,
+    });
 
-    if (canAdd < quantity) {
-      const hint = inCart > 0 ? ` (${inCart} ya en tu carrito)` : '';
+    if (quantity > available) {
       await this.txt(
-        canAdd <= 0
-          ? `No hay unidades disponibles de *${product.nombre}* en este momento.${hint}`
-          : `Solo puedes agregar ${canAdd} unidad(es) de *${product.nombre}*.${hint}`,
+        available <= 0
+          ? `No hay unidades disponibles de *${product.nombre}* en este momento.`
+          : `Solo puedes agregar ${available} unidad(es) de *${product.nombre}*.`,
       );
       return;
     }
@@ -593,6 +608,8 @@ export class WhatsappBotService {
       unitPrice: Number(product.salePrice),
       costAtSale: Number(product.costPrice),
     });
+
+    await this.syncCartHold();
 
     await this.saveBrowseContext({
       ...ctx,
@@ -636,6 +653,7 @@ export class WhatsappBotService {
       const cart = await this.cart.getCart(this.c.stateKey);
       if (index >= 0 && index < cart.items.length) {
         await this.cart.removeItem(this.c.stateKey, cart.items[index].productId);
+        await this.syncCartHold();
         await this.txt('✅ Producto eliminado');
         await this.mostrarCarrito();
       } else {
@@ -658,6 +676,7 @@ export class WhatsappBotService {
         const index = parseInt(text) - 1;
         if (index >= 0 && index < cart.items.length) {
           await this.cart.removeItem(this.c.stateKey, cart.items[index].productId);
+          await this.syncCartHold();
           await this.saveBrowseContext({ ...sessionCtx, awaitCartDelete: undefined } as BrowseContext);
           await this.txt('✅ Producto eliminado');
           await this.mostrarCarrito();
@@ -900,6 +919,7 @@ export class WhatsappBotService {
     const totalStr = cart.total.toFixed(2);
 
     await this.cart.clearCart(this.c.stateKey);
+    await this.cartHold.release(this.c.stateKey);
     await this.chatSession.updateState(this.c.stateKey, ChatState.PEDIDO_CREADO, { cartJson: null });
     await this.chatSession.updateCustomerData(this.c.stateKey, {
       customerName: data.customerName,

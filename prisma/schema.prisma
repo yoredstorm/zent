@@ -180,6 +180,21 @@ model ChatSession {
   @@map("chat_sessions")
 }
 
+model WaMessage {
+  id           String   @id @default(uuid())
+  chatId       String
+  body         String   @db.Text
+  direction    String
+  source       String
+  fromMe       Boolean  @default(false)
+  waSessionId  String?
+  contactPhone String?
+  createdAt    DateTime @default(now())
+
+  @@index([chatId, createdAt])
+  @@map("wa_messages")
+}
+
 model Customer {
   id           String    @id @default(uuid())
   phone        String    @unique

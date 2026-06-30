@@ -1,9 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StockReservationService } from './stock-reservation.service';
+import { CartHoldService } from './cart-hold.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private stock: StockReservationService,
+    private cartHold: CartHoldService,
+    private realtime: RealtimeService,
+  ) {}
 
   async getCurrentStock() {
     const products = await this.prisma.product.findMany({
@@ -19,14 +27,14 @@ export class InventoryService {
       },
       orderBy: { nombre: 'asc' },
     });
-    return products.map(p => ({
+    return products.map((p) => ({
       ...p,
       id: String(p.id),
       categoryNombre: p.category.nombre,
     }));
   }
 
-  async getLowStockAlerts() {
+  async getLiveStock() {
     const products = await this.prisma.product.findMany({
       where: { isActive: true },
       select: {
@@ -35,18 +43,51 @@ export class InventoryService {
         nombre: true,
         stock: true,
         minStock: true,
+        isOutOfStock: true,
         category: { select: { nombre: true } },
       },
+      orderBy: { nombre: 'asc' },
     });
-    return products
-      .filter(p => p.stock <= p.minStock)
-      .map(p => ({
-        id: String(p.id),
+
+    const rows = await Promise.all(
+      products.map(async (p) => {
+        const reservadoPedidos = await this.stock.getOrderReservedQuantity(p.id);
+        const reservadoCarritos = await this.stock.getCartReservedQuantity(p.id);
+        const disponible = Math.max(0, p.stock - reservadoPedidos - reservadoCarritos);
+        return {
+          id: String(p.id),
+          sku: p.sku,
+          nombre: p.nombre,
+          stockFisico: p.stock,
+          reservadoPedidos,
+          reservadoCarritos,
+          disponible,
+          minStock: p.minStock,
+          isOutOfStock: p.isOutOfStock,
+          categoryNombre: p.category.nombre,
+        };
+      }),
+    );
+
+    return rows;
+  }
+
+  async getActiveCarts() {
+    return this.cartHold.listActiveHolds();
+  }
+
+  async getLowStockAlerts() {
+    const live = await this.getLiveStock();
+    return live
+      .filter((p) => p.disponible <= p.minStock)
+      .map((p) => ({
+        id: p.id,
         sku: p.sku,
         nombre: p.nombre,
-        stock: p.stock,
+        stock: p.disponible,
+        stockFisico: p.stockFisico,
         minStock: p.minStock,
-        categoryNombre: p.category.nombre,
+        categoryNombre: p.categoryNombre,
       }));
   }
 
@@ -68,7 +109,7 @@ export class InventoryService {
     const newStock = product.stock + quantity;
     if (newStock < 0) throw new BadRequestException('Insufficient stock');
 
-    return this.prisma.$transaction([
+    await this.prisma.$transaction([
       this.prisma.product.update({
         where: { id: productId },
         data: { stock: newStock, isOutOfStock: newStock <= 0 },
@@ -82,5 +123,7 @@ export class InventoryService {
         },
       }),
     ]);
+
+    this.realtime.publish('stock.changed', { productId, action: 'adjust' });
   }
 }

@@ -5,6 +5,8 @@ import { UpdateOrderStatusDto, CreateOrderDto, UpdateOrderItemsDto } from './dto
 import { OpenwaService } from '../openwa/openwa.service';
 import { CustomersService } from '../customers/customers.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { VendorNotifyService } from './vendor-notify.service';
 import { buildStatusNotifyMessage } from './order-notify.util';
 
 @Injectable()
@@ -16,6 +18,8 @@ export class OrdersService {
     private openwa: OpenwaService,
     private customers: CustomersService,
     private stock: StockReservationService,
+    private realtime: RealtimeService,
+    private vendorNotify: VendorNotifyService,
   ) {}
 
   async findAll(filters?: { status?: string; source?: string }) {
@@ -139,8 +143,8 @@ export class OrdersService {
     const total = subtotal;
     const status = options?.status ?? 'NUEVO';
 
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
         data: {
           customerName: data.customerName,
           customerPhone: data.customerPhone,
@@ -168,11 +172,25 @@ export class OrdersService {
       });
 
       if (options?.commitStock) {
-        await this.stock.commitOrderStock(order.id, tx);
+        await this.stock.commitOrderStock(created.id, tx);
       }
 
-      return order;
+      return created;
     });
+
+    const full = await this.findOne(order.id);
+
+    if (full.source === 'WHATSAPP' && full.status === 'NUEVO') {
+      void this.vendorNotify.notifyNewOrder(full);
+    }
+
+    this.realtime.publish('order.created', {
+      orderId: full.id,
+      status: full.status,
+      source: full.source,
+    });
+
+    return full;
   }
 
   async updateItems(id: string, dto: UpdateOrderItemsDto) {
@@ -205,7 +223,9 @@ export class OrdersService {
           }
         } else if (delta > 0) {
           const product = await tx.product.findUnique({ where: { id: existing.productId } });
-          const available = await this.stock.getAvailableStock(existing.productId, id);
+          const available = await this.stock.getAvailableStock(existing.productId, {
+            excludeOrderId: id,
+          });
           if (line.quantity > available) {
             throw new BadRequestException(
               `Stock insuficiente para ajustar "${product?.nombre ?? existing.productId}": disponible ${available}`,
@@ -258,7 +278,9 @@ export class OrdersService {
       });
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.realtime.publish('order.updated', { orderId: id, action: 'items' });
+    return updated;
   }
 
   async updateStatus(id: string, dto: UpdateOrderStatusDto) {
@@ -294,6 +316,12 @@ export class OrdersService {
     if (dto.status && dto.status !== previous.status) {
       await this.notifyCustomerStatusChange(order, dto.status);
     }
+
+    this.realtime.publish('order.updated', {
+      orderId: id,
+      status: order.status,
+      previousStatus: previous.status,
+    });
 
     return order;
   }
