@@ -25,6 +25,12 @@ export class CustomersController {
     return this.customers.getListWithStats({ search, type });
   }
 
+  @Get('lookup/by-phone')
+  @ApiOperation({ summary: 'Find customer by phone for order form autofill' })
+  lookupByPhone(@Query('phone') phone: string) {
+    return this.customers.findByPhone(phone);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Customer detail with order history' })
   findOne(@Param('id') id: string) {

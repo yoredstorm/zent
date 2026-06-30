@@ -29,6 +29,8 @@ interface BotContext {
 interface BrowseContext {
   categoryId: string;
   productIds: string[];
+  /** Índice del producto que el usuario está viendo; en ese modo un número = cantidad. */
+  viewingProductIndex?: number;
 }
 
 interface CheckoutData {
@@ -84,6 +86,22 @@ export class WhatsappBotService {
         }
       },
     );
+  }
+
+  /** Pie reutilizable tras agregar al carrito o en pantallas de compra. */
+  private seguirComprandoHint(): string {
+    return (
+      '\n\n*¿Qué deseas hacer?*\n' +
+      '• *productos* — ver más de esta categoría\n' +
+      '• *categorias* — cambiar categoría\n' +
+      '• *carrito* — ver tu pedido\n' +
+      '• *menu* — inicio\n' +
+      '• *asesor* — hablar con un asesor'
+    );
+  }
+
+  private async saveBrowseContext(ctx: BrowseContext) {
+    await this.chatSession.updateContext(this.c.stateKey, ctx);
   }
 
   /** Aviso solo cuando el stock está en o por debajo del mínimo configurado. */
@@ -190,8 +208,13 @@ export class WhatsappBotService {
 
   private async showMainMenu() {
     await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
+    const phone = this.c.contactPhone;
+    const existing = phone ? await this.customers.findByPhone(phone) : null;
+    const saludo = existing?.name
+      ? `¡Hola, *${existing.name}*! 👋 Bienvenido de nuevo a *${this.storeName}*.\n\n`
+      : `¡Hola! 👋 Bienvenido a *${this.storeName}*.\n\n`;
     const text =
-      `¡Hola! 👋 Bienvenido a *${this.storeName}*.\n\n` +
+      saludo +
       'Para empezar, elige cómo ver el catálogo:\n\n' +
       '1️⃣ Ver catálogo completo (PDF)\n' +
       '2️⃣ Ver productos por categoría\n' +
@@ -299,8 +322,9 @@ export class WhatsappBotService {
     const browseCtx: BrowseContext = {
       categoryId,
       productIds: products.map((p) => p.id),
+      viewingProductIndex: undefined,
     };
-    await this.chatSession.updateContext(this.c.stateKey, browseCtx);
+    await this.saveBrowseContext(browseCtx);
     await this.chatSession.updateState(this.c.stateKey, ChatState.LISTADO_PRODUCTOS);
 
     let msg = '📦 *Productos disponibles:*\n\n';
@@ -312,7 +336,7 @@ export class WhatsappBotService {
       '\n*¿Qué quieres hacer?*\n' +
       '• Escribe el *número* para ver foto y detalle\n' +
       `• Escribe *${exampleIdx} 3* para agregar 3 unidades del producto ${exampleIdx}\n` +
-      '• *carrito* · *categorias* · *menu*';
+      '• *carrito* · *categorias* · *menu* · *asesor*';
 
     await this.txt(msg);
   }
@@ -336,10 +360,25 @@ export class WhatsappBotService {
       await this.mostrarCategorias();
       return;
     }
+    if (text === 'productos' || text === 'volver' || text === 'lista') {
+      const ctx = await this.getBrowseContext();
+      if (ctx?.categoryId) {
+        await this.mostrarProductosCategoria(ctx.categoryId);
+      } else {
+        await this.mostrarCategorias();
+      }
+      return;
+    }
 
     const ctx = await this.getBrowseContext();
     if (!ctx) {
       await this.mostrarCategorias();
+      return;
+    }
+
+    if (ctx.viewingProductIndex !== undefined && /^\d+$/.test(text)) {
+      const quantity = parseInt(text) || 1;
+      await this.agregarAlCarrito(ctx, ctx.viewingProductIndex, quantity);
       return;
     }
 
@@ -371,11 +410,13 @@ export class WhatsappBotService {
       return;
     }
 
+    const enDetalle = ctx.viewingProductIndex !== undefined;
     await this.txt(
       'No entendí tu mensaje.\n\n' +
-        '• Escribe un *número* para ver un producto\n' +
-        '• Escribe *2 3* para agregar 3 unidades del producto 2\n' +
-        '• *carrito* · *categorias* · *menu*',
+        (enDetalle
+          ? '• Escribe la *cantidad* (ej: *3*)\n'
+          : '• Escribe un *número* para ver un producto\n• Escribe *2 3* para agregar 3 del producto 2\n') +
+        '• *productos* · *categorias* · *carrito* · *menu* · *asesor*',
     );
   }
 
@@ -394,14 +435,16 @@ export class WhatsappBotService {
       return;
     }
 
-    const num = index + 1;
+    await this.saveBrowseContext({ ...ctx, viewingProductIndex: index });
+
     const caption =
       `*${product.nombre}*\n` +
       `💰 Precio: S/ ${product.salePrice}\n` +
       (product.stock <= product.minStock ? `⚠️ *¡Quedan pocas unidades!*\n` : '') +
       (product.descripcion ? `📝 ${product.descripcion}\n` : '') +
-      `\nPara agregar al carrito, escribe:\n` +
-      `*${num}* (1 unidad)  o  *${num} 3* (3 unidades)`;
+      `\n¿Cuántas unidades deseas?\n` +
+      `Escribe la *cantidad* (ej: *3*)\n\n` +
+      '*productos* — volver al listado · *asesor* — ayuda';
 
     if (product.images.length > 0) {
       await this.img({ url: product.images[0].url }, caption);
@@ -436,9 +479,10 @@ export class WhatsappBotService {
       costAtSale: Number(product.costPrice),
     });
 
+    await this.saveBrowseContext({ ...ctx, viewingProductIndex: undefined });
+
     await this.txt(
-      `✅ Agregado: ${quantity}x ${product.nombre}\n\n` +
-        'Sigue agregando o escribe *carrito* para ver tu pedido.',
+      `✅ Agregado: ${quantity}x ${product.nombre}` + this.seguirComprandoHint(),
     );
   }
 
@@ -455,7 +499,7 @@ export class WhatsappBotService {
       text += `${formatKeycap(i + 1)} ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
     });
     text += `💰 *Total: S/ ${cart.total.toFixed(2)}*\n\n`;
-    text += '✅ *confirmar* · ❌ *eliminar 1* · 🔄 *menu*';
+    text += '✅ *confirmar* · ❌ *eliminar 1* · 🔄 *menu* · 👤 *asesor*';
 
     await this.chatSession.updateState(this.c.stateKey, ChatState.CARRITO);
     await this.txt(text);
@@ -714,7 +758,28 @@ export class WhatsappBotService {
 
   private async handoffHumano() {
     await this.chatSession.updateState(this.c.stateKey, ChatState.HANDOFF_HUMANO);
-    await this.txt('👤 Un asesor humano te atenderá en breve. Por favor espera.');
+    const phone = this.c.contactPhone;
+    const existing = phone ? await this.customers.findByPhone(phone) : null;
+
+    if (existing) {
+      await this.chatSession.updateCustomerData(this.c.stateKey, {
+        customerName: existing.name,
+        customerPhone: existing.phone,
+      });
+    } else if (phone) {
+      await this.chatSession.updateCustomerData(this.c.stateKey, {
+        customerPhone: phone,
+      });
+    }
+
+    const nombre = existing?.name ? `, *${existing.name}*` : '';
+    let msg = `👤 Hola${nombre}, un asesor humano te atenderá en breve.\n\n`;
+    if (existing?.address) {
+      msg += `📍 Tenemos tu dirección: ${existing.address}\n`;
+      msg += 'Si cambió, indícasela al asesor.\n\n';
+    }
+    msg += 'Por favor espera. Cuéntale tu pedido y lo registrará por ti.';
+    await this.txt(msg);
   }
 }
 

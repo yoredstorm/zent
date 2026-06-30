@@ -1,14 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
-import { UpdateOrderStatusDto } from './dto/order.dto';
+import { OrderSource } from '@prisma/client';
+import { UpdateOrderStatusDto, CreateOrderDto } from './dto/order.dto';
 import { OpenwaService } from '../openwa/openwa.service';
+import { CustomersService } from '../customers/customers.service';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private openwa: OpenwaService,
+    private customers: CustomersService,
   ) {}
 
   async findAll(filters?: { status?: string; source?: string }) {
@@ -37,6 +39,81 @@ export class OrdersService {
     return order;
   }
 
+  async createFromDashboard(dto: CreateOrderDto) {
+    const lineItems: {
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+      costAtSale: number;
+      nombre: string;
+    }[] = [];
+
+    for (const item of dto.items) {
+      const product = await this.prisma.product.findUnique({ where: { id: item.productId } });
+      if (!product || !product.isActive) {
+        throw new BadRequestException(`Producto no encontrado: ${item.productId}`);
+      }
+      if (product.stock < item.quantity) {
+        throw new BadRequestException(
+          `Stock insuficiente para "${product.nombre}": hay ${product.stock}, pediste ${item.quantity}`,
+        );
+      }
+      lineItems.push({
+        productId: product.id,
+        quantity: item.quantity,
+        unitPrice: Number(product.salePrice),
+        costAtSale: Number(product.costPrice),
+        nombre: product.nombre,
+      });
+    }
+
+    let customerId = dto.customerId;
+    if (!customerId) {
+      const customer = await this.customers.upsertFromOrder({
+        customerName: dto.customerName,
+        customerPhone: dto.customerPhone,
+        address: dto.address,
+        reference: dto.reference,
+      });
+      customerId = customer.id;
+    }
+
+    const order = await this.create({
+      customerName: dto.customerName,
+      customerPhone: dto.customerPhone,
+      address: dto.address,
+      reference: dto.reference,
+      customerId,
+      chatId: dto.chatId,
+      notes: dto.notes,
+      source: 'DASHBOARD',
+      items: lineItems.map(({ productId, quantity, unitPrice, costAtSale }) => ({
+        productId,
+        quantity,
+        unitPrice,
+        costAtSale,
+      })),
+    });
+
+    if (dto.chatId) {
+      try {
+        const summary = lineItems.map((i) => `• ${i.quantity}x ${i.nombre}`).join('\n');
+        await this.openwa.sendText({
+          chatId: dto.chatId,
+          text:
+            `✅ Tu pedido #${order.id.slice(0, 8)} fue registrado por un asesor.\n\n` +
+            `${summary}\n` +
+            `💰 Total: S/ ${Number(order.total).toFixed(2)}\n\n` +
+            'Te contactaremos pronto para coordinar el envío.',
+        });
+      } catch {
+        // OpenWA unavailable; order still created
+      }
+    }
+
+    return this.findOne(order.id);
+  }
+
   async create(data: {
     customerName: string;
     customerPhone: string;
@@ -44,6 +121,8 @@ export class OrdersService {
     reference?: string;
     customerId?: string;
     chatId?: string;
+    notes?: string;
+    source?: OrderSource;
     items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
   }) {
     const subtotal = data.items.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
@@ -58,9 +137,10 @@ export class OrdersService {
           reference: data.reference,
           customerId: data.customerId,
           chatId: data.chatId,
+          notes: data.notes,
           subtotal,
           total,
-          source: 'WHATSAPP',
+          source: data.source ?? 'WHATSAPP',
           status: 'NUEVO',
           items: {
             create: data.items,

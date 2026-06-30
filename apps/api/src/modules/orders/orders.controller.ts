@@ -1,14 +1,24 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
-import { UpdateOrderStatusDto } from './dto/order.dto';
+import { UpdateOrderStatusDto, CreateOrderDto } from './dto/order.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
 @ApiTags('orders')
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class OrdersController {
   constructor(private orders: OrdersService) {}
+
+  @Post()
+  @Roles(Role.ADMIN, Role.VENDEDOR, Role.AGENTE)
+  @ApiOperation({ summary: 'Create order manually (dashboard / asesor)' })
+  create(@Body() dto: CreateOrderDto) {
+    return this.orders.createFromDashboard(dto);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all orders' })
