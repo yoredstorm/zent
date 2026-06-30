@@ -11,6 +11,7 @@ export interface ZentFlowConfig {
   flow: {
     triggers: string[];
     greeting: string;
+    startOnAnyMessage?: boolean;
     options?: Record<string, FlowNode>;
   };
   respondInGroups: boolean;
@@ -49,16 +50,17 @@ export function parseConfig(raw: Record<string, unknown>): ZentFlowConfig {
   if (!greeting) throw new Error('zent-flow: greeting is required');
   const options = toFlowNodes(raw.options);
   if (!options) throw new Error('zent-flow: at least one menu option is required');
+  const startOnAnyMessage = raw.startOnAnyMessage === true;
   const triggers = parseTriggers(raw);
-  if (triggers.length === 0) {
-    throw new Error('zent-flow: at least one trigger word is required (triggers[] or trigger)');
+  if (!startOnAnyMessage && triggers.length === 0) {
+    throw new Error('zent-flow: set startOnAnyMessage or at least one trigger word');
   }
   const zentApiUrl = String(raw.zentApiUrl ?? '').trim().replace(/\/$/, '');
   const zentApiSecret = String(raw.zentApiSecret ?? '').trim();
   if (!zentApiUrl) throw new Error('zent-flow: zentApiUrl is required');
   if (!zentApiSecret) throw new Error('zent-flow: zentApiSecret is required');
   return {
-    flow: { triggers, greeting, options },
+    flow: { triggers, greeting, startOnAnyMessage, options },
     respondInGroups: raw.respondInGroups === true,
     zentApiUrl,
     zentApiSecret,

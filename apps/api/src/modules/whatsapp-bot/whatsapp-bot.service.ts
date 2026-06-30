@@ -57,10 +57,6 @@ export class WhatsappBotService {
     return this.config.get('STORE_NAME', 'Zent').trim() || 'Zent';
   }
 
-  private get zentFlowPluginEnabled(): boolean {
-    return this.config.get('ZENT_FLOW_PLUGIN_ENABLED', 'false') === 'true';
-  }
-
   async runAction(action: BotPluginAction, ctx: BotActionContext): Promise<void> {
     const stateKey = ctx.sessionId ? `${ctx.sessionId}::${ctx.chatId}` : ctx.chatId;
     let contactPhone = resolvePhoneFromIds(ctx.chatId, ctx.from, ctx.senderPhone);
@@ -150,20 +146,18 @@ export class WhatsappBotService {
       return;
     }
 
-    if (!this.zentFlowPluginEnabled) {
-      const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
-      if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
-        await this.showMainMenu();
-        return;
-      }
+    const greetings = ['hola', 'buenas', 'buenos dias', 'buenos días', 'hi', 'hello', 'ola'];
+    if (greetings.includes(text) || text === 'menu' || text === 'inicio' || text === '0') {
+      await this.showMainMenu();
+      return;
     }
 
     switch (session.state) {
       case ChatState.MENU_PRINCIPAL:
-        if (this.zentFlowPluginEnabled) {
-          await this.txt('Escribe *menu* para ver las opciones.');
-        } else {
+        if (['1', '2', '3', '4'].includes(text)) {
           await this.handleMenuPrincipal(text);
+        } else {
+          await this.showMainMenu();
         }
         break;
       case ChatState.CATALOGO_PDF:
@@ -185,12 +179,7 @@ export class WhatsappBotService {
         await this.handleDatosEntrega(text);
         break;
       case ChatState.PEDIDO_CREADO:
-        if (this.zentFlowPluginEnabled) {
-          await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
-          await this.txt('Escribe *menu* para hacer un nuevo pedido.');
-        } else {
-          await this.showMainMenu();
-        }
+        await this.showMainMenu();
         break;
       case ChatState.HANDOFF_HUMANO:
         await this.txt('Un asesor te atenderá pronto. Por favor espera.');

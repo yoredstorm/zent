@@ -1,5 +1,6 @@
 {
-  "triggers": ["hola", "buenas", "buenos dias", "buenos días", "menu", "inicio", "0", "hi", "hello", "ola"],
+  "startOnAnyMessage": true,
+  "triggers": ["menu", "inicio", "0"],
   "greeting": "¡Hola! 👋 Bienvenido a *ZENT*.\n\nPara empezar, elige cómo ver el catálogo:\n\n1️⃣ Ver catálogo completo (PDF)\n2️⃣ Ver productos por categoría\n3️⃣ Ver mi carrito\n4️⃣ Hablar con un asesor\n\nEscribe el número de tu opción:",
   "respondInGroups": false,
   "zentApiUrl": "http://backend-api:3000",

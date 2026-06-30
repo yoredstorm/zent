@@ -9,6 +9,7 @@ export interface FlowNode {
 export interface SessionFlow {
   triggers: string[];
   greeting: string;
+  startOnAnyMessage?: boolean;
   options?: Record<string, FlowNode>;
 }
 
@@ -52,6 +53,11 @@ export class FlowEngine {
     return triggers.some((t) => t.trim().toLowerCase() === lower);
   }
 
+  private static shouldStartFlow(flow: SessionFlow, input: string): boolean {
+    if (flow.startOnAnyMessage) return input.length > 0;
+    return flow.triggers.length > 0 && this.matchesTrigger(flow.triggers, input);
+  }
+
   private static async processLocked(
     context: PluginContext,
     flow: SessionFlow,
@@ -74,13 +80,13 @@ export class FlowEngine {
     const isTrigger = this.matchesTrigger(flow.triggers, input);
 
     if (!state) {
-      if (!isTrigger) return false;
+      if (!this.shouldStartFlow(flow, input)) return false;
       await context.messages.reply(sessionId, chatId, messageId, flow.greeting);
       await context.storage.set(stateKey, { path: [], lastActive: Date.now() });
       return true;
     }
 
-    if (isTrigger) {
+    if (isTrigger && !flow.startOnAnyMessage) {
       await context.messages.reply(sessionId, chatId, messageId, flow.greeting);
       await context.storage.set(stateKey, { path: [], lastActive: Date.now() });
       return true;

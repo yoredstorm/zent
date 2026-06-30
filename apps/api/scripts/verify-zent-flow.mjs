@@ -12,7 +12,7 @@ const defaultConfig = JSON.parse(
 );
 
 const REQUIRED_ACTIONS = ['sendPdf', 'showCategories', 'showCart', 'handoff'];
-const REQUIRED_TRIGGERS = ['hola', 'menu', 'inicio', '0'];
+const REQUIRED_ACTIONS = ['sendPdf', 'showCategories', 'showCart', 'handoff'];
 
 let failed = 0;
 
@@ -26,10 +26,7 @@ function assert(cond, msg) {
 }
 
 assert(defaultConfig.greeting.includes('ZENT'), 'default greeting mentions ZENT');
-assert(Array.isArray(defaultConfig.triggers), 'triggers is array');
-for (const t of REQUIRED_TRIGGERS) {
-  assert(defaultConfig.triggers.includes(t), `trigger "${t}" present`);
-}
+assert(defaultConfig.startOnAnyMessage === true, 'startOnAnyMessage enabled');
 for (const a of REQUIRED_ACTIONS) {
   assert(
     defaultConfig.options.some((o) => o.action === a),
