@@ -263,7 +263,9 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
 
   grafana:
-    image: grafana/grafana:11.3.0
+    build:
+      context: ./monitoring/grafana
+      dockerfile: Dockerfile
     restart: always
     networks:
       - app
@@ -275,8 +277,6 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards/zent:ro
     depends_on:
       - loki
       - prometheus

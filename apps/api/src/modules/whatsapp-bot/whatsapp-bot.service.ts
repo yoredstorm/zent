@@ -33,6 +33,8 @@ interface BrowseContext {
   viewingProductIndex?: number;
   /** Tras agregar al carrito: 1–5 eligen la siguiente acción. */
   awaitPostAddMenu?: boolean;
+  /** En carrito: usuario eligió eliminar — espera número de línea. */
+  awaitCartDelete?: boolean;
 }
 
 interface CheckoutData {
@@ -87,6 +89,19 @@ export class WhatsappBotService {
             break;
         }
       },
+    );
+  }
+
+  /** Pie del menú de acciones en el carrito. */
+  private cartMenuHint(): string {
+    return (
+      '\n\n*¿Qué deseas hacer?*\n' +
+      `${formatKeycap(1)} Confirmar pedido\n` +
+      `${formatKeycap(2)} Eliminar un producto\n` +
+      `${formatKeycap(3)} Seguir comprando\n` +
+      `${formatKeycap(4)} Menú inicio\n` +
+      `${formatKeycap(5)} Hablar con un asesor\n\n` +
+      'Escribe el número de tu opción:'
     );
   }
 
@@ -548,29 +563,90 @@ export class WhatsappBotService {
     cart.items.forEach((item, i) => {
       text += `${formatKeycap(i + 1)} ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
     });
-    text += `💰 *Total: S/ ${cart.total.toFixed(2)}*\n\n`;
-    text += '✅ *confirmar* · ❌ *eliminar 1* · 🔄 *menu* · 👤 *asesor*';
+    text += `💰 *Total: S/ ${cart.total.toFixed(2)}*`;
+    text += this.cartMenuHint();
 
+    const sessionCtx = await this.chatSession.getContext(this.c.stateKey);
+    await this.saveBrowseContext({ ...sessionCtx, awaitCartDelete: undefined } as BrowseContext);
     await this.chatSession.updateState(this.c.stateKey, ChatState.CARRITO);
     await this.txt(text);
   }
 
   private async handleCarrito(text: string) {
+    const sessionCtx = await this.chatSession.getContext(this.c.stateKey);
+
     if (text === 'confirmar' || text === 'finalizar') {
       await this.confirmarPedido();
-    } else if (text.startsWith('eliminar ')) {
+      return;
+    }
+    if (text.startsWith('eliminar ')) {
       const index = parseInt(text.split(' ')[1]) - 1;
       const cart = await this.cart.getCart(this.c.stateKey);
       if (index >= 0 && index < cart.items.length) {
         await this.cart.removeItem(this.c.stateKey, cart.items[index].productId);
         await this.txt('✅ Producto eliminado');
         await this.mostrarCarrito();
+      } else {
+        await this.txt(`Número inválido. Escribe un número del 1 al ${cart.items.length}.`);
       }
-    } else if (text === 'menu') {
-      await this.showMainMenu();
-    } else {
-      await this.mostrarCarrito();
+      return;
     }
+    if (text === 'menu' || text === 'inicio' || text === '0') {
+      await this.showMainMenu();
+      return;
+    }
+    if (text === 'asesor') {
+      await this.handoffHumano();
+      return;
+    }
+
+    if (sessionCtx.awaitCartDelete) {
+      const cart = await this.cart.getCart(this.c.stateKey);
+      if (/^\d+$/.test(text)) {
+        const index = parseInt(text) - 1;
+        if (index >= 0 && index < cart.items.length) {
+          await this.cart.removeItem(this.c.stateKey, cart.items[index].productId);
+          await this.saveBrowseContext({ ...sessionCtx, awaitCartDelete: undefined } as BrowseContext);
+          await this.txt('✅ Producto eliminado');
+          await this.mostrarCarrito();
+        } else {
+          await this.txt(`Número inválido. Escribe un número del 1 al ${cart.items.length}:`);
+        }
+      } else {
+        await this.txt(`Escribe el número del producto a eliminar (1–${cart.items.length}):`);
+      }
+      return;
+    }
+
+    if (text === '1') {
+      await this.confirmarPedido();
+      return;
+    }
+    if (text === '2') {
+      const cart = await this.cart.getCart(this.c.stateKey);
+      await this.saveBrowseContext({ ...sessionCtx, awaitCartDelete: true } as BrowseContext);
+      await this.txt(`¿Qué producto eliminar?\n\nEscribe el número del 1 al ${cart.items.length}:`);
+      return;
+    }
+    if (text === '3') {
+      const browseCtx = await this.getBrowseContext();
+      if (browseCtx?.categoryId) {
+        await this.mostrarProductosCategoria(browseCtx.categoryId);
+      } else {
+        await this.mostrarCategorias();
+      }
+      return;
+    }
+    if (text === '4') {
+      await this.showMainMenu();
+      return;
+    }
+    if (text === '5') {
+      await this.handoffHumano();
+      return;
+    }
+
+    await this.txt('Opción inválida.' + this.cartMenuHint());
   }
 
   private async confirmarPedido() {
@@ -586,19 +662,19 @@ export class WhatsappBotService {
       text += `${item.quantity}x ${item.nombre} — S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n`;
     });
     text += `\n💰 *Total: S/ ${cart.total.toFixed(2)}*\n\n`;
-    text += '¿Confirmas este pedido? Escribe *si* para continuar o *carrito* para modificar.';
+    text += `${formatKeycap(1)} Sí, confirmar pedido\n${formatKeycap(2)} Modificar carrito\n\nEscribe el número de tu opción:`;
 
     await this.chatSession.updateState(this.c.stateKey, ChatState.CONFIRMAR_PEDIDO);
     await this.txt(text);
   }
 
   private async handleConfirmarPedido(text: string) {
-    if (text === 'si' || text === 'sí' || text === 'confirmar') {
+    if (text === '1' || text === 'si' || text === 'sí' || text === 'confirmar') {
       await this.iniciarDatosEntrega();
-    } else if (text === 'carrito') {
+    } else if (text === '2' || text === 'carrito') {
       await this.mostrarCarrito();
     } else {
-      await this.txt('Escribe *si* para confirmar o *carrito* para modificar.');
+      await this.txt(`${formatKeycap(1)} Confirmar · ${formatKeycap(2)} Modificar carrito\n\nEscribe 1 o 2:`);
     }
   }
 

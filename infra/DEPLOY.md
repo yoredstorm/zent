@@ -173,7 +173,7 @@ Tras redeploy, en **Dashboards → Zent** aparecen:
 | **Zent - Logs** | API, bot-worker, OpenWA, postgres, frontend, errores globales |
 | **Zent - Métricas** | CPU, memoria, red y disco de contenedores (Prometheus/cAdvisor) |
 
-Si no aparecen: redeploy en Dokploy o reinicia el contenedor `grafana`.
+Si no aparecen: redeploy en Dokploy o reinicia el contenedor `grafana`. Los dashboards van **dentro de la imagen** (`infra/monitoring/grafana/Dockerfile`); no dependen de montar carpetas en el servidor.
 
 ### Importar manualmente (alternativa)
 
