@@ -31,6 +31,8 @@ interface BrowseContext {
   productIds: string[];
   /** Índice del producto que el usuario está viendo; en ese modo un número = cantidad. */
   viewingProductIndex?: number;
+  /** Tras agregar al carrito: 1–5 eligen la siguiente acción. */
+  awaitPostAddMenu?: boolean;
 }
 
 interface CheckoutData {
@@ -88,16 +90,46 @@ export class WhatsappBotService {
     );
   }
 
-  /** Pie reutilizable tras agregar al carrito o en pantallas de compra. */
+  /** Pie reutilizable tras agregar al carrito. */
   private seguirComprandoHint(): string {
     return (
       '\n\n*¿Qué deseas hacer?*\n' +
-      '• *productos* — ver más de esta categoría\n' +
-      '• *categorias* — cambiar categoría\n' +
-      '• *carrito* — ver tu pedido\n' +
-      '• *menu* — inicio\n' +
-      '• *asesor* — hablar con un asesor'
+      `${formatKeycap(1)} Ver más productos de esta categoría\n` +
+      `${formatKeycap(2)} Cambiar categoría\n` +
+      `${formatKeycap(3)} Ver mi carrito\n` +
+      `${formatKeycap(4)} Menú inicio\n` +
+      `${formatKeycap(5)} Hablar con un asesor\n\n` +
+      'Escribe el número de tu opción:'
     );
+  }
+
+  private async handlePostAddMenu(ctx: BrowseContext, text: string): Promise<boolean> {
+    if (text === '1') {
+      await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
+      await this.mostrarProductosCategoria(ctx.categoryId);
+      return true;
+    }
+    if (text === '2') {
+      await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
+      await this.mostrarCategorias();
+      return true;
+    }
+    if (text === '3') {
+      await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
+      await this.mostrarCarrito();
+      return true;
+    }
+    if (text === '4') {
+      await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
+      await this.showMainMenu();
+      return true;
+    }
+    if (text === '5') {
+      await this.saveBrowseContext({ ...ctx, awaitPostAddMenu: undefined });
+      await this.handoffHumano();
+      return true;
+    }
+    return false;
   }
 
   private async saveBrowseContext(ctx: BrowseContext) {
@@ -323,6 +355,7 @@ export class WhatsappBotService {
       categoryId,
       productIds: products.map((p) => p.id),
       viewingProductIndex: undefined,
+      awaitPostAddMenu: undefined,
     };
     await this.saveBrowseContext(browseCtx);
     await this.chatSession.updateState(this.c.stateKey, ChatState.LISTADO_PRODUCTOS);
@@ -336,7 +369,7 @@ export class WhatsappBotService {
       '\n*¿Qué quieres hacer?*\n' +
       '• Escribe el *número* para ver foto y detalle\n' +
       `• Escribe *${exampleIdx} 3* para agregar 3 unidades del producto ${exampleIdx}\n` +
-      '• *carrito* · *categorias* · *menu* · *asesor*';
+      '• Escribe *0* para menú inicio';
 
     await this.txt(msg);
   }
@@ -373,6 +406,21 @@ export class WhatsappBotService {
     const ctx = await this.getBrowseContext();
     if (!ctx) {
       await this.mostrarCategorias();
+      return;
+    }
+
+    if (ctx.awaitPostAddMenu && ['1', '2', '3', '4', '5'].includes(text)) {
+      await this.handlePostAddMenu(ctx, text);
+      return;
+    }
+    if (ctx.awaitPostAddMenu) {
+      await this.txt('Opción inválida. Escribe un número del 1 al 5:' + this.seguirComprandoHint());
+      return;
+    }
+
+    if (ctx.viewingProductIndex !== undefined && text === '0') {
+      await this.saveBrowseContext({ ...ctx, viewingProductIndex: undefined });
+      await this.mostrarProductosCategoria(ctx.categoryId);
       return;
     }
 
@@ -414,9 +462,9 @@ export class WhatsappBotService {
     await this.txt(
       'No entendí tu mensaje.\n\n' +
         (enDetalle
-          ? '• Escribe la *cantidad* (ej: *3*)\n'
+          ? '• Escribe la *cantidad* (ej: *3*)\n• *0* — volver al listado\n'
           : '• Escribe un *número* para ver un producto\n• Escribe *2 3* para agregar 3 del producto 2\n') +
-        '• *productos* · *categorias* · *carrito* · *menu* · *asesor*',
+        '• *0* — menú inicio',
     );
   }
 
@@ -435,7 +483,7 @@ export class WhatsappBotService {
       return;
     }
 
-    await this.saveBrowseContext({ ...ctx, viewingProductIndex: index });
+    await this.saveBrowseContext({ ...ctx, viewingProductIndex: index, awaitPostAddMenu: undefined });
 
     const caption =
       `*${product.nombre}*\n` +
@@ -444,7 +492,7 @@ export class WhatsappBotService {
       (product.descripcion ? `📝 ${product.descripcion}\n` : '') +
       `\n¿Cuántas unidades deseas?\n` +
       `Escribe la *cantidad* (ej: *3*)\n\n` +
-      '*productos* — volver al listado · *asesor* — ayuda';
+      '*0* — volver al listado de productos';
 
     if (product.images.length > 0) {
       await this.img({ url: product.images[0].url }, caption);
@@ -479,11 +527,13 @@ export class WhatsappBotService {
       costAtSale: Number(product.costPrice),
     });
 
-    await this.saveBrowseContext({ ...ctx, viewingProductIndex: undefined });
+    await this.saveBrowseContext({
+      ...ctx,
+      viewingProductIndex: undefined,
+      awaitPostAddMenu: true,
+    });
 
-    await this.txt(
-      `✅ Agregado: ${quantity}x ${product.nombre}` + this.seguirComprandoHint(),
-    );
+    await this.txt(`✅ Agregado: ${quantity}x ${product.nombre}` + this.seguirComprandoHint());
   }
 
   private async mostrarCarrito() {
