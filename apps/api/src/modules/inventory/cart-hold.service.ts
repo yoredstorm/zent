@@ -214,7 +214,7 @@ export class CartHoldService implements OnModuleInit {
     let total = 0;
     for (const hold of holds) {
       if (excludeStateKey && hold.stateKey === excludeStateKey) continue;
-      for (const item of hold.items) {
+      for (const item of hold.items ?? []) {
         if (item.productId === productId) total += item.quantity;
       }
     }
@@ -232,9 +232,11 @@ export class CartHoldService implements OnModuleInit {
 
     const results: CartHoldListItem[] = [];
     for (const key of keys) {
+      if (key.startsWith(this.metaPrefix)) continue;
       const [data, ttl] = await Promise.all([this.redis.get(key), this.redis.ttl(key)]);
       if (!data || ttl <= 0) continue;
       const hold = JSON.parse(data) as CartHoldRecord;
+      if (!Array.isArray(hold.items)) continue;
       results.push({
         ...hold,
         ttlSeconds: ttl,
