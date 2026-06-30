@@ -253,6 +253,16 @@ export class WhatsappBotService {
     }
   }
 
+  /** Menú al confirmar datos de entrega guardados. */
+  private confirmSavedDataHint(): string {
+    return (
+      `${formatKeycap(1)} Sí, usar los mismos\n` +
+      `${formatKeycap(2)} Cambiar dirección/referencia\n` +
+      `${formatKeycap(3)} Cambiar todo\n\n` +
+      'Escribe el número de tu opción:'
+    );
+  }
+
   private async showMainMenu() {
     await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
     const phone = this.c.contactPhone;
@@ -688,14 +698,12 @@ export class WhatsappBotService {
         cartJson: JSON.stringify(checkoutData),
       });
       await this.txt(
-        `Hola ${existing.name}, tenemos tus datos guardados:\n\n` +
-          `📍 Dirección: ${existing.address}\n` +
-          `📞 Teléfono: ${existing.phone}\n` +
-          `📌 Referencia: ${existing.reference || 'N/A'}\n\n` +
-          '¿Confirmas estos datos?\n' +
-          '1 — Sí, usar los mismos\n' +
-          '2 — Cambiar dirección/referencia\n' +
-          '3 — Cambiar todo',
+        `Hola *${existing.name}*, tenemos tus datos guardados:\n\n` +
+          `📍 *Dirección:* ${existing.address}\n` +
+          `📞 *Teléfono:* ${existing.phone}\n` +
+          `📌 *Referencia:* ${existing.reference || 'N/A'}\n\n` +
+          '*¿Confirmas estos datos?*\n' +
+          this.confirmSavedDataHint(),
       );
       return;
     }
@@ -739,7 +747,7 @@ export class WhatsappBotService {
         });
         await this.txt('1️⃣ *Nombre completo:*');
       } else {
-        await this.txt('Escribe 1, 2 o 3 para elegir una opción.');
+        await this.txt('Opción inválida.\n\n' + this.confirmSavedDataHint());
       }
       return;
     }
