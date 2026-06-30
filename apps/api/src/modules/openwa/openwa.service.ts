@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import Redis from 'ioredis';
 
 export interface OpenWASession {
@@ -29,6 +31,14 @@ interface SendDocumentPayload {
 }
 
 const ACTIVE_SESSION_STATUSES = new Set(['ready', 'connected', 'authenticating']);
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
 
 @Injectable()
 export class OpenwaService {
@@ -66,18 +76,82 @@ export class OpenwaService {
     return response.json();
   }
 
-  /** OpenWA fetches media server-side; use internal API URL for our uploads (SSRF_ALLOWED_HOSTS). */
+  /** OpenWA @IsUrl() rejects hostnames without TLD (e.g. backend-api). Read our uploads from disk. */
+  private tryLoadLocalUpload(url: string): { base64: string; mimetype: string; filename: string } | null {
+    const match = url.match(/\/uploads\/(pdf|images)\/([^/?#]+)$/i);
+    if (!match) return null;
+
+    const [, folder, filename] = match;
+    const uploadsDir = this.config.get('UPLOADS_DIR', './uploads');
+    const filepath = path.join(uploadsDir, folder, filename);
+    if (!fs.existsSync(filepath)) {
+      this.logger.warn(`Upload file not found on disk: ${filepath}`);
+      return null;
+    }
+
+    const ext = path.extname(filename).toLowerCase();
+    const mimetype =
+      MIME_BY_EXT[ext] || (folder === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+    const base64 = fs.readFileSync(filepath).toString('base64');
+    return { base64, mimetype, filename };
+  }
+
+  /** Prefer public URL for remote fetch; internal hostnames fail OpenWA @IsUrl() validation. */
   private resolveMediaUrl(url?: string): string | undefined {
     if (!url) return undefined;
-    const internalBase = this.config.get('INTERNAL_API_URL', 'http://backend-api:3000/api').replace(/\/$/, '');
     const publicBase = this.config.get('PUBLIC_API_URL', '').replace(/\/$/, '');
     if (publicBase && url.startsWith(`${publicBase}/`)) {
-      return url.replace(publicBase, internalBase);
+      return url;
     }
+    const internalBase = this.config.get('INTERNAL_API_URL', 'http://backend-api:3000/api').replace(/\/$/, '');
     if (url.startsWith('/api/uploads/')) {
-      return `${internalBase}${url.slice('/api'.length)}`;
+      return `${publicBase || internalBase}${url.slice('/api'.length)}`;
+    }
+    if (internalBase && url.startsWith(`${internalBase}/`)) {
+      return publicBase ? url.replace(internalBase, publicBase) : url;
     }
     return url;
+  }
+
+  private buildMediaBody(
+    chatId: string,
+    source: { url?: string; base64?: string; mimetype?: string; filename?: string },
+    caption?: string,
+  ): Record<string, string> {
+    const body: Record<string, string> = { chatId };
+
+    if (source.url) {
+      const local = this.tryLoadLocalUpload(source.url);
+      if (local) {
+        body.base64 = local.base64;
+        body.mimetype = source.mimetype || local.mimetype;
+        body.filename = source.filename || local.filename;
+      } else {
+        body.url = this.resolveMediaUrl(source.url)!;
+        if (source.mimetype) body.mimetype = source.mimetype;
+        if (source.filename) body.filename = source.filename;
+      }
+    } else if (source.base64) {
+      body.base64 = source.base64;
+      if (source.mimetype) body.mimetype = source.mimetype;
+      if (source.filename) body.filename = source.filename;
+    }
+
+    if (!body.url && !body.base64) {
+      throw new Error('Media source must provide url or base64');
+    }
+    if (body.base64 && !body.mimetype) {
+      throw new Error('mimetype is required when sending base64 media');
+    }
+    if (body.url && !body.filename && source.url) {
+      try {
+        body.filename = decodeURIComponent(new URL(source.url).pathname.split('/').pop() || 'file');
+      } catch {
+        /* optional */
+      }
+    }
+    if (caption) body.caption = caption;
+    return body;
   }
 
   /** Resuelve la sesión activa; OPENWA_SESSION_ID es opcional. */
@@ -159,44 +233,14 @@ export class OpenwaService {
 
   async sendImage(payload: SendImagePayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
-    const body: Record<string, string> = {
-      chatId: payload.chatId,
-    };
-    if (payload.image.url) {
-      body.url = this.resolveMediaUrl(payload.image.url)!;
-      if (payload.image.mimetype) body.mimetype = payload.image.mimetype;
-    } else if (payload.image.base64) {
-      body.base64 = payload.image.base64;
-      if (payload.image.mimetype) body.mimetype = payload.image.mimetype;
-    }
-    if (payload.caption) body.caption = payload.caption;
+    const body = this.buildMediaBody(payload.chatId, payload.image, payload.caption);
     await this.request(`/api/sessions/${sessionId}/messages/send-image`, 'POST', body);
     this.logger.debug(`Sent image to ${payload.chatId} via session ${sessionId}`);
   }
 
   async sendDocument(payload: SendDocumentPayload): Promise<void> {
     const sessionId = payload.sessionId ?? (await this.resolveSessionId());
-    const body: Record<string, string> = {
-      chatId: payload.chatId,
-    };
-    if (payload.document.url) {
-      body.url = this.resolveMediaUrl(payload.document.url)!;
-      if (payload.document.mimetype) body.mimetype = payload.document.mimetype;
-      if (payload.document.filename) {
-        body.filename = payload.document.filename;
-      } else {
-        try {
-          body.filename = decodeURIComponent(new URL(payload.document.url).pathname.split('/').pop() || 'document.pdf');
-        } catch {
-          body.filename = 'document.pdf';
-        }
-      }
-    } else if (payload.document.base64) {
-      body.base64 = payload.document.base64;
-      if (payload.document.mimetype) body.mimetype = payload.document.mimetype;
-      if (payload.document.filename) body.filename = payload.document.filename;
-    }
-    if (payload.caption) body.caption = payload.caption;
+    const body = this.buildMediaBody(payload.chatId, payload.document, payload.caption);
     await this.request(`/api/sessions/${sessionId}/messages/send-document`, 'POST', body);
     this.logger.debug(`Sent document to ${payload.chatId} via session ${sessionId}`);
   }
