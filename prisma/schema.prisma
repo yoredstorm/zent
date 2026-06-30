@@ -150,15 +150,16 @@ model Order {
 }
 
 model OrderItem {
-  id          String   @id @default(uuid())
-  orderId     String
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  quantity    Int
-  unitPrice   Decimal  @db.Decimal(10, 2)
-  costAtSale  Decimal  @db.Decimal(10, 2)
-  createdAt   DateTime @default(now())
+  id                String   @id @default(uuid())
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id])
+  quantity          Int
+  requestedQuantity Int?
+  unitPrice         Decimal  @db.Decimal(10, 2)
+  costAtSale        Decimal  @db.Decimal(10, 2)
+  createdAt         DateTime @default(now())
 
   @@map("order_items")
 }

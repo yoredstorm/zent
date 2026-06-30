@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
-import { UpdateOrderStatusDto, CreateOrderDto } from './dto/order.dto';
+import { UpdateOrderStatusDto, CreateOrderDto, UpdateOrderItemsDto } from './dto/order.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -42,5 +42,12 @@ export class OrdersController {
   @ApiOperation({ summary: 'Update order status' })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
     return this.orders.updateStatus(id, dto);
+  }
+
+  @Put(':id/items')
+  @Roles(Role.ADMIN, Role.VENDEDOR, Role.AGENTE)
+  @ApiOperation({ summary: 'Confirm or adjust order line quantities' })
+  updateItems(@Param('id') id: string, @Body() dto: UpdateOrderItemsDto) {
+    return this.orders.updateItems(id, dto);
   }
 }

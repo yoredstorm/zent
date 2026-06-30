@@ -834,6 +834,7 @@ export class WhatsappBotService {
           create: cart.items.map((item) => ({
             productId: item.productId,
             quantity: item.quantity,
+            requestedQuantity: item.quantity,
             unitPrice: item.unitPrice,
             costAtSale: item.costAtSale,
           })),

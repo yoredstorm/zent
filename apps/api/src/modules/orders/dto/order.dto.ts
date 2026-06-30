@@ -34,6 +34,26 @@ export class UpdateOrderStatusDto {
   notes?: string;
 }
 
+export class UpdateOrderItemDto {
+  @ApiProperty()
+  @IsString()
+  id!: string;
+
+  @ApiProperty({ description: 'Cantidad confirmada; 0 = no incluido en la entrega' })
+  @IsNumber()
+  @Min(0)
+  quantity!: number;
+}
+
+export class UpdateOrderItemsDto {
+  @ApiProperty({ type: [UpdateOrderItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => UpdateOrderItemDto)
+  items!: UpdateOrderItemDto[];
+}
+
 export class CreateOrderItemDto {
   @ApiProperty()
   @IsString()

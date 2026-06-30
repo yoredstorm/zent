@@ -39,6 +39,8 @@ export default function OrdersPage() {
   const [lines, setLines] = useState<OrderLine[]>([{ productId: '', quantity: 1 }]);
   const [creating, setCreating] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [editLines, setEditLines] = useState<{ id: string; quantity: number }[]>([]);
+  const [savingItems, setSavingItems] = useState(false);
 
   useEffect(() => {
     loadOrders();
@@ -122,9 +124,44 @@ export default function OrdersPage() {
     toast.success(`Estado cambiado a ${status}`);
     loadOrders();
     if (selected?.id === id) {
-      setSelected({ ...selected, status });
+      const updated = await api.get(`/orders/${id}`);
+      setSelected(updated);
+      syncEditLines(updated);
     }
   };
+
+  const syncEditLines = (order: any) => {
+    setEditLines(
+      (order.items ?? []).map((item: any) => ({
+        id: item.id,
+        quantity: item.quantity,
+      })),
+    );
+  };
+
+  const selectOrder = async (order: any) => {
+    setSelected(order);
+    syncEditLines(order);
+  };
+
+  const handleSaveItems = async () => {
+    if (!selected) return;
+    setSavingItems(true);
+    try {
+      const updated = await api.put(`/orders/${selected.id}/items`, { items: editLines });
+      toast.success('Cantidades confirmadas');
+      setSelected(updated);
+      syncEditLines(updated);
+      loadOrders();
+    } catch (err: any) {
+      toast.error(err?.message || 'Error al guardar ítems');
+    } finally {
+      setSavingItems(false);
+    }
+  };
+
+  const canEditItems =
+    selected && !['COMPLETADO', 'CANCELADO'].includes(selected.status);
 
   const orderTotal = lines.reduce((sum, line) => {
     const p = products.find((x) => x.id === line.productId);
@@ -323,7 +360,7 @@ export default function OrdersPage() {
               {orders.map((o: any) => (
                 <tr
                   key={o.id}
-                  onClick={() => setSelected(o)}
+                  onClick={() => selectOrder(o)}
                   className={`cursor-pointer hover:bg-gray-50 ${selected?.id === o.id ? 'bg-blue-50' : ''}`}
                 >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
@@ -381,14 +418,64 @@ export default function OrdersPage() {
               )}
               <hr className="my-4" />
               <h3 className="font-bold">Items:</h3>
-              {selected.items?.map((item: any) => (
-                <div key={item.id} className="flex justify-between">
-                  <span>
-                    {item.quantity}x {item.product?.nombre}
-                  </span>
-                  <span>S/ {(Number(item.unitPrice) * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
+              {selected.items?.map((item: any) => {
+                const editLine = editLines.find((l) => l.id === item.id);
+                const requested = item.requestedQuantity ?? item.quantity;
+                const confirmed = editLine?.quantity ?? item.quantity;
+                const changed = requested !== confirmed;
+                return (
+                  <div key={item.id} className="py-2 border-b border-gray-100 last:border-0">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex-1">
+                        <div className="font-medium">{item.product?.nombre}</div>
+                        {requested !== item.quantity && (
+                          <div className="text-xs text-gray-500">Pedido original: {requested}</div>
+                        )}
+                        {changed && (
+                          <div className="text-xs text-amber-700">
+                            Pedido: {requested} → confirmado: {confirmed}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        {canEditItems ? (
+                          <input
+                            type="number"
+                            min={0}
+                            value={confirmed}
+                            onChange={(e) => {
+                              const qty = Math.max(0, parseInt(e.target.value) || 0);
+                              setEditLines((lines) =>
+                                lines.map((l) => (l.id === item.id ? { ...l, quantity: qty } : l)),
+                              );
+                            }}
+                            className="w-16 px-2 py-1 border rounded-md text-right"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span>{item.quantity}x</span>
+                        )}
+                        <div className="text-gray-600">
+                          S/ {(Number(item.unitPrice) * confirmed).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {canEditItems && (
+                <button
+                  type="button"
+                  onClick={handleSaveItems}
+                  disabled={savingItems}
+                  className="mt-2 w-full px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 disabled:opacity-50"
+                >
+                  {savingItems ? 'Guardando…' : 'Confirmar cantidades'}
+                </button>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Ajusta cantidades antes de marcar en delivery o completado. Pon 0 si un producto no se incluyó.
+              </p>
               <hr className="my-4" />
               <div className="flex justify-between font-bold text-lg">
                 <span>Total:</span>
