@@ -26,11 +26,7 @@ export default function CatalogPage() {
     }
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const { url } = await api.post('/uploads/pdf', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { url } = await api.upload('/uploads/document', file);
       await api.post('/catalog-pdf', { url });
       toast.success('Catálogo PDF actualizado');
       loadCatalog();

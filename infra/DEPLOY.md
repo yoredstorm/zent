@@ -166,6 +166,18 @@ OpenWA: escanear QR de nuevo en `https://IP:2786` (volumen WA también se borró
 
 ## Troubleshooting rápido
 
+### Subir catálogo PDF falla
+
+El dashboard debe usar **`POST /api/uploads/document`** (no `/api/uploads/pdf`). Ese endpoint solo existe para servir el archivo ya subido (`/api/uploads/pdf/{filename}`).
+
+Tras actualizar el frontend, prueba en **Catálogo → Subir PDF**. Límite: 20 MB.
+
+### cAdvisor: `Failed to create existing container`
+
+**No afecta** uploads, WhatsApp, login ni `/setup`. cAdvisor solo alimenta métricas en Grafana/Prometheus.
+
+Aparece tras recrear contenedores (Dokploy, Traefik, stacks viejos): referencias cgroup huérfanas en overlayfs. Puedes **ignorarlo**, reiniciar el contenedor `cadvisor`, o quitar el servicio del compose si no usas métricas de contenedores.
+
 ### CPU 0% en Dokploy y login 500
 
 Si Grafana (`:3002`) y Prometheus (`:9090`) responden pero `:3001` no, **`backend-api` no está corriendo** (no es un problema de contraseña del dashboard).
