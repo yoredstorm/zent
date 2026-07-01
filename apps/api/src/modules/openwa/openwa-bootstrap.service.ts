@@ -7,6 +7,8 @@ import { OpenwaService } from './openwa.service';
 export class OpenwaBootstrapService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OpenwaBootstrapService.name);
   private configurePromise: Promise<void> | null = null;
+  /** Evita bootstrap en paralelo con POST /setup/install (429 en OpenWA). */
+  private installRunning = false;
 
   constructor(
     private config: ConfigService,
@@ -16,6 +18,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap() {
     if (this.config.get('WORKER_MODE') === 'true') return;
+    if (this.installRunning) return;
 
     const install = await this.prisma.systemInstall.findFirst();
     if (!install?.installed) {
@@ -45,6 +48,40 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     );
   }
 
+  setInstallRunning(running: boolean) {
+    this.installRunning = running;
+  }
+
+  /** Solo Redis + BullMQ durante /setup (sin webhooks; evita 429). */
+  async configureInfrastructureOnly(retries = 3): Promise<void> {
+    if (this.configurePromise) return this.configurePromise;
+    this.configurePromise = this.runInfrastructureOnly(retries).finally(() => {
+      this.configurePromise = null;
+    });
+    return this.configurePromise;
+  }
+
+  private async runInfrastructureOnly(retries: number): Promise<void> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        await this.openwa.validateApiKey();
+        await this.openwa.ensureInfrastructure();
+        this.logger.log('OpenWA infrastructure (Redis + BullMQ) configured during setup');
+        return;
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        if (attempt < retries) {
+          const delay = msg.includes('429') ? 20000 : 6000;
+          this.logger.warn(`OpenWA infra setup ${attempt}/${retries} failed: ${msg}`);
+          await new Promise((r) => setTimeout(r, delay));
+        } else {
+          this.logger.error(`OpenWA infra setup failed after ${retries} attempts: ${msg}`);
+          return;
+        }
+      }
+    }
+  }
+
   /** Configura Redis/BullMQ y registra webhooks con reintentos (una sola ejecucion a la vez). */
   configureOpenWaWithRetries(retries = 6): Promise<void> {
     if (this.configurePromise) return this.configurePromise;
@@ -71,7 +108,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
           );
         }
         if (attempt < retries) {
-          const delay = msg.includes('429') ? 15000 : 5000;
+          const delay = msg.includes('429') ? 20000 : 6000;
           this.logger.warn(`OpenWA setup attempt ${attempt}/${retries} failed: ${msg}`);
           await new Promise((r) => setTimeout(r, delay));
         } else {
@@ -97,12 +134,12 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
       } catch (err: any) {
         const msg = err?.message || String(err);
         if (attempt < retries) {
-          const delay = msg.includes('429') ? 15000 : 5000;
+          const delay = msg.includes('429') ? 20000 : 6000;
           this.logger.warn(`Webhook setup attempt ${attempt}/${retries} failed: ${msg}`);
           await new Promise((r) => setTimeout(r, delay));
         } else {
           this.logger.error(`Webhook setup failed after ${retries} attempts: ${msg}`);
-          throw err;
+          return;
         }
       }
     }

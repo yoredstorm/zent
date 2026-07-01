@@ -144,6 +144,9 @@ reset_full_stack() {
   for vol in "${PROD_VOLUMES[@]}"; do
     docker volume rm -f "$vol" 2>/dev/null || true
   done
+  docker volume ls -q | grep -E 'zent|tienda-zent' | while read -r vol; do
+    docker volume rm -f "$vol" 2>/dev/null || true
+  done
   if [ -f "$ENV_FILE" ]; then
     rm -f "$ENV_FILE"
     echo "==> Eliminado $ENV_FILE"

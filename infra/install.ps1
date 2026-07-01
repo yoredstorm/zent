@@ -136,6 +136,11 @@ function Reset-FullStack {
   foreach ($vol in $ProdVolumes) {
     docker volume rm $vol -f 2>$null | Out-Null
   }
+  docker volume ls -q | ForEach-Object {
+    if ($_ -match 'zent|tienda-zent') {
+      docker volume rm $_ -f 2>$null | Out-Null
+    }
+  }
   if (Test-Path $EnvFile) {
     Remove-Item $EnvFile -Force
     Write-Host "==> Eliminado $EnvFile"

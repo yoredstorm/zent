@@ -107,6 +107,7 @@ export class SetupService {
 
   private async runInstall(dto: InstallDto): Promise<void> {
     const total = 6;
+    this.openwaBootstrap.setInstallRunning(true);
     try {
       // 1. Verificar conexion a base de datos
       this.emit({ step: 1, total, label: 'Verificando base de datos', status: 'running' });
@@ -148,16 +149,16 @@ export class SetupService {
         status: 'running',
         message: 'Configurando Redis y colas BullMQ',
       });
-      const openwaReady = await this.waitForOpenWaKey();
+      const openwaReady = await this.waitForOpenWaKey(8, 3000);
       if (openwaReady) {
         try {
-          await this.openwaBootstrap.configureOpenWaWithRetries(4);
+          await this.openwaBootstrap.configureInfrastructureOnly(3);
           this.emit({
             step: 5,
             total,
             label: 'Conectando con WhatsApp Gateway',
             status: 'ok',
-            message: 'Redis, BullMQ y webhook configurados',
+            message: 'Redis y BullMQ configurados; webhook tras vincular WhatsApp',
           });
         } catch (err: any) {
           this.emit({
@@ -188,11 +189,20 @@ export class SetupService {
 
       this.emit({ step: total, total, label: 'Instalacion completada', status: 'done' });
       this.activeInstall?.complete();
+
+      // Webhook e infra completa fuera del wizard (evita 429 durante paso 5/6)
+      setTimeout(() => {
+        void this.openwaBootstrap.configureOpenWaWithRetries(6).catch((err: any) => {
+          this.logger.warn(`OpenWA post-install config: ${err?.message || err}`);
+        });
+      }, 45000);
     } catch (err: any) {
       const message = err?.message || String(err);
       this.logger.error(`Install failed: ${message}`);
       this.emit({ step: 0, total, label: 'Instalacion fallida', status: 'error', message });
       this.activeInstall?.complete();
+    } finally {
+      this.openwaBootstrap.setInstallRunning(false);
     }
   }
 

@@ -1,5 +1,23 @@
 # Verificación post-deploy (VPS / Dokploy)
 
+## Instalacion limpia en Dokploy (antes del primer deploy)
+
+En el **servidor VPS** (Terminal Dokploy o SSH con `sudo`), desde la carpeta del repo:
+
+```bash
+cd infra
+chmod +x dokploy-fresh-install.sh
+./dokploy-fresh-install.sh
+```
+
+Eso hace `compose down -v`, borra volúmenes `zent_*` legacy y cualquier volumen `*zent*` / `tienda-zent*`. **No toca** contenedores de Dokploy (`dokploy-postgres`, `dokploy-traefik`, etc.).
+
+Luego crea el proyecto en Dokploy y deploy. Con el compose actual, cada proyecto nuevo tiene volúmenes aislados por prefijo.
+
+Equivalente local Windows: `./dokploy-fresh-install.ps1`
+
+---
+
 ## Redeploy en Dokploy no muestra /setup (va a /login)
 
 **Causa:** el contenedor es nuevo, pero Docker reutilizaba volúmenes con **nombre fijo global** (`zent_postgres_prod`) de un proyecto Dokploy anterior (`zent-zent-siqm8r`, etc.). En los logs verás:
