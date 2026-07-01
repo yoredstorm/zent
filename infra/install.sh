@@ -5,7 +5,7 @@
 # con OPENWA_API_KEY, reinicia OpenWA si hace falta, y levanta el stack.
 #
 # Uso:
-#   ./install.sh [HOST]
+#   ./install.sh [HOST] [--reset] [--force]
 #
 set -euo pipefail
 
@@ -14,9 +14,32 @@ cd "$(dirname "$0")"
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
 CRED_FILE="credenciales-zent.txt"
-HOST="${1:-localhost}"
+HOST="localhost"
+DO_RESET=false
+DO_FORCE=false
 FRESH_ENV=false
 RESET_OPENWA=false
+DID_FULL_RESET=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --reset) DO_RESET=true; shift ;;
+    --force) DO_FORCE=true; shift ;;
+    -*) echo "Opción desconocida: $1"; exit 1 ;;
+    *) HOST="$1"; shift ;;
+  esac
+done
+
+PROD_VOLUMES=(
+  zent_postgres_prod
+  zent_redis_prod
+  zent_openwa_prod
+  zent_uploads_prod
+  zent_loki_data
+  zent_prometheus_data
+  zent_grafana_data
+  infra_openwa_data
+)
 
 gen() { openssl rand -hex "$1"; }
 
@@ -106,6 +129,39 @@ reset_openwa_for_new_key() {
   RESET_OPENWA=true
 }
 
+reset_full_stack() {
+  echo ""
+  echo "ADVERTENCIA: --reset borra DB, sesión WhatsApp, uploads, Grafana y métricas."
+  if [ "$DO_FORCE" != true ]; then
+    read -r -p "Escriba SI para continuar: " answer
+    if [ "$answer" != "SI" ]; then
+      echo "Cancelado."
+      exit 1
+    fi
+  fi
+  echo "==> Bajando stack y eliminando volúmenes..."
+  docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+  for vol in "${PROD_VOLUMES[@]}"; do
+    docker volume rm -f "$vol" 2>/dev/null || true
+  done
+  if [ -f "$ENV_FILE" ]; then
+    rm -f "$ENV_FILE"
+    echo "==> Eliminado $ENV_FILE"
+  fi
+  if [ -f "$CRED_FILE" ]; then
+    rm -f "$CRED_FILE"
+    echo "==> Eliminado $CRED_FILE"
+  fi
+  remove_orphan_compose_containers
+  DID_FULL_RESET=true
+  FRESH_ENV=true
+  RESET_OPENWA=true
+}
+
+if [ "$DO_RESET" = true ]; then
+  reset_full_stack
+fi
+
 if [ ! -f "$ENV_FILE" ]; then
   FRESH_ENV=true
   RESET_OPENWA=true
@@ -187,6 +243,9 @@ fi
 
 echo ""
 echo "============================================================"
+if [ "$DID_FULL_RESET" = true ]; then
+  echo "  Instalación limpia: datos anteriores eliminados."
+fi
 echo "  Credenciales completas: infra/$CRED_FILE"
 echo "  OpenWA (Redis + webhooks): se aplica al completar /setup"
 echo "  Asistente: http://${HOST}:8080/setup"

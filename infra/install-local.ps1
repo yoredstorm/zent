@@ -3,10 +3,12 @@
   Sincroniza API_MASTER_KEY, reinicia OpenWA si hace falta, levanta el stack.
 
   Uso:
-    ./install-local.ps1 [-HostName localhost]
+    ./install-local.ps1 [-HostName localhost] [-Reset] [-Force]
 #>
 param(
-  [string]$HostName = "localhost"
+  [string]$HostName = "localhost",
+  [switch]$Reset,
+  [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +19,7 @@ $EnvFile = ".env"
 $CredFile = "credenciales-zent.txt"
 $script:ResetOpenwa = $false
 $script:FreshEnv = $false
+$script:DidFullReset = $false
 
 function New-Secret([int]$Bytes) {
   $buf = New-Object byte[] $Bytes
@@ -109,6 +112,36 @@ function Reset-OpenWaVolume {
   $script:ResetOpenwa = $true
 }
 
+function Reset-FullStack {
+  Write-Host ""
+  Write-Host "ADVERTENCIA: -Reset borra DB, sesion WhatsApp, uploads y datos locales."
+  if (-not $Force) {
+    $answer = Read-Host "Escriba SI para continuar"
+    if ($answer -ne 'SI') {
+      Write-Host "Cancelado."
+      exit 1
+    }
+  }
+  Write-Host "==> Bajando stack y eliminando volumenes..."
+  docker compose -f $ComposeFile down -v --remove-orphans 2>$null
+  if (Test-Path $EnvFile) {
+    Remove-Item $EnvFile -Force
+    Write-Host "==> Eliminado $EnvFile"
+  }
+  if (Test-Path $CredFile) {
+    Remove-Item $CredFile -Force
+    Write-Host "==> Eliminado $CredFile"
+  }
+  Remove-OrphanComposeContainers
+  $script:DidFullReset = $true
+  $script:FreshEnv = $true
+  $script:ResetOpenwa = $true
+}
+
+if ($Reset) {
+  Reset-FullStack
+}
+
 if (-not (Test-Path $EnvFile)) {
   $script:FreshEnv = $true
   $script:ResetOpenwa = $true
@@ -183,6 +216,9 @@ if ($script:FreshEnv) {
 
 Write-Host ""
 Write-Host "============================================================"
+if ($script:DidFullReset) {
+  Write-Host "  Instalacion limpia: datos anteriores eliminados."
+}
 Write-Host "  Credenciales completas: infra/$CredFile"
 Write-Host "  OpenWA (Redis + webhooks): se aplica al completar /setup"
 Write-Host "  Asistente: http://${HostName}:3000/setup"

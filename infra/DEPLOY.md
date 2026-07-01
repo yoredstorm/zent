@@ -4,7 +4,23 @@
 
 Borra **todos** los contenedores y volúmenes del stack. Pierdes: DB, sesión WhatsApp, uploads, dashboards Grafana.
 
-### 1. Environment en Dokploy (copiar tal cual)
+**Instalación local / VPS con scripts** (recomendado):
+
+```powershell
+# Windows (producción local)
+cd infra
+.\install.ps1 -HostName localhost -Reset
+```
+
+```bash
+# Linux / VPS
+cd infra
+./install.sh localhost --reset
+```
+
+Con `-Reset` / `--reset` se baja el stack, eliminan volúmenes, borran `.env` y `credenciales-zent.txt`, y se regeneran secretos. El asistente vuelve a estar en `/setup`. Usa `-Force` / `--force` para omitir la confirmación.
+
+**Manual en Dokploy** (si no usas los scripts):
 
 **Importante:** si la contraseña tiene `@`, en `DATABASE_URL` debe ir codificada como `%40`:
 
