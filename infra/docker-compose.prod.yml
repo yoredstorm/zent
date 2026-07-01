@@ -51,6 +51,8 @@ services:
       - .env
     volumes:
       - openwa_prod:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -239,6 +241,8 @@ services:
     restart: always
     networks:
       - app
+    environment:
+      DOCKER_API_VERSION: "1.44"
     volumes:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -298,6 +302,9 @@ services:
       - app
     ports:
       - "8443:443"
+    environment:
+      # Docker Engine 29+ exige API >= 1.40; el cliente por defecto de Traefik usa 1.24
+      DOCKER_API_VERSION: "1.44"
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"

@@ -83,7 +83,9 @@ export default function WhatsappSettingsPage() {
                 ? 'Esperando escaneo'
                 : status === 'authenticating'
                   ? 'Conectando...'
-                  : status === 'no_sessions'
+                  : status === 'restarting'
+                    ? 'Reiniciando gateway...'
+                    : status === 'no_sessions'
                     ? 'Sin sesión'
                     : 'Desconectado'}
           </span>

@@ -6,6 +6,7 @@ import { OpenwaService } from './openwa.service';
 @Injectable()
 export class OpenwaBootstrapService implements OnApplicationBootstrap {
   private readonly logger = new Logger(OpenwaBootstrapService.name);
+  private configurePromise: Promise<void> | null = null;
 
   constructor(
     private config: ConfigService,
@@ -32,18 +33,27 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
       return;
     }
 
-    await this.configureOpenWaWithRetries();
+    // Evitar solapar con /setup o post-connect (rate limit 429 en OpenWA)
+    setTimeout(() => void this.configureOpenWaWithRetries(), 8000);
   }
 
-  /** Configura Redis/BullMQ y registra webhooks con reintentos. */
-  async configureOpenWaWithRetries(retries = 6): Promise<void> {
+  /** Configura Redis/BullMQ y registra webhooks con reintentos (una sola ejecucion a la vez). */
+  configureOpenWaWithRetries(retries = 6): Promise<void> {
+    if (this.configurePromise) return this.configurePromise;
+    this.configurePromise = this.runConfigureOpenWa(retries).finally(() => {
+      this.configurePromise = null;
+    });
+    return this.configurePromise;
+  }
+
+  private async runConfigureOpenWa(retries: number): Promise<void> {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         await this.openwa.validateApiKey();
         this.logger.log('OPENWA_API_KEY validada');
 
         await this.openwa.ensureInfrastructure();
-        await this.registerWebhookWithRetries(1);
+        await this.registerWebhookWithRetries(3);
         return;
       } catch (err: any) {
         const msg = err?.message || String(err);
@@ -53,8 +63,9 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
           );
         }
         if (attempt < retries) {
+          const delay = msg.includes('429') ? 15000 : 5000;
           this.logger.warn(`OpenWA setup attempt ${attempt}/${retries} failed: ${msg}`);
-          await new Promise((r) => setTimeout(r, 5000));
+          await new Promise((r) => setTimeout(r, delay));
         } else {
           this.logger.error(`OpenWA setup failed after ${retries} attempts: ${msg}`);
           throw err;
@@ -78,8 +89,9 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
       } catch (err: any) {
         const msg = err?.message || String(err);
         if (attempt < retries) {
+          const delay = msg.includes('429') ? 15000 : 5000;
           this.logger.warn(`Webhook setup attempt ${attempt}/${retries} failed: ${msg}`);
-          await new Promise((r) => setTimeout(r, 5000));
+          await new Promise((r) => setTimeout(r, delay));
         } else {
           this.logger.error(`Webhook setup failed after ${retries} attempts: ${msg}`);
           throw err;

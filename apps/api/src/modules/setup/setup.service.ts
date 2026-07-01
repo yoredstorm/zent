@@ -44,6 +44,8 @@ export class SetupService {
     const installed = await this.isInstalled();
     const settings = await this.prisma.storeSettings.findFirst();
     let openwaKeyValid = false;
+    let whatsappLinked = settings?.whatsappLinked ?? false;
+
     if (!installed) {
       try {
         await this.openwa.validateApiKey();
@@ -51,13 +53,25 @@ export class SetupService {
       } catch {
         openwaKeyValid = false;
       }
+    } else {
+      try {
+        const sessions = await this.openwa.getSessions();
+        const connected = sessions.some((s) => this.openwa.isConnectedStatus(s.status));
+        if (connected && !whatsappLinked) {
+          await this.setWhatsappLinked(true);
+          whatsappLinked = true;
+        }
+      } catch {
+        /* OpenWA no disponible temporalmente */
+      }
     }
+
     return {
       installed,
       storeName: settings?.storeName ?? null,
       logoUrl: settings?.logoUrl ?? null,
       currency: settings?.currency ?? null,
-      whatsappLinked: settings?.whatsappLinked ?? false,
+      whatsappLinked,
       openwaKeyValid,
     };
   }
@@ -254,7 +268,8 @@ export class SetupService {
       if (sessions.length === 0) {
         return { status: 'no_sessions', keyValid: true };
       }
-      const status = await this.openwa.getSessionStatus();
+      const sessionStatus = sessions.find((s) => this.openwa.isConnectedStatus(s.status))?.status;
+      const status = sessionStatus ?? (await this.openwa.getSessionStatus());
       const uiStatus = this.openwa.mapStatusForUi(status);
       if (this.openwa.isConnectedStatus(status)) {
         await this.setWhatsappLinked(true);
@@ -262,7 +277,8 @@ export class SetupService {
       }
       return { status: uiStatus, keyValid: true };
     } catch {
-      return { status: 'error', keyValid: true };
+      // OpenWA puede reiniciarse al configurar Redis/webhook; no es fallo de vinculacion
+      return { status: 'restarting', keyValid: true };
     }
   }
 
@@ -337,12 +353,10 @@ export class SetupService {
     }
   }
 
-  /** Tras vincular WhatsApp: Redis, BullMQ y webhook en OpenWA. */
-  private async onWhatsappConnected(): Promise<void> {
-    try {
-      await this.openwaBootstrap.configureOpenWaWithRetries(3);
-    } catch (err: any) {
+  /** Tras vincular WhatsApp: webhook (y Redis solo si hace falta). Ejecucion unica. */
+  private onWhatsappConnected(): void {
+    void this.openwaBootstrap.configureOpenWaWithRetries(3).catch((err: any) => {
       this.logger.warn(`OpenWA post-connect setup: ${err?.message || err}`);
-    }
+    });
   }
 }

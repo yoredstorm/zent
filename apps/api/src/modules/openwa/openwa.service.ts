@@ -133,8 +133,10 @@ export class OpenwaService {
   }
 
   isConnectedStatus(status: string | undefined): boolean {
+    if (!status) return false;
+    if (ACTIVE_SESSION_STATUSES.has(status)) return true;
     const s = this.normalizeStatus(status);
-    return s === 'ready' || s === 'connected';
+    return s === 'ready' || s === 'connected' || s === 'authenticated';
   }
 
   isQrPendingStatus(status: string | undefined): boolean {
@@ -427,6 +429,7 @@ export class OpenwaService {
     if (this.isQrPendingStatus(rawStatus)) return 'qr_pending';
     const s = this.normalizeStatus(rawStatus);
     if (s === 'disconnected' || s === 'failed') return 'disconnected';
+    if (s === 'error') return 'authenticating';
     return s;
   }
 
@@ -592,7 +595,35 @@ export class OpenwaService {
   }
 
   async listWebhooks(sessionId: string): Promise<{ id: string; url: string }[]> {
-    return this.request(`/api/sessions/${sessionId}/webhooks`);
+    const result = await this.request<unknown>(`/api/sessions/${sessionId}/webhooks`);
+    const data = this.unwrapData<{ id: string; url: string }[]>(result);
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(result)) return result as { id: string; url: string }[];
+    return [];
+  }
+
+  /**
+   * URL registrada en OpenWA. Usa PUBLIC_API_URL cuando la URL interna (backend-api)
+   * falla validacion SSRF/@IsUrl en el panel OpenWA.
+   */
+  private resolveWebhookUrl(): string {
+    const explicit = this.config.get('OPENWA_WEBHOOK_PUBLIC_URL', '').trim();
+    if (explicit) return explicit;
+
+    const internal = this.config.get(
+      'OPENWA_WEBHOOK_URL',
+      'http://backend-api:3000/api/webhooks/openwa',
+    );
+    const publicBase = this.config.get('PUBLIC_API_URL', '').replace(/\/$/, '');
+    if (publicBase && internal.includes('backend-api')) {
+      let url = `${publicBase}/webhooks/openwa`;
+      // Desde el contenedor openwa, localhost apunta al propio contenedor
+      url = url
+        .replace('://localhost:', '://host.docker.internal:')
+        .replace('://127.0.0.1:', '://host.docker.internal:');
+      return url;
+    }
+    return internal;
   }
 
   async ensureWebhook(): Promise<void> {
@@ -607,29 +638,28 @@ export class OpenwaService {
   }
 
   private async ensureWebhookForSession(sessionId: string): Promise<void> {
-    const url = this.config.get(
-      'OPENWA_WEBHOOK_URL',
-      'http://backend-api:3000/api/webhooks/openwa',
-    );
+    const url = this.resolveWebhookUrl();
     const secret = this.config.get('OPENWA_WEBHOOK_SECRET', '');
 
     const existing = await this.listWebhooks(sessionId);
     const match = existing.find((w) => w.url === url);
 
-    const payload = {
+    const createPayload = {
       url,
       events: ['message.received'],
       ...(secret ? { secret } : {}),
-      active: true,
     };
 
     if (match) {
-      await this.request(`/api/sessions/${sessionId}/webhooks/${match.id}`, 'PUT', payload);
+      await this.request(`/api/sessions/${sessionId}/webhooks/${match.id}`, 'PUT', {
+        ...createPayload,
+        active: true,
+      });
       this.logger.log(`Webhook updated for session "${sessionId}": ${url}`);
       return;
     }
 
-    await this.request(`/api/sessions/${sessionId}/webhooks`, 'POST', payload);
+    await this.request(`/api/sessions/${sessionId}/webhooks`, 'POST', createPayload);
     this.logger.log(`Webhook registered for session "${sessionId}": ${url}`);
   }
 

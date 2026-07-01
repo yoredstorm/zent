@@ -766,8 +766,10 @@ function StatusBadge({ status }: { status: string }) {
     connecting: { label: 'Esperando escaneo', cls: 'bg-amber-500/20 text-amber-300' },
     qr_pending: { label: 'Esperando escaneo', cls: 'bg-amber-500/20 text-amber-300' },
     authenticating: { label: 'Conectando...', cls: 'bg-blue-500/20 text-blue-300' },
+    restarting: { label: 'Reiniciando gateway...', cls: 'bg-blue-500/20 text-blue-300' },
     connected: { label: 'Conectado', cls: 'bg-emerald-500/20 text-emerald-300' },
     ready: { label: 'Conectado', cls: 'bg-emerald-500/20 text-emerald-300' },
+    error: { label: 'Reintentando conexion...', cls: 'bg-amber-500/20 text-amber-300' },
   };
   const s = map[status] || { label: status, cls: 'bg-white/10 text-slate-300' };
   return <span className={`px-3 py-1 rounded-full text-xs ${s.cls}`}>{s.label}</span>;
