@@ -45,6 +45,8 @@ services:
       - internal
     ports:
       - "2785:2785"
+    env_file:
+      - .env
     volumes:
       - openwa_data:/home/openwa/.openwa
     environment:
@@ -56,6 +58,8 @@ services:
       SERVER_PORT: "2785"
       PUID: "1000"
       PGID: "1000"
+      # Debe coincidir con OPENWA_API_KEY del backend (OpenWA solo la aplica al crear el volumen).
+      API_MASTER_KEY: ${OPENWA_API_KEY:-changeme}
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +81,8 @@ services:
       - internal
     ports:
       - "3001:3000"
+    env_file:
+      - .env
     volumes:
       - uploads_data:/app/uploads
     environment:
@@ -89,7 +95,7 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-changeme}
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-changeme}}
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-false}
@@ -118,6 +124,8 @@ services:
     restart: unless-stopped
     networks:
       - internal
+    env_file:
+      - .env
     volumes:
       - uploads_data:/app/uploads
     environment:
@@ -127,7 +135,7 @@ services:
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
-      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-default}
+      OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-changeme}}
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-false}

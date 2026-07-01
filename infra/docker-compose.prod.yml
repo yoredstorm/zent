@@ -57,7 +57,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "2785"
-      # API_MASTER_KEY viene SOLO del .env de Dokploy (debe ser igual que OPENWA_API_KEY)
+      # Fuerza la misma clave que backend-api (evita API_MASTER_KEY obsoleto en .env).
+      API_MASTER_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
       REDIS_URL: redis://redis:6379
       # Permite webhook a backend-api (IP Docker 172.x); sin esto OpenWA rechaza la URL por SSRF
       SSRF_ALLOWED_HOSTS: backend-api
@@ -110,8 +111,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required in Dokploy Environment}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required in Dokploy Environment}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_FORCE_RESET: ${ADMIN_FORCE_RESET:-false}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
