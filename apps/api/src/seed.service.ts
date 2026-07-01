@@ -40,19 +40,11 @@ export class SeedService implements OnApplicationBootstrap {
 
       const setupForceReset =
         this.config.get('SETUP_FORCE_RESET', 'false') === 'true';
-      if (setupForceReset) {
-        const row = await this.prisma.systemInstall.findFirst();
-        if (row) {
-          await this.prisma.systemInstall.update({
-            where: { id: row.id },
-            data: { installed: false, installedAt: null },
-          });
-        } else {
-          await this.prisma.systemInstall.create({ data: { installed: false } });
-        }
-        this.logger.warn(
-          'SETUP_FORCE_RESET=true: wizard /setup habilitado de nuevo. Quita esta variable tras el deploy.',
-        );
+      const adminForceReset =
+        this.config.get('ADMIN_FORCE_RESET', 'false') === 'true';
+
+      if (setupForceReset || adminForceReset) {
+        await this.resetInstallWizard(setupForceReset ? 'SETUP_FORCE_RESET' : 'ADMIN_FORCE_RESET');
       }
 
       // El admin se crea desde el wizard /setup. Solo lo sembramos automaticamente
@@ -60,7 +52,6 @@ export class SeedService implements OnApplicationBootstrap {
       // (compatibilidad con despliegues existentes), nunca con credenciales por defecto.
       const email = this.config.get('ADMIN_EMAIL', '').trim();
       const password = this.config.get('ADMIN_PASSWORD', '').trim();
-      const forceReset = this.config.get('ADMIN_FORCE_RESET', 'false') === 'true';
 
       if (email && password) {
         const exists = await this.prisma.user.findUnique({ where: { email } });
@@ -70,7 +61,7 @@ export class SeedService implements OnApplicationBootstrap {
             data: { email, passwordHash: hash, name: 'Admin', role: 'ADMIN' },
           });
           this.logger.log(`Admin created from env: ${email}`);
-        } else if (forceReset) {
+        } else if (adminForceReset) {
           const hash = await bcrypt.hash(password, 10);
           await this.prisma.user.update({
             where: { email },
@@ -106,5 +97,20 @@ export class SeedService implements OnApplicationBootstrap {
       const detail = err?.stderr?.toString?.() || err?.message || String(err);
       this.logger.error(`Seed/bootstrap failed: ${detail}`);
     }
+  }
+
+  private async resetInstallWizard(source: string) {
+    const row = await this.prisma.systemInstall.findFirst();
+    if (row) {
+      await this.prisma.systemInstall.update({
+        where: { id: row.id },
+        data: { installed: false, installedAt: null },
+      });
+    } else {
+      await this.prisma.systemInstall.create({ data: { installed: false } });
+    }
+    this.logger.warn(
+      `${source}=true: wizard /setup habilitado de nuevo. Pon la variable en false tras completar el setup.`,
+    );
   }
 }

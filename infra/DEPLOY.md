@@ -1,5 +1,25 @@
 # Verificación post-deploy (VPS / Dokploy)
 
+## Redeploy en Dokploy no muestra /setup (va a /login)
+
+**Causa:** el contenedor de PostgreSQL es nuevo en cada deploy, pero el **volumen** `zent_postgres_prod` guarda `system_install.installed=true` de la instalación anterior. Redeploy solo recrea contenedores, no borra la base de datos.
+
+**Solución rápida (elige una):**
+
+| Opción | Qué hacer |
+|--------|-----------|
+| A — Env (1 redeploy) | En Dokploy Environment: `SETUP_FORCE_RESET=true` → Redeploy → completa `/setup` → pon `false` y redeploy |
+| B — Env si ya tienes `ADMIN_FORCE_RESET=true` | Con el código reciente, `ADMIN_FORCE_RESET=true` también reabre `/setup` al arrancar el API. Tras el setup, pon `ADMIN_FORCE_RESET=false` |
+| C — Terminal | Ver sección [Reset completo](#reset-completo-empezar-de-cero) → `reset-setup-flag.sh` |
+| D — Borrar DB | `docker volume rm -f zent_postgres_prod` y redeploy |
+
+Comprobar en Terminal:
+
+```bash
+curl -s http://localhost:3001/api/setup/status
+# Si "installed":true → por eso redirige a /login
+```
+
 ## Reset completo (empezar de cero)
 
 Borra **todos** los contenedores y volúmenes del stack. Pierdes: DB, sesión WhatsApp, uploads, dashboards Grafana.
