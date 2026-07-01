@@ -633,6 +633,100 @@ export class OpenwaService {
     this.logger.log(`Webhook registered for session "${sessionId}": ${url}`);
   }
 
+  /** Estado de infraestructura OpenWA (Redis, cola BullMQ). */
+  async getInfraStatus(): Promise<{
+    redisConnected: boolean;
+    queueEnabled: boolean;
+  }> {
+    try {
+      const data = await this.request<{
+        redis?: { connected?: boolean; enabled?: boolean };
+        queue?: { enabled?: boolean };
+      }>('/api/infra/status');
+      return {
+        redisConnected: data.redis?.connected === true,
+        queueEnabled: data.queue?.enabled === true,
+      };
+    } catch {
+      return { redisConnected: false, queueEnabled: false };
+    }
+  }
+
+  /** Espera a que OpenWA responda healthy tras un reinicio. */
+  async waitForHealthy(attempts = 24, delayMs = 5000): Promise<boolean> {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const url = `${this.baseUrl}/api/health/ready`;
+        const res = await fetch(url);
+        if (res.ok) return true;
+      } catch {
+        /* retry */
+      }
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
+    }
+    return false;
+  }
+
+  /**
+   * Habilita Redis externo y BullMQ en OpenWA (idempotente).
+   * Sincroniza data/.env.generated para que el panel muestre la config correcta.
+   */
+  async ensureInfrastructure(): Promise<{ changed: boolean; restarted: boolean }> {
+    const redisHost = this.config.get('REDIS_HOST', 'redis');
+    const redisPort = this.config.get('REDIS_PORT', '6379');
+
+    const before = await this.getInfraStatus();
+    if (before.redisConnected && before.queueEnabled) {
+      this.logger.log('OpenWA infrastructure already configured (Redis + BullMQ)');
+      return { changed: false, restarted: false };
+    }
+
+    const payload = {
+      redis: {
+        enabled: true,
+        builtIn: false,
+        host: redisHost,
+        port: String(redisPort),
+      },
+      queue: { enabled: true },
+    };
+
+    const result = await this.request<{
+      saved?: boolean;
+      message?: string;
+    }>('/api/infra/config', 'PUT', payload);
+
+    if (result.saved === false) {
+      throw new Error(result.message || 'OpenWA failed to save infrastructure config');
+    }
+
+    this.logger.log('OpenWA infrastructure config saved; requesting restart...');
+
+    try {
+      await this.request('/api/infra/restart', 'POST', {});
+    } catch (err: any) {
+      this.logger.warn(`OpenWA restart request: ${err?.message || err}`);
+    }
+
+    const healthy = await this.waitForHealthy();
+    if (!healthy) {
+      throw new Error('OpenWA did not become healthy after infrastructure restart');
+    }
+
+    const after = await this.getInfraStatus();
+    if (!after.redisConnected) {
+      this.logger.warn('OpenWA Redis still not connected after restart');
+    }
+    if (!after.queueEnabled) {
+      this.logger.warn('OpenWA BullMQ queue still not enabled after restart');
+    }
+
+    this.logger.log(
+      `OpenWA infrastructure ready (redis=${after.redisConnected}, queue=${after.queueEnabled})`,
+    );
+    return { changed: true, restarted: true };
+  }
+
   getRedisClient(): Redis {
     return this.redis;
   }

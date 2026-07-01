@@ -60,6 +60,11 @@ services:
       # Fuerza la misma clave que backend-api (evita API_MASTER_KEY obsoleto en .env).
       API_MASTER_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
       REDIS_URL: redis://redis:6379
+      REDIS_ENABLED: "true"
+      REDIS_BUILTIN: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      QUEUE_ENABLED: "true"
       # Permite webhook a backend-api (IP Docker 172.x); sin esto OpenWA rechaza la URL por SSRF
       SSRF_ALLOWED_HOSTS: backend-api
       SESSION_DATA_PATH: /app/data/sessions

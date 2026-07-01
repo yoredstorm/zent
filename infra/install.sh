@@ -13,11 +13,51 @@ cd "$(dirname "$0")"
 
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
+CRED_FILE="credenciales-zent.txt"
 HOST="${1:-localhost}"
 FRESH_ENV=false
 RESET_OPENWA=false
 
 gen() { openssl rand -hex "$1"; }
+
+write_credentials_file() {
+  {
+    echo "# ─── CREDENCIALES ZENT — generado automáticamente ───"
+    echo "# NO subir a git. Guarda este archivo en un lugar seguro."
+    echo "# SSRF_ALLOWED_HOSTS=backend-api (fijado en docker-compose, no en .env)"
+    echo ""
+    cat "$ENV_FILE"
+  } > "$CRED_FILE"
+  chmod 600 "$CRED_FILE"
+}
+
+merge_missing_env_defaults() {
+  local host="$1"
+  local tmp
+  tmp="$(mktemp)"
+  cp "$ENV_FILE" "$tmp"
+  upsert_if_missing() {
+    local key="$1"
+    local val="$2"
+    if ! grep -qE "^${key}=" "$tmp"; then
+      printf '%s=%s\n' "$key" "$val" >> "$tmp"
+    fi
+  }
+  upsert_if_missing REDIS_HOST redis
+  upsert_if_missing REDIS_PORT 6379
+  upsert_if_missing REDIS_URL 'redis://redis:6379'
+  upsert_if_missing REDIS_ENABLED true
+  upsert_if_missing REDIS_BUILTIN false
+  upsert_if_missing QUEUE_ENABLED true
+  upsert_if_missing OPENWA_BASE_URL 'http://openwa:2785'
+  upsert_if_missing OPENWA_WEBHOOK_URL 'http://backend-api:3000/api/webhooks/openwa'
+  upsert_if_missing OPENWA_PUBLIC_URL "https://${host}:2786"
+  upsert_if_missing CART_HOLD_TTL_MINUTES 30
+  upsert_if_missing CART_HOLD_WARN_MINUTES 5
+  upsert_if_missing ADMIN_FORCE_RESET false
+  upsert_if_missing GF_SECURITY_ADMIN_USER admin
+  mv "$tmp" "$ENV_FILE"
+}
 
 sync_openwa_keys_in_env() {
   [ -f "$ENV_FILE" ] || return 1
@@ -25,7 +65,11 @@ sync_openwa_keys_in_env() {
   openwa_key=$(grep -E '^OPENWA_API_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
   [ -n "$openwa_key" ] || return 1
   master_key=$(grep -E '^API_MASTER_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- || true)
-  [ "$master_key" = "$openwa_key" ] && return 1
+  merge_missing_env_defaults "$HOST"
+  if [ "$master_key" = "$openwa_key" ]; then
+    write_credentials_file
+    return 1
+  fi
   if grep -qE '^API_MASTER_KEY=' "$ENV_FILE"; then
     if sed --version 2>/dev/null | grep -q GNU; then
       sed -i "s/^API_MASTER_KEY=.*/API_MASTER_KEY=${openwa_key}/" "$ENV_FILE"
@@ -35,8 +79,22 @@ sync_openwa_keys_in_env() {
   else
     printf '\nAPI_MASTER_KEY=%s\n' "$openwa_key" >> "$ENV_FILE"
   fi
+  write_credentials_file
   echo "==> API_MASTER_KEY sincronizada con OPENWA_API_KEY en .env"
   return 0
+}
+
+remove_orphan_compose_containers() {
+  docker ps -aq --filter "status=created" 2>/dev/null | while read -r id; do
+    [ -n "$id" ] || continue
+    name=$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null || true)
+    case "$name" in
+      *infra-*)
+        echo "==> Eliminando contenedor huerfano: $name"
+        docker rm -f "$id" 2>/dev/null || true
+        ;;
+    esac
+  done
 }
 
 reset_openwa_for_new_key() {
@@ -64,13 +122,17 @@ if [ ! -f "$ENV_FILE" ]; then
   DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 
   cat > "$ENV_FILE" <<EOF
-# ─── Generado automaticamente por install.sh ───
-# NO subir este archivo a git. Contiene secretos.
-
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
 DATABASE_URL=${DATABASE_URL}
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_URL=redis://redis:6379
+REDIS_ENABLED=true
+REDIS_BUILTIN=false
+QUEUE_ENABLED=true
 
 JWT_SECRET=${JWT_SECRET}
 JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
@@ -79,7 +141,11 @@ ADMIN_FORCE_RESET=false
 
 API_MASTER_KEY=${OPENWA_API_KEY}
 OPENWA_API_KEY=${OPENWA_API_KEY}
+OPENWA_BASE_URL=http://openwa:2785
+OPENWA_WEBHOOK_URL=http://backend-api:3000/api/webhooks/openwa
 OPENWA_WEBHOOK_SECRET=${OPENWA_WEBHOOK_SECRET}
+OPENWA_PUBLIC_URL=https://${HOST}:2786
+
 BOT_PLUGIN_SECRET=${OPENWA_WEBHOOK_SECRET}
 ZENT_FLOW_PLUGIN_ENABLED=true
 
@@ -95,9 +161,8 @@ GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
 EOF
 
   chmod 600 "$ENV_FILE"
-  cp "$ENV_FILE" "credenciales-zent.txt"
-  chmod 600 "credenciales-zent.txt"
-  echo "==> Secretos generados. Copia en infra/credenciales-zent.txt"
+  write_credentials_file
+  echo "==> Secretos generados. Copia en infra/$CRED_FILE"
 else
   echo "==> $ENV_FILE ya existe; sincronizando claves OpenWA..."
   if sync_openwa_keys_in_env; then
@@ -110,6 +175,7 @@ if [ "$RESET_OPENWA" = true ] && [ "$FRESH_ENV" = false ]; then
 fi
 
 echo "==> Levantando el stack (docker compose up -d --build)..."
+remove_orphan_compose_containers
 docker compose -f "$COMPOSE_FILE" up -d --build
 
 if [ "$FRESH_ENV" = true ]; then
@@ -121,7 +187,8 @@ fi
 
 echo ""
 echo "============================================================"
-echo "  Zent esta listo."
-echo "  Completa el asistente: http://${HOST}:8080/setup"
+echo "  Credenciales completas: infra/$CRED_FILE"
+echo "  OpenWA (Redis + webhooks): se aplica al completar /setup"
+echo "  Asistente: http://${HOST}:8080/setup"
 echo "  Grafana (logs):        http://${HOST}:3002"
 echo "============================================================"

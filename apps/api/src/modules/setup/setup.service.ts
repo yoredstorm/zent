@@ -126,22 +126,34 @@ export class SetupService {
       await this.upsertAdmin(dto);
       this.emit({ step: 4, total, label: 'Creando cuenta de administrador', status: 'ok' });
 
-      // 5. Validar OpenWA y registrar webhook
-      this.emit({ step: 5, total, label: 'Conectando con WhatsApp Gateway', status: 'running' });
+      // 5. Validar OpenWA, Redis/BullMQ y webhook
+      this.emit({
+        step: 5,
+        total,
+        label: 'Conectando con WhatsApp Gateway',
+        status: 'running',
+        message: 'Configurando Redis y colas BullMQ',
+      });
       const openwaReady = await this.waitForOpenWaKey();
       if (openwaReady) {
         try {
-          await this.openwaBootstrap.registerWebhookWithRetries(4);
-          this.emit({ step: 5, total, label: 'Conectando con WhatsApp Gateway', status: 'ok' });
+          await this.openwaBootstrap.configureOpenWaWithRetries(4);
+          this.emit({
+            step: 5,
+            total,
+            label: 'Conectando con WhatsApp Gateway',
+            status: 'ok',
+            message: 'Redis, BullMQ y webhook configurados',
+          });
         } catch (err: any) {
           this.emit({
             step: 5,
             total,
             label: 'Conectando con WhatsApp Gateway',
             status: 'ok',
-            message: 'Webhook pendiente; se registrara al vincular WhatsApp',
+            message: 'OpenWA parcialmente configurado; se completara al vincular WhatsApp',
           });
-          this.logger.warn(`OpenWA webhook: ${err?.message || err}`);
+          this.logger.warn(`OpenWA setup: ${err?.message || err}`);
         }
       } else {
         this.emit({
@@ -246,6 +258,7 @@ export class SetupService {
       const uiStatus = this.openwa.mapStatusForUi(status);
       if (this.openwa.isConnectedStatus(status)) {
         await this.setWhatsappLinked(true);
+        void this.onWhatsappConnected();
       }
       return { status: uiStatus, keyValid: true };
     } catch {
@@ -300,6 +313,7 @@ export class SetupService {
       );
       if (this.openwa.isConnectedStatus(status)) {
         await this.setWhatsappLinked(true);
+        void this.onWhatsappConnected();
         return { qr: '', keyValid: true, sessionId };
       }
       if (qr) return { qr, keyValid: true, sessionId };
@@ -320,6 +334,15 @@ export class SetupService {
         where: { id: existing.id },
         data: { whatsappLinked: linked },
       });
+    }
+  }
+
+  /** Tras vincular WhatsApp: Redis, BullMQ y webhook en OpenWA. */
+  private async onWhatsappConnected(): Promise<void> {
+    try {
+      await this.openwaBootstrap.configureOpenWaWithRetries(3);
+    } catch (err: any) {
+      this.logger.warn(`OpenWA post-connect setup: ${err?.message || err}`);
     }
   }
 }

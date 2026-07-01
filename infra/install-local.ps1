@@ -14,6 +14,7 @@ Set-Location -Path $PSScriptRoot
 
 $ComposeFile = "docker-compose.yml"
 $EnvFile = ".env"
+$CredFile = "credenciales-zent.txt"
 $script:ResetOpenwa = $false
 $script:FreshEnv = $false
 
@@ -32,18 +33,71 @@ function Set-EnvLine([string]$Content, [string]$Key, [string]$Value) {
   return ($Content.TrimEnd() + "`n$line`n")
 }
 
+function Write-CredentialsFile([string]$EnvContent) {
+  $header = @"
+# --- CREDENCIALES ZENT - generado automaticamente ---
+# NO subir a git. Guarda este archivo en un lugar seguro.
+# SSRF_ALLOWED_HOSTS=backend-api (fijado en docker-compose, no en .env)
+
+"@
+  Set-Content -Path $CredFile -Value ($header + $EnvContent) -Encoding UTF8
+}
+
+function Merge-MissingEnvDefaults([string]$Content, [string]$TargetHost) {
+  $defaults = [ordered]@{
+    REDIS_HOST = "redis"
+    REDIS_PORT = "6379"
+    REDIS_URL = "redis://redis:6379"
+    REDIS_ENABLED = "true"
+    REDIS_BUILTIN = "false"
+    QUEUE_ENABLED = "true"
+    OPENWA_BASE_URL = "http://openwa:2785"
+    OPENWA_WEBHOOK_URL = "http://backend-api:3000/api/webhooks/openwa"
+    OPENWA_PUBLIC_URL = "http://${TargetHost}:2785"
+    CART_HOLD_TTL_MINUTES = "30"
+    CART_HOLD_WARN_MINUTES = "5"
+    ADMIN_FORCE_RESET = "false"
+  }
+  foreach ($key in $defaults.Keys) {
+    if ($Content -notmatch "(?m)^$key=") {
+      $Content = Set-EnvLine $Content $key $defaults[$key]
+    }
+  }
+  return $Content
+}
+
 function Sync-OpenWaKeysInEnv {
   if (-not (Test-Path $EnvFile)) { return $false }
-  $lines = Get-Content $EnvFile
-  $openwa = ($lines | Where-Object { $_ -match '^OPENWA_API_KEY=' } | Select-Object -First 1) -replace '^OPENWA_API_KEY=', ''
-  if (-not $openwa) { return $false }
-  $master = ($lines | Where-Object { $_ -match '^API_MASTER_KEY=' } | Select-Object -First 1) -replace '^API_MASTER_KEY=', ''
-  if ($master -eq $openwa) { return $false }
   $content = Get-Content $EnvFile -Raw
+  $openwa = ""
+  if ($content -match "(?m)^OPENWA_API_KEY=(.+)$") { $openwa = $Matches[1].Trim() }
+  if (-not $openwa) { return $false }
+  $master = ""
+  if ($content -match "(?m)^API_MASTER_KEY=(.+)$") { $master = $Matches[1].Trim() }
+  if ($master -eq $openwa) {
+    $content = Merge-MissingEnvDefaults $content $HostName
+    Set-Content -Path $EnvFile -Value $content -Encoding UTF8 -NoNewline
+    Write-CredentialsFile $content
+    return $false
+  }
   $content = Set-EnvLine $content 'API_MASTER_KEY' $openwa
+  $content = Merge-MissingEnvDefaults $content $HostName
   Set-Content -Path $EnvFile -Value $content -Encoding UTF8 -NoNewline
+  Write-CredentialsFile $content
   Write-Host "==> API_MASTER_KEY sincronizada con OPENWA_API_KEY"
   return $true
+}
+
+function Remove-OrphanComposeContainers {
+  $ids = docker ps -aq --filter "status=created" 2>$null
+  if (-not $ids) { return }
+  foreach ($id in $ids) {
+    $name = docker inspect -f '{{.Name}}' $id 2>$null
+    if ($name -match 'infra-') {
+      Write-Host "==> Eliminando contenedor huerfano: $name"
+      docker rm -f $id 2>$null | Out-Null
+    }
+  }
 }
 
 function Reset-OpenWaVolume {
@@ -67,11 +121,20 @@ if (-not (Test-Path $EnvFile)) {
   $JwtRefresh = New-Secret 32
   $OpenwaKey = "owa_k1_" + (New-Secret 32)
   $WebhookSecret = New-Secret 24
+  $DatabaseUrl = "postgresql://${PgUser}:${PgPass}@postgres:5432/${PgDb}"
 
   $content = @"
 POSTGRES_USER=$PgUser
 POSTGRES_PASSWORD=$PgPass
 POSTGRES_DB=$PgDb
+DATABASE_URL=$DatabaseUrl
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_URL=redis://redis:6379
+REDIS_ENABLED=true
+REDIS_BUILTIN=false
+QUEUE_ENABLED=true
 
 JWT_SECRET=$Jwt
 JWT_REFRESH_SECRET=$JwtRefresh
@@ -80,16 +143,24 @@ ADMIN_FORCE_RESET=false
 
 API_MASTER_KEY=$OpenwaKey
 OPENWA_API_KEY=$OpenwaKey
+OPENWA_BASE_URL=http://openwa:2785
+OPENWA_WEBHOOK_URL=http://backend-api:3000/api/webhooks/openwa
 OPENWA_WEBHOOK_SECRET=$WebhookSecret
+OPENWA_PUBLIC_URL=http://${HostName}:2785
+
 BOT_PLUGIN_SECRET=$WebhookSecret
 ZENT_FLOW_PLUGIN_ENABLED=false
 
 STORE_NAME=Zent
+CART_HOLD_TTL_MINUTES=30
+CART_HOLD_WARN_MINUTES=5
+VENDOR_NOTIFY_PHONES=
+
 PUBLIC_API_URL=http://${HostName}:3001/api
 "@
 
   Set-Content -Path $EnvFile -Value $content -Encoding UTF8
-  Copy-Item -Path $EnvFile -Destination "credenciales-zent.txt" -Force
+  Write-CredentialsFile $content
 }
 else {
   Write-Host "==> $EnvFile existe; sincronizando claves OpenWA..."
@@ -100,7 +171,8 @@ if ($script:ResetOpenwa -and -not $script:FreshEnv) {
   Reset-OpenWaVolume
 }
 
-Write-Host "==> Levantando stack..."
+Write-Host "==> Levantando stack local..."
+Remove-OrphanComposeContainers
 docker compose -f $ComposeFile up -d --build
 
 if ($script:FreshEnv) {
@@ -111,5 +183,7 @@ if ($script:FreshEnv) {
 
 Write-Host ""
 Write-Host "============================================================"
-Write-Host "  Abre el asistente: http://${HostName}:3000/setup"
+Write-Host "  Credenciales completas: infra/$CredFile"
+Write-Host "  OpenWA (Redis + webhooks): se aplica al completar /setup"
+Write-Host "  Asistente: http://${HostName}:3000/setup"
 Write-Host "============================================================"

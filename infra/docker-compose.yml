@@ -48,16 +48,21 @@ services:
     env_file:
       - .env
     volumes:
-      - openwa_data:/home/openwa/.openwa
+      - openwa_data:/app/data
     environment:
       NODE_ENV: production
+      PORT: "2785"
       DATABASE_URL: postgresql://${POSTGRES_USER:-inventario}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-inventario}
       REDIS_URL: redis://redis:6379
-      SESSION_DIR: /home/openwa/.openwa/sessions
-      HOOK_INTERVAL: "1000"
-      SERVER_PORT: "2785"
-      PUID: "1000"
-      PGID: "1000"
+      REDIS_ENABLED: "true"
+      REDIS_BUILTIN: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      QUEUE_ENABLED: "true"
+      SESSION_DATA_PATH: /app/data/sessions
+      PUPPETEER_HEADLESS: "true"
+      PUPPETEER_ARGS: "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu"
+      SSRF_ALLOWED_HOSTS: backend-api
       # Debe coincidir con OPENWA_API_KEY del backend (OpenWA solo la aplica al crear el volumen).
       API_MASTER_KEY: ${OPENWA_API_KEY:-changeme}
     depends_on:
@@ -97,6 +102,7 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
+      OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-changeme}}
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-false}
       UPLOADS_DIR: /app/uploads
@@ -137,6 +143,7 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:-changeme}
       OPENWA_SESSION_ID: ${OPENWA_SESSION_ID:-}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-changeme}
+      OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-changeme}}
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-false}
       UPLOADS_DIR: /app/uploads
