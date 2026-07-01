@@ -2,7 +2,32 @@
 
 ## Redeploy en Dokploy no muestra /setup (va a /login)
 
-**Causa:** el contenedor de PostgreSQL es nuevo en cada deploy, pero el **volumen** `zent_postgres_prod` guarda `system_install.installed=true` de la instalación anterior. Redeploy solo recrea contenedores, no borra la base de datos.
+**Causa:** el contenedor es nuevo, pero Docker reutilizaba volúmenes con **nombre fijo global** (`zent_postgres_prod`) de un proyecto Dokploy anterior (`zent-zent-siqm8r`, etc.). En los logs verás:
+
+```
+volume "zent_postgres_prod" already exists but was created for project "zent-zent-siqm8r"
+```
+
+Eso significa que la DB conserva `installed=true`, tienda `"ohana"`, WhatsApp vinculado, etc.
+
+**Fix en código (compose reciente):** los volúmenes ya no tienen `name:` fijo; cada app Dokploy usa prefijo de proyecto (`tienda-zent-xxx_postgres_prod`) y datos aislados.
+
+**Si aún ves datos viejos tras actualizar:** primero **para los contenedores**, luego borra volúmenes (si no, `volume is in use`):
+
+```bash
+# 1) Parar stacks que usan esos volúmenes (ajusta -p si hace falta)
+docker compose -p tienda-zent-zent-zb9noo -f infra/docker-compose.prod.yml down 2>/dev/null || true
+docker compose -p zent-zent-siqm8r -f infra/docker-compose.prod.yml down 2>/dev/null || true
+
+# 2) Borrar volúmenes legacy (name: fijo zent_*)
+docker volume rm -f zent_postgres_prod zent_redis_prod zent_openwa_prod zent_uploads_prod zent_loki_data zent_prometheus_data zent_grafana_data 2>/dev/null || true
+```
+
+Si `permission denied` en docker: usa la **Terminal de Dokploy** (ya tiene permisos) o `sudo` con la contraseña del usuario `administrator` del VPS (no la de Dokploy).
+
+**Sin borrar volúmenes** (más rápido): ver [Reset solo flag setup](#reset-solo-flag-setup) abajo.
+
+Luego redeploy desde Dokploy.
 
 **Solución rápida (elige una):**
 
@@ -19,6 +44,21 @@ Comprobar en Terminal:
 curl -s http://localhost:3001/api/setup/status
 # Si "installed":true → por eso redirige a /login
 ```
+
+## Reset solo flag setup
+
+Sin borrar volúmenes ni parar todo el stack. En **Terminal de Dokploy** (recomendado; evita `permission denied` en SSH/Termux):
+
+```bash
+docker exec $(docker ps -qf name=postgres | head -1) psql -U inventario -d inventario \
+  -c 'UPDATE system_install SET installed = false, "installedAt" = NULL;'
+docker restart $(docker ps -qf name=backend-api | head -1) $(docker ps -qf name=frontend | head -1)
+curl -s http://localhost:3001/api/setup/status
+```
+
+Debe mostrar `"installed": false`. Luego abre `:8080/setup`.
+
+---
 
 ## Reset completo (empezar de cero)
 

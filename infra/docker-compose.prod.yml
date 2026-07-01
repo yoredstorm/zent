@@ -317,17 +317,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
+  # Sin name: fijo — cada proyecto Dokploy (COMPOSE_PROJECT_NAME) tiene sus propios
+  # volúmenes. Evita que un "proyecto nuevo" reutilice la DB de otro despliegue.
   postgres_prod:
-    name: zent_postgres_prod
   redis_prod:
-    name: zent_redis_prod
   openwa_prod:
-    name: zent_openwa_prod
   uploads_prod:
-    name: zent_uploads_prod
   loki_data:
-    name: zent_loki_data
   prometheus_data:
-    name: zent_prometheus_data
   grafana_data:
-    name: zent_grafana_data

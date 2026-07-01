@@ -130,8 +130,9 @@ function Reset-FullStack {
       exit 1
     }
   }
-  Write-Host "==> Bajando stack y eliminando volúmenes..."
+  Write-Host "==> Bajando stack y eliminando volumenes del proyecto..."
   docker compose -f $ComposeFile down -v --remove-orphans 2>$null
+  # Volúmenes legacy con name: fijo (despliegues anteriores a compose por-proyecto)
   foreach ($vol in $ProdVolumes) {
     docker volume rm $vol -f 2>$null | Out-Null
   }
