@@ -216,3 +216,26 @@ model Customer {
 
   @@map("customers")
 }
+
+model SystemInstall {
+  id          Int       @id @default(autoincrement())
+  installed   Boolean   @default(false)
+  installedAt DateTime?
+  version     String    @default("1.0.0")
+
+  @@map("system_install")
+}
+
+model StoreSettings {
+  id             Int      @id @default(autoincrement())
+  storeName      String
+  logoUrl        String?
+  currency       String   @default("PEN")
+  taxRate        Float    @default(18.0)
+  phoneNumber    String
+  ownerName      String?
+  whatsappLinked Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  @@map("store_settings")
+}

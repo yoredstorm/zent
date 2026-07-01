@@ -9,6 +9,6 @@ import { WhatsappInboxModule } from '../whatsapp-inbox/whatsapp-inbox.module';
   imports: [forwardRef(() => WhatsappInboxModule)],
   controllers: [OpenwaController],
   providers: [OpenwaService, OpenwaBootstrapService],
-  exports: [OpenwaService],
+  exports: [OpenwaService, OpenwaBootstrapService],
 })
 export class OpenwaModule {}

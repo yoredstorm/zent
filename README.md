@@ -19,51 +19,66 @@ Sistema completo de gestión de inventario con bot de ventas automatizado por Wh
 
 ## Instalación
 
-### 1. Clonar y configurar
+Zent se instala en tres pasos: subir el proyecto, ejecutar el instalador de un
+comando, y completar el asistente de instalación en el navegador.
 
-```bash
-git clone <repo-url>
-cd zent
-cp .env.example .env
-```
+### 1. Instalador de un comando
 
-Edita `.env` con tus valores:
-- Cambia `POSTGRES_PASSWORD`, `JWT_SECRET`, `JWT_REFRESH_SECRET`
-- Configura `OPENWA_API_KEY` y `OPENWA_WEBHOOK_SECRET`
-- Ajusta los dominios de Traefik
-
-### 2. Levantar el stack
+El instalador genera `infra/.env` con secretos seguros automáticamente
+(`POSTGRES_PASSWORD`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `OPENWA_API_KEY`,
+`OPENWA_WEBHOOK_SECRET`, `GF_SECURITY_ADMIN_PASSWORD`) y levanta todo el stack.
+Es idempotente: si `infra/.env` ya existe, no lo sobrescribe.
 
 ```bash
 cd infra
-docker compose up -d
+
+# Linux / VPS (HOST = dominio o IP pública; por defecto localhost)
+./install.sh tu-dominio.com
+
+# Windows (pruebas locales)
+./install.ps1 -HostName localhost
 ```
 
-### 3. Ejecutar migraciones de base de datos
+El admin NO se crea aquí; se crea en el asistente. Los secretos se respaldan en
+`infra/credenciales-zent.txt` (guárdalo en un lugar seguro; está fuera de git).
 
-```bash
-docker compose exec backend-api npx prisma migrate deploy
-```
+**OpenWA:** `API_MASTER_KEY` y `OPENWA_API_KEY` deben ser idénticas. El instalador
+las genera iguales y reinicia OpenWA con volumen limpio. Si ves errores 401, en
+Windows ejecuta `infra/fix-openwa-key.ps1` o vuelve a correr `install.sh`.
 
-### 4. Vincular WhatsApp
+### 2. Asistente de instalación (wizard `/setup`)
 
-1. Accede al dashboard: `https://app.localhost` (o tu dominio)
-2. Inicia sesión (crea un usuario admin primero vía API)
-3. Ve a "WhatsApp / Sesión"
-4. Escanea el código QR con tu teléfono
+Mientras el sistema no esté instalado, cualquier ruta redirige a `/setup` y la API
+responde `503` salvo `/api/setup/*` y `/api/health` (ver `InstallGuard`).
 
-### 5. Crear usuario admin
+Abre `http://TU_HOST:8080/setup` y completa:
 
-```bash
-curl -X POST https://api.localhost/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@example.com",
-    "password": "admin123",
-    "name": "Admin",
-    "role": "ADMIN"
-  }'
-```
+1. Datos de la tienda (nombre, logo o avatar genérico, moneda, IVA, teléfono).
+2. Cuenta de administrador (con generador de contraseña segura).
+3. Resumen de credenciales (descargable una sola vez).
+4. Vincular WhatsApp por QR (o omitir y hacerlo luego).
+5. Resumen e instalación con log en vivo (SSE).
+6. Listo: entra al panel con sesión iniciada.
+
+Las migraciones de esquema se aplican solas al arrancar (`prisma db push`); no hay
+paso manual de migraciones.
+
+### 3. Reconexión de WhatsApp
+
+Si omitiste el paso de WhatsApp, el dashboard muestra un banner persistente y
+puedes vincularlo en **Configuración → WhatsApp** (`/dashboard/settings/whatsapp`).
+
+### Endpoints de instalación
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/setup/status` | Estado de instalación + datos básicos de la tienda (público) |
+| GET | `/api/setup/credentials` | Resumen de credenciales (solo antes de instalar) |
+| POST | `/api/setup/install` | Ejecuta la instalación idempotente (solo antes de instalar) |
+| GET | `/api/setup/install/stream` | Stream SSE del progreso de instalación |
+| GET | `/api/setup/whatsapp/status` | Estado de la sesión de WhatsApp; persiste `whatsappLinked` al conectar |
+| GET | `/api/setup/whatsapp/qr` | QR de vinculación de WhatsApp |
+| POST | `/api/setup/whatsapp/connect` | Crea/inicia la sesión de WhatsApp y devuelve el QR |
 
 ## Uso
 

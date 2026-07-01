@@ -1,5 +1,6 @@
 import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from './openwa.service';
 
 @Injectable()
@@ -9,33 +10,49 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
   constructor(
     private config: ConfigService,
     private openwa: OpenwaService,
+    private prisma: PrismaService,
   ) {}
 
   async onApplicationBootstrap() {
     if (this.config.get('WORKER_MODE') === 'true') return;
 
-    const apiKey = this.config.get('OPENWA_API_KEY', '');
-    if (!apiKey || apiKey === 'changeme') {
-      this.logger.error(
-        'OPENWA_API_KEY is not set in environment — webhook will NOT be registered. ' +
-          'Add OPENWA_API_KEY to Dokploy Environment.',
+    const install = await this.prisma.systemInstall.findFirst();
+    if (!install?.installed) {
+      this.logger.log(
+        'Sistema no instalado: webhook de OpenWA se registrara al completar /setup',
       );
       return;
     }
 
-    const retries = 6;
+    const apiKey = this.config.get('OPENWA_API_KEY', '');
+    if (!apiKey || apiKey === 'changeme') {
+      this.logger.error(
+        'OPENWA_API_KEY no configurada. Ejecuta infra/install.sh o completa /setup.',
+      );
+      return;
+    }
+
+    await this.registerWebhookWithRetries();
+  }
+
+  /** Registra el webhook con reintentos (util tambien tras completar /setup). */
+  async registerWebhookWithRetries(retries = 6): Promise<void> {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         await this.openwa.validateApiKey();
-        this.logger.log('OPENWA_API_KEY validated');
+        this.logger.log('OPENWA_API_KEY validada');
+        const sessions = await this.openwa.getSessions();
+        if (sessions.length === 0) {
+          this.logger.log('OpenWA listo; vincula WhatsApp desde /setup o Configuracion');
+          return;
+        }
         await this.openwa.ensureWebhook();
         return;
       } catch (err: any) {
         const msg = err?.message || String(err);
         if (attempt === 1 && msg.includes('401')) {
           this.logger.error(
-            'OPENWA_API_KEY rejected. Use the same key in Dokploy for the whole stack. ' +
-              'If OpenWA was reset, delete volume zent_openwa_prod once and redeploy.',
+            'OPENWA_API_KEY rechazada. Ejecuta infra/install.sh para sincronizar claves y reiniciar OpenWA.',
           );
         }
         if (attempt < retries) {
@@ -43,6 +60,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
           await new Promise((r) => setTimeout(r, 5000));
         } else {
           this.logger.error(`Webhook setup failed after ${retries} attempts: ${msg}`);
+          throw err;
         }
       }
     }

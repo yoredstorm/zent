@@ -33,8 +33,9 @@ export class OpenwaController {
           sessions: [],
         };
       }
-      const status = await this.openwa.getSessionStatus();
-      return { status, sessions };
+      const rawStatus = await this.openwa.getSessionStatus();
+      const status = this.openwa.mapStatusForUi(rawStatus);
+      return { status, rawStatus, sessions };
     } catch {
       return { status: 'error', message: 'No se pudo conectar con OpenWA' };
     }

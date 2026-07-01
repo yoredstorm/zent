@@ -18,7 +18,11 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: true,
+  });
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
   const uploadsDir = process.env.UPLOADS_DIR || join(process.cwd(), 'uploads');
   app.useStaticAssets(uploadsDir, { prefix: '/api/uploads/' });
 

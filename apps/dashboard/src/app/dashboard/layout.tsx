@@ -14,12 +14,14 @@ const navItems = [
   { href: '/dashboard/orders', label: 'Pedidos', icon: '🛒' },
   { href: '/dashboard/reports', label: 'Reportes', icon: '📈' },
   { href: '/dashboard/whatsapp', label: 'WhatsApp', icon: '💬' },
+  { href: '/dashboard/settings/whatsapp', label: 'Configuración', icon: '⚙️' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [whatsappLinked, setWhatsappLinked] = useState<boolean>(true);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -33,6 +35,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     } catch {
       router.push('/login');
     }
+  }, [router]);
+
+  useEffect(() => {
+    fetch('/api/setup/status', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((s) => {
+        if (s && s.installed === false) {
+          router.replace('/setup');
+        } else if (s) {
+          setWhatsappLinked(Boolean(s.whatsappLinked));
+        }
+      })
+      .catch(() => {});
   }, [router]);
 
   const handleLogout = () => {
@@ -76,7 +91,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
       </aside>
-      <main className="flex-1 p-8 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto">
+        {!whatsappLinked && (
+          <div className="bg-amber-50 border-b border-amber-200 px-8 py-3 flex items-center justify-between">
+            <span className="text-sm text-amber-800">
+              ⚠️ WhatsApp no vinculado. El bot de ventas no recibira mensajes hasta vincularlo.
+            </span>
+            <Link
+              href="/dashboard/settings/whatsapp"
+              className="text-sm font-medium text-amber-900 underline whitespace-nowrap"
+            >
+              Vincular ahora
+            </Link>
+          </div>
+        )}
+        <div className="p-8">{children}</div>
+      </main>
     </div>
   );
 }

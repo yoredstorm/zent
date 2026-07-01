@@ -18,6 +18,7 @@ import { CatalogPdfModule } from './modules/catalog-pdf/catalog-pdf.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { SetupModule } from './modules/setup/setup.module';
 import { HealthController } from './health.controller';
 import { SeedService } from './seed.service';
 
@@ -40,6 +41,7 @@ import { SeedService } from './seed.service';
     UploadsModule,
     CustomersModule,
     AnalyticsModule,
+    SetupModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, SeedService],

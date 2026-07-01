@@ -49,7 +49,24 @@ export interface OpenWaChatMessage {
   media?: { url?: string; mimetype?: string; mimeType?: string };
 }
 
-const ACTIVE_SESSION_STATUSES = new Set(['ready', 'connected', 'authenticating']);
+const ACTIVE_SESSION_STATUSES = new Set([
+  'ready',
+  'connected',
+  'CONNECTED',
+  'authenticating',
+  'CONNECTING',
+]);
+
+const QR_PENDING_STATUSES = new Set([
+  'qr_ready',
+  'SCAN_QR',
+  'INITIALIZING',
+  'initializing',
+  'qr_pending',
+  'connecting',
+  'CONNECTING',
+  'created',
+]);
 
 const MIME_BY_EXT: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -99,6 +116,45 @@ export class OpenwaService {
       throw new Error(`OpenWA API error: ${msg}`);
     }
     return response.json();
+  }
+
+  /** OpenWA v2 envuelve respuestas en { success, data }. */
+  private unwrapData<T>(result: unknown): T | null {
+    if (result && typeof result === 'object' && 'data' in (result as object)) {
+      const wrapped = result as { success?: boolean; data: T };
+      if (wrapped.success === false) return null;
+      return wrapped.data;
+    }
+    return null;
+  }
+
+  private normalizeStatus(status: string | undefined): string {
+    return (status || 'unknown').toLowerCase();
+  }
+
+  isConnectedStatus(status: string | undefined): boolean {
+    const s = this.normalizeStatus(status);
+    return s === 'ready' || s === 'connected';
+  }
+
+  isQrPendingStatus(status: string | undefined): boolean {
+    const s = status || '';
+    return QR_PENDING_STATUSES.has(s) || QR_PENDING_STATUSES.has(this.normalizeStatus(s));
+  }
+
+  private extractQrPayload(data: unknown): string {
+    if (!data || typeof data !== 'object') return '';
+    const d = data as Record<string, string | undefined>;
+    return d.image || d.qrCode || d.qr || d.code || '';
+  }
+
+  private needsSessionStart(status: string | undefined): boolean {
+    const s = this.normalizeStatus(status);
+    return s === 'created' || s === 'disconnected' || s === 'failed';
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   /** OpenWA @IsUrl() rejects hostnames without TLD (e.g. backend-api). Read our uploads from disk. */
@@ -198,7 +254,7 @@ export class OpenwaService {
       this.logger.warn(`OPENWA_SESSION_ID "${configured}" not found — auto-detecting session`);
     }
 
-    const active = sessions.find((s) => ACTIVE_SESSION_STATUSES.has(s.status));
+    const active = sessions.find((s) => ACTIVE_SESSION_STATUSES.has(s.status) || this.isConnectedStatus(s.status));
     if (active) {
       this.cachedSessionId = active.id;
       this.logger.log(`Auto-selected OpenWA session: ${active.id} (${active.status})`);
@@ -221,23 +277,141 @@ export class OpenwaService {
   }
 
   async getSessions(): Promise<OpenWASession[]> {
-    return this.request<OpenWASession[]>('/api/sessions');
+    const result = await this.request<unknown>('/api/sessions');
+    const data = this.unwrapData<OpenWASession[]>(result);
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(result)) return result as OpenWASession[];
+    return [];
   }
 
-  async createSession(id?: string): Promise<void> {
-    const sessionId = id ?? (await this.resolveSessionId());
-    await this.request(`/api/sessions`, 'POST', { id: sessionId });
+  /**
+   * Crea una sesion de WhatsApp para vincular por QR (OpenWA API v2).
+   * Requiere `name`; el id es opcional y lo genera OpenWA si no se envia.
+   */
+  async createSession(opts?: { name?: string; id?: string }): Promise<OpenWASession> {
+    const name = opts?.name?.trim() || this.config.get('STORE_NAME', 'Zent') || 'Zent';
+    const body: Record<string, string> = { name };
+    const configuredId = opts?.id?.trim() || this.config.get('OPENWA_SESSION_ID', '').trim();
+    if (configuredId) body.id = configuredId;
+
+    const result = await this.request<unknown>('/api/sessions', 'POST', body);
+    const session = this.unwrapData<OpenWASession>(result) ?? (result as OpenWASession);
+    if (!session?.id) {
+      throw new Error('OpenWA no devolvio id de sesion al crear');
+    }
+    this.cachedSessionId = session.id;
+    return session;
   }
 
-  async startSession(id?: string): Promise<void> {
+  /** Inicia el motor WhatsApp de una sesion (OpenWA v2: POST /start). */
+  async startSession(id?: string): Promise<OpenWASession | null> {
     const sessionId = id ?? (await this.resolveSessionId());
-    await this.request(`/api/sessions/${sessionId}/start`, 'POST');
+    try {
+      const result = await this.request<unknown>(`/api/sessions/${sessionId}/start`, 'POST');
+      const session =
+        this.unwrapData<OpenWASession>(result) ?? (result as OpenWASession);
+      if (session?.id) {
+        this.cachedSessionId = session.id;
+        return session;
+      }
+      return null;
+    } catch (err: any) {
+      this.logger.debug(`startSession skipped: ${err?.message || err}`);
+      return null;
+    }
   }
 
   async getQRCode(id?: string): Promise<string> {
     const sessionId = id ?? (await this.resolveSessionId());
-    const data = await this.request<{ qr: string }>(`/api/sessions/${sessionId}/qr`);
-    return data.qr;
+    const result = await this.request<unknown>(`/api/sessions/${sessionId}/qr`);
+    const data = this.unwrapData<Record<string, string>>(result) ?? (result as Record<string, string>);
+    return this.extractQrPayload(data);
+  }
+
+  /** Intenta obtener el QR una sola vez (sin bloquear la peticion HTTP). */
+  async tryGetQROnce(sessionId: string): Promise<string> {
+    try {
+      return await this.getQRCode(sessionId);
+    } catch {
+      return '';
+    }
+  }
+
+  /** Espera hasta que OpenWA exponga un QR para la sesion (polling). Solo usar fuera del request HTTP. */
+  async waitForQR(sessionId: string, attempts = 20, delayMs = 2000): Promise<string> {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const qr = await this.getQRCode(sessionId);
+        if (qr) return qr;
+      } catch {
+        /* sesion aun inicializando */
+      }
+      if (i < attempts - 1) await this.sleep(delayMs);
+    }
+    return '';
+  }
+
+  /**
+   * Garantiza una sesion para vincular por QR.
+   * Por defecto responde rapido (sin esperar QR); el cliente debe hacer polling a /qr.
+   */
+  async ensureSessionForPairing(
+    opts?: { name?: string },
+    waitForQr = false,
+  ): Promise<{ sessionId: string; qr: string; status: string }> {
+    const sessions = await this.getSessions();
+    const configuredId = this.config.get('OPENWA_SESSION_ID', '').trim();
+
+    const pickExisting = (): OpenWASession | undefined => {
+      if (configuredId) {
+        const match = sessions.find((s) => s.id === configuredId);
+        if (match) return match;
+      }
+      const pending = sessions.find((s) => this.isQrPendingStatus(s.status));
+      if (pending) return pending;
+      if (sessions.length === 1) return sessions[0];
+      return sessions[0];
+    };
+
+    const finish = async (session: OpenWASession) => {
+      this.cachedSessionId = session.id;
+      let status = session.status || 'unknown';
+
+      if (this.needsSessionStart(status)) {
+        if (waitForQr) {
+          const started = await this.startSession(session.id);
+          if (started?.status) status = started.status;
+        } else {
+          void this.startSession(session.id);
+        }
+      }
+
+      let qr = session.qr || '';
+      if (!qr) {
+        qr = waitForQr
+          ? await this.waitForQR(session.id, 15, 2000)
+          : await this.tryGetQROnce(session.id);
+      }
+      return { sessionId: session.id, qr, status };
+    };
+
+    const existing = pickExisting();
+    if (existing) {
+      return finish(existing);
+    }
+
+    try {
+      const session = await this.createSession({ name: opts?.name });
+      return finish(session);
+    } catch (err: any) {
+      // Sesion ya existia o nombre duplicado: reutilizar la lista actualizada.
+      this.logger.debug(`createSession retry after: ${err?.message || err}`);
+      const retry = await this.getSessions();
+      if (retry.length > 0) {
+        return finish(retry[0]);
+      }
+      throw err;
+    }
   }
 
   async getSessionStatus(id?: string): Promise<string> {
@@ -245,6 +419,15 @@ export class OpenwaService {
     const sessions = await this.getSessions();
     const session = sessions.find((s) => s.id === sessionId);
     return session?.status || 'unknown';
+  }
+
+  /** Estado normalizado para UI (connected | qr_pending | disconnected | ...). */
+  mapStatusForUi(rawStatus: string): string {
+    if (this.isConnectedStatus(rawStatus)) return 'connected';
+    if (this.isQrPendingStatus(rawStatus)) return 'qr_pending';
+    const s = this.normalizeStatus(rawStatus);
+    if (s === 'disconnected' || s === 'failed') return 'disconnected';
+    return s;
   }
 
   /** Resuelve @lid → teléfono vía API OpenWA (best-effort). */
