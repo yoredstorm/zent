@@ -34,7 +34,15 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     }
 
     // Evitar solapar con /setup o post-connect (rate limit 429 en OpenWA)
-    setTimeout(() => void this.configureOpenWaWithRetries(), 8000);
+    setTimeout(
+      () =>
+        this.configureOpenWaWithRetries().catch((err: any) => {
+          this.logger.error(
+            `OpenWA bootstrap no bloqueante fallo: ${err?.message || err}. Reintenta tras /setup o reinicio.`,
+          );
+        }),
+      8000,
+    );
   }
 
   /** Configura Redis/BullMQ y registra webhooks con reintentos (una sola ejecucion a la vez). */
@@ -68,7 +76,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
           await new Promise((r) => setTimeout(r, delay));
         } else {
           this.logger.error(`OpenWA setup failed after ${retries} attempts: ${msg}`);
-          throw err;
+          return;
         }
       }
     }

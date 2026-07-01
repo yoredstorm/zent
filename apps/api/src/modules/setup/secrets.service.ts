@@ -37,6 +37,7 @@ const CONFIG_KEYS = [
   'VENDOR_NOTIFY_PHONES',
   'PUBLIC_API_URL',
   'ADMIN_FORCE_RESET',
+  'SETUP_FORCE_RESET',
   'GF_SECURITY_ADMIN_USER',
 ] as const;
 
@@ -225,6 +226,7 @@ export class SecretsService {
       summary['BOT_PLUGIN_SECRET'] = summary['OPENWA_WEBHOOK_SECRET'];
     }
     if (!summary['ADMIN_FORCE_RESET']) summary['ADMIN_FORCE_RESET'] = 'false';
+    if (!summary['SETUP_FORCE_RESET']) summary['SETUP_FORCE_RESET'] = 'false';
     if (!summary['GF_SECURITY_ADMIN_USER']) summary['GF_SECURITY_ADMIN_USER'] = 'admin';
 
     if (!summary['DATABASE_URL'] && summary['POSTGRES_PASSWORD']) {

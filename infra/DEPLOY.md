@@ -20,7 +20,25 @@ cd infra
 
 Con `-Reset` / `--reset` se baja el stack, eliminan volúmenes, borran `.env` y `credenciales-zent.txt`, y se regeneran secretos. El asistente vuelve a estar en `/setup`. Usa `-Force` / `--force` para omitir la confirmación.
 
-**Manual en Dokploy** (si no usas los scripts):
+**Dokploy (VPS) — volver a `/setup` sin borrar volúmenes a mano:**
+
+1. En Environment de Dokploy añade `SETUP_FORCE_RESET=true` (requiere deploy con código reciente)
+2. Redeploy del proyecto
+3. Abre `:8080/setup`
+4. Quita `SETUP_FORCE_RESET` o ponla en `false` y redeploy de nuevo
+
+**Alternativa rápida (Terminal Dokploy):**
+
+```bash
+cd infra   # o la carpeta del compose en el VPS
+./reset-setup-flag.sh
+# o manualmente:
+docker exec $(docker ps -qf name=postgres) psql -U inventario -d inventario \
+  -c 'UPDATE system_install SET installed=false, "installedAt"=NULL;'
+docker compose -f docker-compose.prod.yml restart backend-api frontend
+```
+
+**Dokploy — instalación totalmente nueva** (borra DB, WhatsApp, uploads):
 
 **Importante:** si la contraseña tiene `@`, en `DATABASE_URL` debe ir codificada como `%40`:
 

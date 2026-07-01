@@ -38,6 +38,23 @@ export class SeedService implements OnApplicationBootstrap {
         this.logger.log('SystemInstall row created (installed=false)');
       }
 
+      const setupForceReset =
+        this.config.get('SETUP_FORCE_RESET', 'false') === 'true';
+      if (setupForceReset) {
+        const row = await this.prisma.systemInstall.findFirst();
+        if (row) {
+          await this.prisma.systemInstall.update({
+            where: { id: row.id },
+            data: { installed: false, installedAt: null },
+          });
+        } else {
+          await this.prisma.systemInstall.create({ data: { installed: false } });
+        }
+        this.logger.warn(
+          'SETUP_FORCE_RESET=true: wizard /setup habilitado de nuevo. Quita esta variable tras el deploy.',
+        );
+      }
+
       // El admin se crea desde el wizard /setup. Solo lo sembramos automaticamente
       // si se provee ADMIN_EMAIL + ADMIN_PASSWORD de forma explicita por entorno
       // (compatibilidad con despliegues existentes), nunca con credenciales por defecto.
