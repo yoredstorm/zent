@@ -14,6 +14,7 @@ jobs:
   lint-and-build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - app: api
@@ -36,7 +37,6 @@ jobs:
       - name: Lint
         working-directory: ${{ matrix.directory }}
         run: npm run lint
-        continue-on-error: ${{ matrix.app == 'api' }}
 
       - name: Build
         working-directory: ${{ matrix.directory }}

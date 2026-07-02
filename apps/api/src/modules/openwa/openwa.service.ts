@@ -1,5 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import Redis from 'ioredis';
@@ -589,7 +590,6 @@ export class OpenwaService {
 
   verifyWebhookSignature(signature: string, payload: string): boolean {
     const secret = this.config.get('OPENWA_WEBHOOK_SECRET', '');
-    const crypto = require('crypto');
     const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
     return signature === expected;
   }
