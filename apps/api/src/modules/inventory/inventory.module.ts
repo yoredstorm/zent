@@ -6,10 +6,8 @@ import { CartHoldService } from './cart-hold.service';
 import { CartExpiryReminderService } from './cart-expiry-reminder.service';
 import { AbandonedCartService } from './abandoned-cart.service';
 import { AbandonedCartFollowupService } from './abandoned-cart-followup.service';
-import { ProductsModule } from '../products/products.module';
 
 @Module({
-  imports: [ProductsModule],
   controllers: [InventoryController],
   providers: [
     InventoryService,
