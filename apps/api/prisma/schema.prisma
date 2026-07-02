@@ -227,15 +227,40 @@ model SystemInstall {
 }
 
 model StoreSettings {
-  id             Int      @id @default(autoincrement())
-  storeName      String
-  logoUrl        String?
-  currency       String   @default("PEN")
-  taxRate        Float    @default(18.0)
-  phoneNumber    String
-  ownerName      String?
-  whatsappLinked Boolean  @default(false)
-  updatedAt      DateTime @updatedAt
+  id                       Int      @id @default(autoincrement())
+  storeName                String
+  logoUrl                  String?
+  currency                 String   @default("PEN")
+  taxRate                  Float    @default(18.0)
+  phoneNumber              String
+  ownerName                String?
+  whatsappLinked           Boolean  @default(false)
+  deliveryFlatFee          Decimal? @db.Decimal(10, 2)
+  botAiEnabled             Boolean  @default(false)
+  botAiBusinessDescription String?  @db.Text
+  botAiPolicies            String?  @db.Text
+  botAiPlaybook            String?  @db.Text
+  updatedAt                DateTime @updatedAt
 
   @@map("store_settings")
+}
+
+model AbandonedCart {
+  id             String    @id @default(uuid())
+  chatId         String
+  stateKey       String
+  customerName   String?
+  customerPhone  String?
+  itemsJson      String    @db.Text
+  subtotal       Decimal   @db.Decimal(10, 2)
+  deliveryCost   Decimal   @default(0) @db.Decimal(10, 2)
+  total          Decimal   @db.Decimal(10, 2)
+  expiredAt      DateTime  @default(now())
+  followUpSentAt DateTime?
+  recoveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([chatId])
+  @@index([followUpSentAt, recoveredAt])
+  @@map("abandoned_carts")
 }

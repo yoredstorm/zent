@@ -15,6 +15,6 @@ import { InstallGuard } from './install.guard';
       useClass: InstallGuard,
     },
   ],
-  exports: [SetupService],
+  exports: [SetupService, SecretsService],
 })
 export class SetupModule {}

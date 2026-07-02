@@ -1,5 +1,6 @@
 import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class UpdateStoreDto {
   @ApiPropertyOptional()
@@ -28,4 +29,11 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  deliveryFlatFee?: number;
 }

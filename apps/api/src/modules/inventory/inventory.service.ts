@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { StockReservationService } from './stock-reservation.service';
 import { CartHoldService } from './cart-hold.service';
+import { AbandonedCartService } from './abandoned-cart.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class InventoryService {
     private prisma: PrismaService,
     private stock: StockReservationService,
     private cartHold: CartHoldService,
+    private abandonedCart: AbandonedCartService,
     private realtime: RealtimeService,
   ) {}
 
@@ -74,6 +76,10 @@ export class InventoryService {
 
   async getActiveCarts() {
     return this.cartHold.listActiveHolds();
+  }
+
+  getAbandonedCarts() {
+    return this.abandonedCart.listAbandonedCarts();
   }
 
   async getLowStockAlerts() {

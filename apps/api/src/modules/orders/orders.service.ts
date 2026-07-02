@@ -133,6 +133,7 @@ export class OrdersService {
       chatId?: string;
       notes?: string;
       source?: OrderSource;
+      deliveryCost?: number;
       items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
     },
     options?: { commitStock?: boolean; status?: OrderStatus },
@@ -140,7 +141,8 @@ export class OrdersService {
     await this.stock.assertOrderItemsAvailable(data.items);
 
     const subtotal = data.items.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
-    const total = subtotal;
+    const delivery = data.deliveryCost ?? 0;
+    const total = subtotal + delivery;
     const status = options?.status ?? 'NUEVO';
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -154,6 +156,7 @@ export class OrdersService {
           chatId: data.chatId,
           notes: data.notes,
           subtotal,
+          deliveryCost: delivery,
           total,
           source: data.source ?? 'WHATSAPP',
           status,

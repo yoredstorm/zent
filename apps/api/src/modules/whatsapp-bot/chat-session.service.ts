@@ -34,26 +34,62 @@ export class ChatSessionService {
   }
 
   async updateContext(chatId: string, context: Record<string, any> | null) {
+    if (context === null) {
+      const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
+      const existing = this.parseContextJson(session?.contextJson ?? null);
+      const aiMessages = existing.aiMessages;
+      const next = aiMessages ? { aiMessages } : null;
+      return this.prisma.chatSession.update({
+        where: { chatId },
+        data: { contextJson: next ? JSON.stringify(next) : null },
+      });
+    }
+
+    const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
+    const existing = this.parseContextJson(session?.contextJson ?? null);
+    const merged = { ...existing, ...context };
     return this.prisma.chatSession.update({
       where: { chatId },
-      data: { contextJson: context ? JSON.stringify(context) : null },
+      data: { contextJson: JSON.stringify(merged) },
     });
   }
 
   async getContext(chatId: string): Promise<Record<string, any>> {
     const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
-    if (!session?.contextJson) return {};
-    try {
-      return JSON.parse(session.contextJson);
-    } catch {
-      return {};
-    }
+    return this.parseContextJson(session?.contextJson ?? null) as Record<string, any>;
   }
 
   async updateCustomerData(chatId: string, data: { customerName?: string; customerPhone?: string }) {
     return this.prisma.chatSession.update({
       where: { chatId },
       data,
+    });
+  }
+
+  private parseContextJson(raw: string | null): Record<string, unknown> {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  async getAiMessages(chatId: string): Promise<unknown[]> {
+    const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
+    const ctx = this.parseContextJson(session?.contextJson ?? null);
+    const messages = ctx.aiMessages;
+    return Array.isArray(messages) ? messages : [];
+  }
+
+  async setAiMessages(chatId: string, messages: unknown[]): Promise<void> {
+    const session = await this.prisma.chatSession.findUnique({ where: { chatId } });
+    const ctx = this.parseContextJson(session?.contextJson ?? null);
+    ctx.aiMessages = messages;
+    await this.prisma.chatSession.update({
+      where: { chatId },
+      data: { contextJson: JSON.stringify(ctx) },
     });
   }
 }

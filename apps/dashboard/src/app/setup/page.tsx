@@ -127,6 +127,11 @@ export default function SetupWizard() {
   const [waError, setWaError] = useState('');
   const [openwaKeyValid, setOpenwaKeyValid] = useState<boolean | null>(null);
 
+  // Bot IA (opcional)
+  const [novitaBotEnabled, setNovitaBotEnabled] = useState(false);
+  const [novitaApiKey, setNovitaApiKey] = useState('');
+  const [novitaTestMsg, setNovitaTestMsg] = useState('');
+
   // Instalacion
   const [log, setLog] = useState<InstallEvent[]>([]);
   const [installing, setInstalling] = useState(false);
@@ -249,6 +254,8 @@ export default function SetupWizard() {
       adminEmail,
       adminPassword,
       adminName: ownerName || undefined,
+      novitaBotEnabled: novitaBotEnabled || undefined,
+      novitaApiKey: novitaApiKey.trim() || undefined,
     };
 
     const started = await apiPost('/api/setup/install', payload);
@@ -290,7 +297,7 @@ export default function SetupWizard() {
       es.close();
       setInstalling(false);
     };
-  }, [storeName, effectiveLogo, currency, taxRate, phoneNumber, ownerName, adminEmail, adminPassword]);
+  }, [storeName, effectiveLogo, currency, taxRate, phoneNumber, ownerName, adminEmail, adminPassword, novitaBotEnabled, novitaApiKey]);
 
   const finish = async () => {
     const res = await apiPost('/api/auth/login', { email: adminEmail, password: adminPassword });
@@ -501,6 +508,53 @@ export default function SetupWizard() {
               {adminPassword && adminPassword !== adminPasswordConfirm && (
                 <p className="text-xs text-red-400">Las contrasenas no coinciden.</p>
               )}
+
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-3">
+                <h3 className="font-semibold text-sm">Bot IA con Novita (opcional)</h3>
+                <p className="text-xs text-slate-400">
+                  Sin API key el bot usa solo el menú numérico (1-4). Con key y saldo, atiende en lenguaje natural.
+                </p>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={novitaBotEnabled}
+                    onChange={(e) => setNovitaBotEnabled(e.target.checked)}
+                    className="rounded"
+                  />
+                  Activar asistente IA
+                </label>
+                <Field label="API key Novita (opcional)">
+                  <input
+                    type="password"
+                    className="input"
+                    value={novitaApiKey}
+                    onChange={(e) => setNovitaApiKey(e.target.value)}
+                    placeholder="sk_..."
+                  />
+                </Field>
+                {novitaApiKey.trim() && (
+                  <button
+                    type="button"
+                    className="btn-secondary text-sm"
+                    onClick={async () => {
+                      const res = await apiPost('/api/setup/novita/test', {
+                        novitaApiKey: novitaApiKey.trim(),
+                      });
+                      if (res.ok && res.data?.ok) {
+                        setNovitaTestMsg(
+                          `Saldo: $${res.data.balanceUsd?.toFixed(2) ?? '?'} — ${res.data.aiAvailable ? 'IA disponible' : 'Saldo insuficiente'}`,
+                        );
+                      } else {
+                        setNovitaTestMsg(res.data?.message || 'Error al probar la clave');
+                      }
+                    }}
+                  >
+                    Probar conexión
+                  </button>
+                )}
+                {novitaTestMsg && <p className="text-xs text-emerald-300">{novitaTestMsg}</p>}
+              </div>
+
               <Nav
                 onBack={back}
                 onNext={() => {

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CartHoldService } from './cart-hold.service';
+import { AbandonedCartService } from './abandoned-cart.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 
@@ -14,6 +15,7 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
   constructor(
     private config: ConfigService,
     private cartHold: CartHoldService,
+    private abandonedCart: AbandonedCartService,
     private openwa: OpenwaService,
   ) {}
 
@@ -109,6 +111,11 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
       } catch (err) {
         this.logger.warn(`Cart expired notice failed for ${meta.stateKey}: ${err}`);
       } finally {
+        try {
+          await this.abandonedCart.snapshotFromExpiredMeta(meta);
+        } catch (err) {
+          this.logger.warn(`Abandoned cart snapshot failed for ${meta.stateKey}: ${err}`);
+        }
         await this.cartHold.clearExpiredCart(meta.stateKey);
       }
     }

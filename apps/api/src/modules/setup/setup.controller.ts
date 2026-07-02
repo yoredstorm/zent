@@ -10,7 +10,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Observable } from 'rxjs';
 import { SetupService } from './setup.service';
-import { InstallDto } from './dto/setup.dto';
+import { InstallDto, TestNovitaDto } from './dto/setup.dto';
 
 @ApiTags('setup')
 @Controller('setup')
@@ -59,6 +59,12 @@ export class SetupController {
   @ApiOperation({ summary: 'Crea/inicia la sesion de WhatsApp y devuelve el QR' })
   whatsappConnect() {
     return this.setup.connectWhatsapp();
+  }
+
+  @Post('novita/test')
+  @ApiOperation({ summary: 'Prueba conexion y saldo Novita AI' })
+  testNovita(@Body() dto: TestNovitaDto) {
+    return this.setup.testNovitaApiKey(dto.novitaApiKey);
   }
 
   private async ensureNotInstalled() {

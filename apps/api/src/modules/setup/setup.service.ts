@@ -6,6 +6,7 @@ import { OpenwaService } from '../openwa/openwa.service';
 import { OpenwaBootstrapService } from '../openwa/openwa-bootstrap.service';
 import { SecretsService } from './secrets.service';
 import { InstallDto } from './dto/setup.dto';
+import { fetchNovitaBalance, parseNovitaBalanceUsd } from '../bot-ai/novita.client';
 
 export interface InstallEvent {
   step: number;
@@ -78,6 +79,17 @@ export class SetupService {
 
   getCredentialsSummary() {
     return this.secrets.getCredentialsSummary();
+  }
+
+  async testNovitaApiKey(apiKey?: string) {
+    const key = apiKey?.trim() || process.env.NOVITA_API_KEY?.trim() || '';
+    if (!key) return { ok: false, message: 'No hay API key configurada' };
+    try {
+      const detail = await fetchNovitaBalance(key);
+      return { ok: true, balanceUsd: parseNovitaBalanceUsd(detail), detail };
+    } catch (err: any) {
+      return { ok: false, message: err?.message || 'Error al conectar con Novita' };
+    }
   }
 
   /** Arranca la instalacion (idempotente) y devuelve de inmediato; el progreso va por SSE. */
@@ -215,11 +227,19 @@ export class SetupService {
       taxRate: dto.taxRate ?? 18,
       phoneNumber: dto.phoneNumber,
       ownerName: dto.ownerName ?? null,
+      botAiEnabled: dto.novitaBotEnabled ?? false,
     };
     if (existing) {
       await this.prisma.storeSettings.update({ where: { id: existing.id }, data });
     } else {
       await this.prisma.storeSettings.create({ data });
+    }
+
+    if (dto.novitaApiKey?.trim()) {
+      this.secrets.upsertEnvSecret('NOVITA_API_KEY', dto.novitaApiKey.trim());
+    }
+    if (dto.novitaBotEnabled !== undefined) {
+      this.secrets.upsertEnvConfig('NOVITA_BOT_ENABLED', dto.novitaBotEnabled ? 'true' : 'false');
     }
   }
 

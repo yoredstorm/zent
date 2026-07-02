@@ -1,23 +1,44 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { FolderTree } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [form, setForm] = useState({ nombre: '', orden: 0 });
 
-  useEffect(() => { loadCategories(); }, []);
+  const loadCategories = useCallback(() => {
+    setListLoading(true);
+    api
+      .get('/categories')
+      .then(setCategories)
+      .catch(console.error)
+      .finally(() => setListLoading(false));
+  }, []);
 
-  const loadCategories = () => { api.get('/categories').then(setCategories).catch(console.error); };
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
+
+  const openCreate = () => {
+    setShowForm(true);
+    setEditing(null);
+    setForm({ nombre: '', orden: 0 });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
     try {
       if (editing) {
         await api.put(`/categories/${editing.id}`, form);
@@ -33,7 +54,7 @@ export default function CategoriesPage() {
     } catch {
       toast.error('Error al guardar');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -44,76 +65,138 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    toast.custom((t) => (
-      <div className="bg-white p-4 rounded-lg shadow-lg border">
-        <p className="mb-3 font-medium">¿Eliminar categoría?</p>
-        <div className="flex gap-2">
-          <button onClick={async () => {
-            toast.dismiss(t);
-            await api.delete(`/categories/${id}`);
-            toast.success('Categoría eliminada');
-            loadCategories();
-          }} className="bg-red-600 text-white px-3 py-1 rounded text-sm">Eliminar</button>
-          <button onClick={() => toast.dismiss(t)} className="bg-gray-200 px-3 py-1 rounded text-sm">Cancelar</button>
+    toast.custom(
+      (t) => (
+        <div className="rounded-lg border bg-white p-4 shadow-lg">
+          <p className="mb-3 font-medium">¿Eliminar categoría?</p>
+          <div className="flex gap-2">
+            <Button
+              variant="danger"
+              className="text-sm"
+              onClick={async () => {
+                toast.dismiss(t);
+                await api.delete(`/categories/${id}`);
+                toast.success('Categoría eliminada');
+                loadCategories();
+              }}
+            >
+              Eliminar
+            </Button>
+            <Button variant="secondary" className="text-sm" onClick={() => toast.dismiss(t)}>
+              Cancelar
+            </Button>
+          </div>
         </div>
-      </div>
-    ), { duration: 10000 });
+      ),
+      { duration: 10000 },
+    );
   };
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Categorías</h1>
-        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ nombre: '', orden: 0 }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-          + Nueva Categoría
-        </button>
-      </div>
+      <PageHeader
+        title="Categorías"
+        subtitle="Organiza tu catálogo para el bot y el dashboard."
+        actions={
+          <Button type="button" onClick={openCreate}>
+            + Nueva categoría
+          </Button>
+        }
+      />
 
       {showForm && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-bold mb-4">{editing ? 'Editar' : 'Nueva'} Categoría</h2>
+        <div className="zent-card mb-6 p-6 animate-fade-in">
+          <h2 className="mb-4 text-xl font-bold text-slate-900">{editing ? 'Editar' : 'Nueva'} categoría</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Nombre</label>
-              <input type="text" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Nombre</label>
+              <input
+                type="text"
+                value={form.nombre}
+                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                className="zent-input w-full"
+                required
+              />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Orden</label>
-              <input type="number" value={form.orden} onChange={(e) => setForm({ ...form, orden: parseInt(e.target.value) })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Orden</label>
+              <input
+                type="number"
+                value={form.orden}
+                onChange={(e) => setForm({ ...form, orden: parseInt(e.target.value, 10) || 0 })}
+                className="zent-input w-full"
+              />
             </div>
             <div className="flex gap-2">
-              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Guardar</button>
-              <button type="button" onClick={() => setShowForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300">Cancelar</button>
+              <Button type="submit" loading={saving}>
+                Guardar
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+                Cancelar
+              </Button>
             </div>
           </form>
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orden</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Productos</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {categories.map((c: any) => (
-              <tr key={c.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{c.nombre}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.orden}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c._count?.products || 0}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <button onClick={() => handleEdit(c)} className="text-blue-600 hover:text-blue-800 mr-3">Editar</button>
-                  <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
-                </td>
+      {listLoading ? (
+        <div className="zent-card space-y-3 p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10" />
+          ))}
+        </div>
+      ) : categories.length === 0 && !showForm ? (
+        <div className="zent-card overflow-hidden">
+          <EmptyState
+            icon={FolderTree}
+            title="Sin categorías"
+            description="Crea tu primera categoría para organizar el catálogo."
+            action={
+              <Button type="button" onClick={openCreate}>
+                Crear primera categoría
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <div className="zent-card overflow-hidden">
+          <table className="min-w-full divide-y divide-slate-100">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-slate-500">Nombre</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-slate-500">Orden</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-slate-500">Productos</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase text-slate-500">Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {categories.map((c: any) => (
+                <tr key={c.id} className="hover:bg-slate-50/80">
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-900">{c.nombre}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{c.orden}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{c._count?.products || 0}</td>
+                  <td className="whitespace-nowrap px-6 py-4 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(c)}
+                      className="mr-3 font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(c.id)}
+                      className="font-medium text-danger hover:text-red-600"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

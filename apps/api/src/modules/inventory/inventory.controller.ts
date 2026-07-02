@@ -31,6 +31,12 @@ export class InventoryController {
     return this.inventory.getActiveCarts();
   }
 
+  @Get('abandoned-carts')
+  @ApiOperation({ summary: 'Abandoned WhatsApp carts after expiry' })
+  getAbandonedCarts() {
+    return this.inventory.getAbandonedCarts();
+  }
+
   @Get('alerts')
   @ApiOperation({ summary: 'Get low stock alerts' })
   getLowStockAlerts() {

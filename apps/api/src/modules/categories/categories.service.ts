@@ -1,13 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import { BotCatalogContextService } from '../bot-ai/bot-catalog-context.service';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private botCatalog: BotCatalogContextService,
+  ) {}
 
   async create(dto: CreateCategoryDto) {
-    return this.prisma.category.create({ data: dto });
+    const category = await this.prisma.category.create({ data: dto });
+    this.botCatalog.invalidate();
+    return category;
   }
 
   async findAll() {
@@ -28,11 +34,14 @@ export class CategoriesService {
   }
 
   async update(id: string, dto: UpdateCategoryDto) {
-    return this.prisma.category.update({ where: { id }, data: dto });
+    const category = await this.prisma.category.update({ where: { id }, data: dto });
+    this.botCatalog.invalidate();
+    return category;
   }
 
   async remove(id: string) {
     await this.prisma.category.update({ where: { id }, data: { isActive: false } });
+    this.botCatalog.invalidate();
     return { success: true };
   }
 }

@@ -49,6 +49,7 @@ export default function OrdersPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [editLines, setEditLines] = useState<{ id: string; quantity: number }[]>([]);
   const [savingItems, setSavingItems] = useState(false);
+  const [deliveryInput, setDeliveryInput] = useState('');
 
   const loadOrders = useCallback(() => {
     const params = filter ? `?status=${filter}` : '';
@@ -144,13 +145,18 @@ export default function OrdersPage() {
   };
 
   const handleStatusChange = async (id: string, status: string) => {
-    await api.put(`/orders/${id}/status`, { status });
+    const payload: { status: string; deliveryCost?: number } = { status };
+    if (['EN_DELIVERY', 'COMPLETADO'].includes(status) && deliveryInput.trim()) {
+      payload.deliveryCost = Number.parseFloat(deliveryInput);
+    }
+    await api.put(`/orders/${id}/status`, payload);
     toast.success(`Estado cambiado a ${status}`);
     loadOrders();
     if (selected?.id === id) {
       const updated = await api.get(`/orders/${id}`);
       setSelected(updated);
       syncEditLines(updated);
+      setDeliveryInput('');
     }
   };
 
@@ -166,6 +172,9 @@ export default function OrdersPage() {
   const selectOrder = async (order: any) => {
     setSelected(order);
     syncEditLines(order);
+    setDeliveryInput(
+      order.deliveryCost != null ? String(Number(order.deliveryCost)) : '',
+    );
   };
 
   const handleSaveItems = async () => {
@@ -512,10 +521,39 @@ export default function OrdersPage() {
                 Ajusta cantidades antes de marcar en delivery o completado. Pon 0 si un producto no se incluyó.
               </p>
               <hr className="my-4" />
-              <div className="flex justify-between font-bold text-lg">
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Subtotal:</span>
+                  <span>S/ {Number(selected.subtotal).toFixed(2)}</span>
+                </div>
+                {selected.deliveryCost != null && Number(selected.deliveryCost) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Delivery:</span>
+                    <span>S/ {Number(selected.deliveryCost).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-between font-bold text-lg mt-2">
                 <span>Total:</span>
                 <span>S/ {Number(selected.total).toFixed(2)}</span>
               </div>
+              {['EN_GESTION', 'CONFIRMADO', 'NUEVO'].includes(selected.status) &&
+                selected.deliveryCost == null && (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-sm font-medium text-slate-700">
+                      Costo de delivery (opcional, al pasar a En delivery / Completado)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={deliveryInput}
+                      onChange={(e) => setDeliveryInput(e.target.value)}
+                      className="zent-input w-full"
+                      placeholder="Ej. 8.50"
+                    />
+                  </div>
+                )}
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Cambiar Estado:</label>
                 <select

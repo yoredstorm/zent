@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import { BotCatalogContextService } from '../bot-ai/bot-catalog-context.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private botCatalog: BotCatalogContextService,
+  ) {}
 
   async create(dto: CreateProductDto) {
     const product = await this.prisma.product.create({
@@ -20,6 +24,7 @@ export class ProductsService {
       },
       include: { images: true, category: true },
     });
+    this.botCatalog.invalidate();
     return product;
   }
 
@@ -49,6 +54,7 @@ export class ProductsService {
       },
       include: { images: true, category: true },
     });
+    this.botCatalog.invalidate();
     return product;
   }
 
@@ -57,6 +63,7 @@ export class ProductsService {
       where: { id },
       data: { isActive: false },
     });
+    this.botCatalog.invalidate();
     return { success: true };
   }
 
@@ -112,6 +119,7 @@ export class ProductsService {
       }),
     ]);
 
+    this.botCatalog.invalidate();
     return this.findOne(id);
   }
 }

@@ -46,9 +46,23 @@ export class InstallDto {
   @IsOptional()
   @IsString()
   adminName?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  novitaBotEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  novitaApiKey?: string;
 }
 
 export class WhatsappLinkedDto {
   @IsBoolean()
   linked!: boolean;
+}
+
+export class TestNovitaDto {
+  @IsOptional()
+  @IsString()
+  novitaApiKey?: string;
 }

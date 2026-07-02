@@ -17,6 +17,7 @@ type StoreSettings = {
   currency: string;
   taxRate: number;
   logoUrl?: string | null;
+  deliveryFlatFee?: number | null;
 };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export default function StoreSettingsPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [currency, setCurrency] = useState('PEN');
   const [taxRate, setTaxRate] = useState(18);
+  const [deliveryFlatFee, setDeliveryFlatFee] = useState<string>('');
   const [logoUrl, setLogoUrl] = useState('');
   const [useGenericLogo, setUseGenericLogo] = useState(true);
 
@@ -47,6 +49,11 @@ export default function StoreSettingsPage() {
       setPhoneNumber(data.phoneNumber ?? '');
       setCurrency(data.currency ?? 'PEN');
       setTaxRate(data.taxRate ?? 18);
+      setDeliveryFlatFee(
+        data.deliveryFlatFee != null && data.deliveryFlatFee !== undefined
+          ? String(data.deliveryFlatFee)
+          : '',
+      );
       if (data.logoUrl) {
         setLogoUrl(data.logoUrl);
         setUseGenericLogo(false);
@@ -105,6 +112,8 @@ export default function StoreSettingsPage() {
         phoneNumber: phoneNumber.trim(),
         currency,
         taxRate: Number(taxRate),
+        deliveryFlatFee:
+          deliveryFlatFee.trim() === '' ? null : Number.parseFloat(deliveryFlatFee),
         logoUrl: effectiveLogo || undefined,
       });
       toast.success('Configuracion guardada');
@@ -217,6 +226,18 @@ export default function StoreSettingsPage() {
                 />
               </Field>
             </div>
+
+            <Field label="Costo fijo de delivery (opcional)">
+              <input
+                type="number"
+                className="zent-input"
+                value={deliveryFlatFee}
+                min={0}
+                step="0.01"
+                onChange={(e) => setDeliveryFlatFee(e.target.value)}
+                placeholder="Ej: 8.00 — dejar vacio si no aplica"
+              />
+            </Field>
 
             <div className="flex justify-end pt-2">
               <Button type="submit" loading={saving}>

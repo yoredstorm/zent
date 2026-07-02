@@ -28,6 +28,7 @@ export const navItems = [
 
 export const settingsTabs = [
   { href: '/dashboard/settings/store', label: 'Tienda' },
+  { href: '/dashboard/settings/bot-ai', label: 'Asistente IA' },
   { href: '/dashboard/settings/users', label: 'Equipo' },
 ];
 

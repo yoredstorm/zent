@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { MessageCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useRealtime } from '@/lib/useRealtime';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { Tabs } from '@/components/ui/Tabs';
 
 type MainTab = 'inbox' | 'session';
 type InboxFilter = '' | 'handoff' | 'orders' | 'carts';
@@ -42,6 +49,13 @@ interface WaMessage {
 }
 
 const QUICK_EMOJIS = ['😀', '😂', '👍', '❤️', '🙏', '✅', '🎉', '😊', '👋', '🔥'];
+
+const FILTER_OPTIONS: { id: InboxFilter; label: string }[] = [
+  { id: '', label: 'Todas' },
+  { id: 'handoff', label: 'Handoff' },
+  { id: 'orders', label: 'Pedidos nuevos' },
+  { id: 'carts', label: 'Carritos activos' },
+];
 
 function encodeChatId(chatId: string) {
   return encodeURIComponent(chatId);
@@ -313,102 +327,85 @@ export default function WhatsAppPage() {
     error: 'Error',
   };
 
+  const statusTone = (s?: string): 'success' | 'warning' | 'danger' | 'default' => {
+    if (s === 'connected' || s === 'ready') return 'success';
+    if (s === 'connecting' || s === 'qr') return 'warning';
+    if (s === 'error' || s === 'disconnected') return 'danger';
+    return 'default';
+  };
+
   return (
     <div>
-      <div className="flex flex-wrap gap-3 justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">WhatsApp</h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setMainTab('inbox')}
-            className={`px-4 py-2 rounded-lg text-sm ${mainTab === 'inbox' ? 'bg-green-600 text-white' : 'bg-gray-200'}`}
-          >
-            Bandeja
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainTab('session')}
-            className={`px-4 py-2 rounded-lg text-sm ${mainTab === 'session' ? 'bg-green-600 text-white' : 'bg-gray-200'}`}
-          >
-            Sesión
-          </button>
-        </div>
+      <PageHeader title="WhatsApp" />
+
+      <div className="mb-6">
+        <Tabs
+          value={mainTab}
+          onChange={(id) => setMainTab(id as MainTab)}
+          items={[
+            { id: 'inbox', label: 'Bandeja' },
+            { id: 'session', label: 'Sesión' },
+          ]}
+        />
       </div>
 
       {mainTab === 'inbox' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
-          <div className="bg-white rounded-lg shadow flex flex-col overflow-hidden lg:col-span-1">
-            <div className="p-3 border-b flex gap-2 flex-wrap items-center justify-between">
-              <div className="flex gap-2 flex-wrap">
-                {(['', 'handoff', 'orders', 'carts'] as const).map((f) => (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 h-[calc(100vh-12rem)] min-h-[500px]">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-card lg:col-span-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-3">
+              <div className="flex flex-wrap gap-2">
+                {FILTER_OPTIONS.map((f) => (
                   <button
-                    key={f || 'all'}
+                    key={f.id || 'all'}
                     type="button"
-                    onClick={() => setFilter(f)}
-                    className={`px-3 py-1 rounded-full text-xs ${
-                      filter === f ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                    }`}
+                    onClick={() => setFilter(f.id)}
+                    className="rounded-full transition-opacity hover:opacity-80"
                   >
-                    {f === ''
-                      ? 'Todas'
-                      : f === 'handoff'
-                        ? 'Handoff'
-                        : f === 'orders'
-                          ? 'Pedidos nuevos'
-                          : 'Carritos activos'}
+                    <Badge tone={filter === f.id ? 'success' : 'default'}>{f.label}</Badge>
                   </button>
                 ))}
               </div>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                className="!min-h-0 !px-2 !py-1.5"
                 onClick={loadConversations}
-                className="text-xs text-gray-500 hover:text-gray-800"
                 title="Refrescar lista"
               >
-                ↻
-              </button>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
-                <p className="p-4 text-sm text-gray-500 text-center">
-                  No hay conversaciones aún. Abre un chat para sincronizar desde OpenWA.
-                </p>
+                <EmptyState
+                  icon={MessageCircle}
+                  title="Sin conversaciones"
+                  description="Abre un chat para sincronizar desde OpenWA."
+                />
               ) : (
                 conversations.map((c) => (
                   <button
                     key={c.chatId}
                     type="button"
                     onClick={() => selectConversation(c)}
-                    className={`w-full text-left p-3 border-b hover:bg-gray-50 ${
-                      selected?.chatId === c.chatId ? 'bg-green-50' : ''
+                    className={`w-full border-b border-slate-100 p-3 text-left transition-colors hover:bg-slate-50 ${
+                      selected?.chatId === c.chatId ? 'bg-brand-50' : ''
                     }`}
                   >
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="font-medium text-sm truncate">{displayName(c)}</span>
-                      <span className="text-xs text-gray-400 shrink-0">{formatTime(c.lastMessageAt)}</span>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-slate-900">{displayName(c)}</span>
+                      <span className="shrink-0 text-xs text-slate-400">{formatTime(c.lastMessageAt)}</span>
                     </div>
-                    <p className="text-xs text-gray-500 truncate mt-1">{c.lastMessage}</p>
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {c.needsHandoff && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                          Handoff
-                        </span>
-                      )}
-                      {c.hasNewOrder && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
-                          Pedido nuevo
-                        </span>
-                      )}
+                    <p className="mt-1 truncate text-xs text-slate-500">{c.lastMessage}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {c.needsHandoff && <Badge tone="warning">Handoff</Badge>}
+                      {c.hasNewOrder && <Badge tone="brand">Pedido nuevo</Badge>}
                       {c.hasActiveCart && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                        <Badge tone="brand">
                           Carrito{c.cartItemCount > 0 ? ` (${c.cartItemCount})` : ''}
-                        </span>
+                        </Badge>
                       )}
-                      {c.unreadHint && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800">
-                          Nuevo
-                        </span>
-                      )}
+                      {c.unreadHint && <Badge tone="success">Nuevo</Badge>}
                     </div>
                   </button>
                 ))
@@ -416,25 +413,25 @@ export default function WhatsAppPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow flex flex-col overflow-hidden lg:col-span-2">
+          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-card lg:col-span-2">
             {!selected ? (
-              <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="flex flex-1 items-center justify-center text-slate-400">
                 Selecciona una conversación
               </div>
             ) : (
               <>
-                <div className="p-3 border-b flex flex-wrap justify-between gap-2 items-center">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-3">
                   <div>
-                    <div className="font-semibold">{displayName(selected)}</div>
+                    <div className="font-semibold text-slate-900">{displayName(selected)}</div>
                     {formatPhone(selected.contactPhone) && (
-                      <div className="text-xs text-gray-500">{formatPhone(selected.contactPhone)}</div>
+                      <div className="text-xs text-slate-500">{formatPhone(selected.contactPhone)}</div>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex flex-wrap items-center gap-3">
                     {meta?.openOrder && (
                       <Link
                         href="/dashboard/orders"
-                        className="text-xs text-blue-600 hover:underline"
+                        className="text-xs font-medium text-brand-600 hover:underline"
                       >
                         Pedido #{meta.openOrder.id.slice(0, 8)} ({meta.openOrder.status})
                       </Link>
@@ -444,41 +441,42 @@ export default function WhatsAppPage() {
                         href={openwaUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-gray-500 hover:text-blue-600"
+                        className="text-xs text-slate-500 hover:text-brand-600"
                       >
                         Abrir en OpenWA
                       </a>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      className="!min-h-0 !px-2 !py-1 text-xs"
                       onClick={handleSync}
-                      disabled={syncing}
-                      className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                      loading={syncing}
                     >
                       {syncing ? 'Sincronizando…' : 'Actualizar'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
                 {meta && (
-                  <div className="px-3 py-2 bg-gray-50 text-xs text-gray-600 border-b space-y-2">
+                  <div className="space-y-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     <div className="flex flex-wrap gap-3">
                       {meta.session?.state && <span>Bot: {meta.session.state}</span>}
                       {meta.customer && (
-                        <Link href="/dashboard/customers" className="text-blue-600 hover:underline">
+                        <Link href="/dashboard/customers" className="font-medium text-brand-600 hover:underline">
                           Ver cliente
                         </Link>
                       )}
-                      <Link href="/dashboard/inventory" className="text-blue-600 hover:underline">
+                      <Link href="/dashboard/inventory" className="font-medium text-brand-600 hover:underline">
                         Inventario / carritos
                       </Link>
                     </div>
                     {meta.activeCart && (
-                      <div className="rounded-md border border-purple-200 bg-purple-50 p-2 text-purple-900">
-                        <div className="font-medium mb-1">
+                      <div className="rounded-xl border border-brand-200 bg-brand-50 p-2 text-brand-900">
+                        <div className="mb-1 font-medium">
                           🛒 Carrito incompleto — S/ {Number(meta.activeCart.total).toFixed(2)}
                           {meta.activeCart.minutesLeft != null && (
-                            <span className="font-normal text-purple-700 ml-2">
+                            <span className="ml-2 font-normal text-brand-700">
                               (expira en {meta.activeCart.minutesLeft} min)
                             </span>
                           )}
@@ -495,13 +493,17 @@ export default function WhatsAppPage() {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#e5ddd5]/30">
+                <div className="flex-1 space-y-3 overflow-y-auto bg-[#e5ddd5]/30 p-4">
                   {loadingMessages ? (
-                    <div className="text-center text-sm text-gray-400 py-8">
-                      Cargando mensajes desde OpenWA…
+                    <div className="space-y-3">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className={`flex ${i % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
+                          <Skeleton className={`h-12 rounded-lg ${i % 2 === 0 ? 'w-2/3' : 'w-1/2'}`} />
+                        </div>
+                      ))}
                     </div>
                   ) : messages.length === 0 ? (
-                    <div className="text-center text-sm text-gray-400 py-8">
+                    <div className="py-8 text-center text-sm text-slate-400">
                       Sin mensajes. Pulsa Actualizar para sincronizar el historial.
                     </div>
                   ) : (
@@ -510,19 +512,19 @@ export default function WhatsAppPage() {
                 </div>
 
                 {pendingFile && (
-                  <div className="px-3 py-2 border-t bg-gray-50 text-xs flex justify-between items-center">
+                  <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-3 py-2 text-xs">
                     <span>📎 {pendingFile.name}</span>
                     <button
                       type="button"
                       onClick={() => setPendingFile(null)}
-                      className="text-red-600 hover:underline"
+                      className="font-medium text-danger hover:underline"
                     >
                       Quitar
                     </button>
                   </div>
                 )}
 
-                <div className="p-3 border-t flex gap-2 items-end relative">
+                <div className="relative flex items-end gap-2 border-t border-slate-100 p-3">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -537,7 +539,7 @@ export default function WhatsAppPage() {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                    className="rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100"
                     title="Adjuntar imagen o PDF"
                   >
                     📎
@@ -546,18 +548,18 @@ export default function WhatsAppPage() {
                     <button
                       type="button"
                       onClick={() => setShowEmojis((v) => !v)}
-                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                      className="rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100"
                       title="Emoji"
                     >
                       😊
                     </button>
                     {showEmojis && (
-                      <div className="absolute bottom-full left-0 mb-1 bg-white border rounded-lg shadow p-2 flex gap-1 flex-wrap w-48 z-10">
+                      <div className="absolute bottom-full left-0 z-10 mb-1 flex w-48 flex-wrap gap-1 rounded-xl border border-slate-100 bg-white p-2 shadow-card">
                         {QUICK_EMOJIS.map((e) => (
                           <button
                             key={e}
                             type="button"
-                            className="text-lg hover:bg-gray-100 rounded p-1"
+                            className="rounded p-1 text-lg hover:bg-slate-100"
                             onClick={() => {
                               setReply((r) => r + e);
                               setShowEmojis(false);
@@ -574,16 +576,16 @@ export default function WhatsAppPage() {
                     onChange={(e) => setReply(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                     placeholder="Escribe tu respuesta como asesor…"
-                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                    className="zent-input flex-1"
                   />
-                  <button
+                  <Button
                     type="button"
                     onClick={handleSend}
-                    disabled={sending || (!reply.trim() && !pendingFile)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+                    loading={sending}
+                    disabled={!reply.trim() && !pendingFile}
                   >
                     Enviar
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -592,47 +594,41 @@ export default function WhatsAppPage() {
       )}
 
       {mainTab === 'session' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Estado de conexión</h2>
-            <span className="inline-block px-3 py-1 rounded-full text-sm bg-gray-100 mb-4">
-              {statusLabel[status?.status] ?? status?.status ?? '…'}
-            </span>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="zent-card p-6">
+            <h2 className="mb-4 text-xl font-bold text-slate-900">Estado de conexión</h2>
+            <div className="mb-4">
+              <Badge tone={statusTone(status?.status)}>
+                {statusLabel[status?.status] ?? status?.status ?? '…'}
+              </Badge>
+            </div>
             <div className="space-y-3">
-              <button
-                type="button"
-                onClick={handleGetQR}
-                className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-              >
+              <Button type="button" className="w-full" onClick={handleGetQR}>
                 Obtener código QR
-              </button>
-              <button
-                type="button"
-                onClick={loadStatus}
-                className="w-full bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
-              >
+              </Button>
+              <Button type="button" variant="secondary" className="w-full" onClick={loadStatus}>
                 Refrescar estado
-              </button>
+              </Button>
             </div>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Código QR</h2>
+          <div className="zent-card p-6">
+            <h2 className="mb-4 text-xl font-bold text-slate-900">Código QR</h2>
             {qr ? (
               <div className="text-center">
                 <img src={qr} alt="QR" className="mx-auto max-w-xs" />
               </div>
             ) : (
-              <p className="text-center text-gray-400 py-12">Genera un QR para vincular WhatsApp</p>
+              <p className="py-12 text-center text-slate-400">Genera un QR para vincular WhatsApp</p>
             )}
           </div>
           {openwaUrl && (
-            <div className="lg:col-span-2 bg-white p-4 rounded-lg shadow text-sm text-gray-600">
+            <div className="zent-card p-4 text-sm text-slate-600 lg:col-span-2">
               Configuración avanzada (webhooks, sesiones):{' '}
               <a
                 href={openwaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
+                className="font-medium text-brand-600 hover:underline"
               >
                 {openwaUrl}
               </a>

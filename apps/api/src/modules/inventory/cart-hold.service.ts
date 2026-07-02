@@ -10,6 +10,7 @@ export interface CartHoldRecord {
   customerName?: string | null;
   items: { productId: string; nombre: string; quantity: number; unitPrice: number }[];
   subtotal: number;
+  deliveryCost?: number;
   total: number;
   createdAt: string;
   updatedAt: string;
@@ -88,6 +89,7 @@ export class CartHoldService implements OnModuleInit {
         unitPrice: i.unitPrice,
       })),
       subtotal: cart.subtotal,
+      deliveryCost: cart.deliveryCost,
       total: cart.total,
       createdAt,
       updatedAt: now.toISOString(),

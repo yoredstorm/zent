@@ -12,6 +12,7 @@ const SECRET_KEYS = [
   'OPENWA_API_KEY',
   'OPENWA_WEBHOOK_SECRET',
   'GF_SECURITY_ADMIN_PASSWORD',
+  'NOVITA_API_KEY',
 ] as const;
 
 /** Variables de configuracion no secreta incluidas en credenciales-zent.txt. */
@@ -39,6 +40,10 @@ const CONFIG_KEYS = [
   'ADMIN_FORCE_RESET',
   'SETUP_FORCE_RESET',
   'GF_SECURITY_ADMIN_USER',
+  'NOVITA_BOT_ENABLED',
+  'NOVITA_BASE_URL',
+  'NOVITA_MODEL',
+  'NOVITA_MIN_BALANCE_USD',
 ] as const;
 
 /** Valores placeholder conocidos que NO deben considerarse secretos validos. */
@@ -235,5 +240,43 @@ export class SecretsService {
     }
 
     return summary;
+  }
+
+  upsertEnvSecret(key: (typeof SECRET_KEYS)[number], value: string): boolean {
+    const file = this.readEnvFile();
+    if (!file) {
+      process.env[key] = value;
+      return false;
+    }
+    try {
+      const updated = this.upsertEnvLine(file.content, key, value);
+      fs.writeFileSync(file.path, updated, 'utf8');
+      process.env[key] = value;
+      this.writeCredentialsFile(file.path);
+      return true;
+    } catch (err: any) {
+      this.logger.warn(`Could not upsert env secret ${key}: ${err?.message || err}`);
+      process.env[key] = value;
+      return false;
+    }
+  }
+
+  upsertEnvConfig(key: (typeof CONFIG_KEYS)[number], value: string): boolean {
+    const file = this.readEnvFile();
+    if (!file) {
+      process.env[key] = value;
+      return false;
+    }
+    try {
+      const updated = this.upsertEnvLine(file.content, key, value);
+      fs.writeFileSync(file.path, updated, 'utf8');
+      process.env[key] = value;
+      this.writeCredentialsFile(file.path);
+      return true;
+    } catch (err: any) {
+      this.logger.warn(`Could not upsert env config ${key}: ${err?.message || err}`);
+      process.env[key] = value;
+      return false;
+    }
   }
 }

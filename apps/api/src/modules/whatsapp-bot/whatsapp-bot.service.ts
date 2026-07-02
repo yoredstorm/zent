@@ -10,9 +10,12 @@ import { OrdersService } from '../orders/orders.service';
 import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { StockReservationService } from '../inventory/stock-reservation.service';
 import { CartHoldService } from '../inventory/cart-hold.service';
+import { AbandonedCartService } from '../inventory/abandoned-cart.service';
 import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
+import { BotAiOrchestratorService } from '../bot-ai/bot-ai-orchestrator.service';
+import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
 
 export type BotPluginAction = 'sendPdf' | 'showCategories' | 'showCart' | 'handoff';
 
@@ -65,7 +68,10 @@ export class WhatsappBotService {
     private vendorNotify: VendorNotifyService,
     private stock: StockReservationService,
     private cartHold: CartHoldService,
+    private abandonedCart: AbandonedCartService,
     private config: ConfigService,
+    private botAi: BotAiOrchestratorService,
+    private novitaBalance: NovitaBalanceService,
   ) {}
 
   private get storeName(): string {
@@ -147,6 +153,17 @@ export class WhatsappBotService {
   }
 
   /** Pie del menú de acciones en el carrito. */
+  private formatCartTotals(cart: { subtotal: number; deliveryCost: number; total: number }): string {
+    if (cart.deliveryCost > 0) {
+      return (
+        `\n📦 Subtotal: S/ ${cart.subtotal.toFixed(2)}` +
+        `\n🚚 Delivery: S/ ${cart.deliveryCost.toFixed(2)}` +
+        `\n💰 *Total: S/ ${cart.total.toFixed(2)}*`
+      );
+    }
+    return `\n💰 *Total: S/ ${cart.total.toFixed(2)}*`;
+  }
+
   private cartMenuHint(): string {
     return (
       '\n\n*¿Qué deseas hacer?*\n' +
@@ -269,8 +286,46 @@ export class WhatsappBotService {
     });
   }
 
+  private async shouldUseAiBot(): Promise<boolean> {
+    const enabled = this.config.get<string>('NOVITA_BOT_ENABLED', 'false').trim() === 'true';
+    const key = this.config.get<string>('NOVITA_API_KEY', '').trim();
+    if (!enabled || !key) return false;
+
+    const store = await this.prisma.storeSettings.findFirst();
+    if (!store?.botAiEnabled) return false;
+
+    return this.novitaBalance.hasSufficientBalance();
+  }
+
+  private aiMessenger() {
+    return {
+      sendText: (text: string) => this.txt(text),
+      sendImage: (url: string, caption: string) => this.img({ url }, caption),
+      sendDocument: (url: string, mimetype: string, caption: string) =>
+        this.doc({ url, mimetype }, caption),
+    };
+  }
+
   private async processMessage(body: string) {
     const text = body.trim().toLowerCase();
+
+    if (text === 'retomar') {
+      const session = await this.chatSession.getOrCreate(this.c.stateKey);
+      if (session.state === ChatState.HANDOFF_HUMANO && (await this.shouldUseAiBot())) {
+        await this.botAi.resumeFromHandoff({
+          stateKey: this.c.stateKey,
+          chatId: this.c.chatId,
+          userMessage: body.trim(),
+          waSessionId: this.c.waSessionId,
+          contactPhone: this.c.contactPhone,
+          messenger: this.aiMessenger(),
+        });
+        return;
+      }
+      await this.handleRetomar();
+      return;
+    }
+
     const staleReason = await this.ensureSessionFresh();
 
     const session = await this.chatSession.getOrCreate(this.c.stateKey);
@@ -294,7 +349,25 @@ export class WhatsappBotService {
     }
 
     if (isGreeting) {
+      await this.botAi.clearAiHistory(this.c.stateKey);
       await this.showMainMenu();
+      return;
+    }
+
+    if (await this.shouldUseAiBot()) {
+      if (session.state === ChatState.HANDOFF_HUMANO) {
+        await this.txt('Un asesor te atenderá pronto. Por favor espera.\n\nEscribe *RETOMAR* para volver al asistente automático.');
+        return;
+      }
+
+      await this.botAi.handleTurn({
+        stateKey: this.c.stateKey,
+        chatId: this.c.chatId,
+        userMessage: body.trim(),
+        waSessionId: this.c.waSessionId,
+        contactPhone: this.c.contactPhone,
+        messenger: this.aiMessenger(),
+      });
       return;
     }
 
@@ -705,7 +778,7 @@ export class WhatsappBotService {
     cart.items.forEach((item, i) => {
       text += `${formatKeycap(i + 1)} ${item.nombre}\n   ${item.quantity}x S/ ${item.unitPrice} = S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n\n`;
     });
-    text += `💰 *Total: S/ ${cart.total.toFixed(2)}*`;
+    text += this.formatCartTotals(cart);
     text += '\n\n_Para finalizar tu compra, elige la opción *1*._';
     text += this.cartMenuHint();
 
@@ -806,7 +879,7 @@ export class WhatsappBotService {
     cart.items.forEach((item) => {
       text += `${item.quantity}x ${item.nombre} — S/ ${(item.quantity * item.unitPrice).toFixed(2)}\n`;
     });
-    text += `\n💰 *Total: S/ ${cart.total.toFixed(2)}*\n\n`;
+    text += this.formatCartTotals(cart) + '\n\n';
     text += `${formatKeycap(1)} Sí, confirmar pedido\n${formatKeycap(2)} Modificar carrito\n\nEscribe el número de tu opción:`;
 
     await this.chatSession.updateState(this.c.stateKey, ChatState.CONFIRMAR_PEDIDO);
@@ -982,6 +1055,7 @@ export class WhatsappBotService {
           unitPrice: item.unitPrice,
           costAtSale: item.costAtSale,
         })),
+        deliveryCost: cart.deliveryCost,
       });
     } catch (err) {
       const msg = err instanceof BadRequestException ? err.message : 'No se pudo registrar el pedido.';
@@ -990,7 +1064,6 @@ export class WhatsappBotService {
     }
 
     const summaryLines = cart.items.map((i) => `• ${i.quantity}x ${i.nombre}`).join('\n');
-    const totalStr = cart.total.toFixed(2);
 
     await this.cart.clearCart(this.c.stateKey);
     await this.cartHold.release(this.c.stateKey);
@@ -1004,11 +1077,69 @@ export class WhatsappBotService {
       `✅ ¡Pedido #${order.id.slice(0, 8)} registrado!\n\n` +
         '📋 *Resumen:*\n' +
         summaryLines +
-        `\n💰 Total: S/ ${totalStr}\n\n` +
+        this.formatCartTotals(cart) +
+        '\n\n' +
         '⏳ *Pendiente de aceptación* por un asesor. Las unidades quedan reservadas hasta que confirmemos tu pedido.\n\n' +
         'Te avisaremos cuando esté confirmado y en camino 🚚\n\n' +
         'Escribe *menu* para un nuevo pedido.',
     );
+  }
+
+  private async handleRetomar() {
+    const recoveryDays = Math.max(
+      1,
+      parseInt(this.config.get('ABANDONED_CART_RECOVERY_DAYS', '7'), 10),
+    );
+    const abandoned = await this.abandonedCart.findRecoverable(this.c.chatId, recoveryDays);
+    if (!abandoned) {
+      await this.txt(
+        'No encontramos un carrito abandonado reciente para recuperar.\n\nEscribe *menu* para armar un nuevo pedido.',
+      );
+      return;
+    }
+
+    const items = JSON.parse(abandoned.itemsJson) as Array<{
+      productId: string;
+      nombre: string;
+      quantity: number;
+      unitPrice: number;
+      costAtSale: number;
+    }>;
+
+    try {
+      await this.stock.assertOrderItemsAvailable(
+        items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          costAtSale: item.costAtSale,
+        })),
+      );
+    } catch (err) {
+      const msg =
+        err instanceof BadRequestException
+          ? err.message
+          : 'Algunos productos ya no tienen stock disponible.';
+      await this.txt(`❌ ${msg}\n\nEscribe *menu* para ver el catálogo actualizado.`);
+      return;
+    }
+
+    await this.cart.clearCart(this.c.stateKey);
+    for (const item of items) {
+      await this.cart.addItem(this.c.stateKey, item);
+    }
+    await this.syncCartHold();
+    await this.abandonedCart.markRecovered(abandoned.id);
+
+    const cart = await this.cart.getCart(this.c.stateKey);
+    let text = '✅ *Carrito restaurado:*\n\n';
+    cart.items.forEach((item) => {
+      text += `• ${item.quantity}x ${item.nombre}\n`;
+    });
+    text += this.formatCartTotals(cart);
+    text += '\n\nEscribe *menu* → *Ver mi carrito* para confirmar tu pedido.';
+    await this.chatSession.updateState(this.c.stateKey, ChatState.MENU_PRINCIPAL);
+    await this.txt(text);
   }
 
   private async handoffHumano() {
