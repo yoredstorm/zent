@@ -55,7 +55,13 @@ jobs:
 
       - name: Start CI stack
         working-directory: infra
-        run: docker compose -p zent-ci -f docker-compose.ci.yml up -d --build --wait
+        run: |
+          if ! docker compose -p zent-ci -f docker-compose.ci.yml up -d --build --wait; then
+            echo "::group::backend-api logs"
+            docker compose -p zent-ci -f docker-compose.ci.yml logs backend-api --no-log-prefix || true
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
