@@ -21,6 +21,7 @@ type BotAiSettings = {
   novitaBalanceUsd: number | null;
   hasSufficientBalance: boolean;
   activeBotMode?: 'ai' | 'legacy';
+  zentFlowInstalled?: boolean;
   zentFlowPassThrough?: boolean | null;
   zentFlowSyncOk?: boolean | null;
   zentFlowSyncWarning?: string | null;
@@ -62,6 +63,7 @@ export default function BotAiSettingsPage() {
   const [variables, setVariables] = useState<TemplateVariable[]>([]);
   const [preview, setPreview] = useState('');
   const [activeBotMode, setActiveBotMode] = useState<'ai' | 'legacy'>('legacy');
+  const [zentFlowInstalled, setZentFlowInstalled] = useState(false);
   const [zentFlowPassThrough, setZentFlowPassThrough] = useState<boolean | null>(null);
   const [zentFlowSyncWarning, setZentFlowSyncWarning] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -84,6 +86,7 @@ export default function BotAiSettingsPage() {
       setNovitaModel(settings.novitaModel);
       setVariables(vars);
       setActiveBotMode(settings.activeBotMode ?? 'legacy');
+      setZentFlowInstalled(settings.zentFlowInstalled ?? false);
       setZentFlowPassThrough(settings.zentFlowPassThrough ?? null);
       setZentFlowSyncWarning(settings.zentFlowSyncWarning ?? null);
     } catch (err: any) {
@@ -155,14 +158,19 @@ export default function BotAiSettingsPage() {
   const syncOpenwa = async () => {
     setSyncing(true);
     try {
-      const result = await api.post<{ ok: boolean; passThrough: boolean; error?: string }>(
-        '/settings/bot-ai/sync-openwa',
-      );
+      const result = await api.post<{
+        ok: boolean;
+        passThrough: boolean;
+        pluginInstalled?: boolean;
+        message?: string;
+        error?: string;
+      }>('/settings/bot-ai/sync-openwa');
       if (result.ok) {
         toast.success(
-          result.passThrough
-            ? 'OpenWA sincronizado: zent-flow en modo pass-through (IA activa)'
-            : 'OpenWA sincronizado: menu numerico activo',
+          result.message ||
+            (result.passThrough
+              ? 'OpenWA sincronizado: modo IA (pass-through)'
+              : 'OpenWA sincronizado: menu numerico'),
         );
       } else {
         toast.error(result.error || 'No se pudo sincronizar zent-flow');
@@ -239,7 +247,7 @@ export default function BotAiSettingsPage() {
               </div>
             ) : null}
 
-            {activeBotMode === 'ai' && zentFlowPassThrough === false ? (
+            {activeBotMode === 'ai' && zentFlowInstalled && zentFlowPassThrough === false ? (
               <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <p className="flex-1 text-sm text-amber-900">
                   zent-flow puede seguir mostrando menus numericos. Sincroniza OpenWA.
@@ -275,11 +283,13 @@ export default function BotAiSettingsPage() {
               Saldo Novita:{' '}
               {balanceUsd != null ? `$${balanceUsd.toFixed(4)} USD` : 'No disponible'}
               {keyConfigured ? ' · API key configurada' : ' · Sin API key'}
-              {zentFlowPassThrough != null
+              {zentFlowInstalled
                 ? zentFlowPassThrough
                   ? ' · zent-flow: pass-through'
                   : ' · zent-flow: menu activo'
-                : ''}
+                : activeBotMode === 'ai'
+                  ? ' · zent-flow: no instalado (OK en modo IA)'
+                  : ' · zent-flow: no instalado'}
             </p>
           </Card>
 

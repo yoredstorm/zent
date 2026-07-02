@@ -531,6 +531,24 @@ Cuando el asistente IA (Novita) esta activo, el bot debe responder de forma **co
 | `NOVITA_API_KEY` | Clave Novita (secreto) |
 | `ZENT_FLOW_PLUGIN_ENABLED` | Plugin instalado en OpenWA (prod default `true`) |
 
+### Plugin zent-flow no encontrado (404)
+
+Si al sincronizar ves `Plugin zent-flow not found`:
+
+1. **Modo IA activo:** no es bloqueante — los mensajes van directo al webhook sin el plugin.
+2. **Tras redeploy** con la imagen actual, **Sincronizar OpenWA** intenta instalar el plugin automaticamente desde el zip incluido en la imagen.
+3. **Instalacion manual** en el VPS (con acceso a OpenWA):
+
+```bash
+export OPENWA_API_KEY=tu_clave
+export OPENWA_BASE_URL=http://localhost:2785   # o la URL interna de OpenWA
+./infra/scripts/setup-zent-flow-plugin.sh
+```
+
+En Windows: `infra/scripts/setup-zent-flow-plugin.ps1`
+
+---
+
 ### Reinstalar plugin zent-flow tras actualizar codigo
 
 ```bash

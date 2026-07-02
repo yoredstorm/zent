@@ -1,13 +1,21 @@
+FROM node:20-alpine AS plugin-pack
+WORKDIR /pack
+RUN apk add --no-cache zip
+COPY plugins/package.json plugins/package.mjs ./
+COPY plugins/types ./types
+COPY plugins/zent-flow ./zent-flow
+RUN npm install --silent && npm run package:zent-flow
+
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 RUN apk add --no-cache openssl
 
-COPY package*.json ./
+COPY apps/api/package*.json ./
 RUN npm install
 
-COPY . .
+COPY apps/api/ .
 RUN npx prisma generate
 RUN npm run build
 
@@ -21,7 +29,8 @@ COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
 COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY apps/api/docker-entrypoint.sh /docker-entrypoint.sh
+COPY --from=plugin-pack /pack/zent-flow.zip /app/plugins/zent-flow.zip
 RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 3000

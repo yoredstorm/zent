@@ -12,7 +12,12 @@ import { OpenwaPluginService } from '../openwa/openwa-plugin.service';
 
 @Injectable()
 export class SettingsService {
-  private lastZentFlowSync: { ok: boolean; passThrough: boolean; at: number } | null = null;
+  private lastZentFlowSync: {
+    ok: boolean;
+    passThrough: boolean;
+    pluginInstalled: boolean;
+    at: number;
+  } | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -59,19 +64,24 @@ export class SettingsService {
       'true';
     const balanceUsd = await this.novitaBalance.getAvailableBalanceUsd();
     const activeBotMode = await this.botRouting.getMode();
+    const zentFlowInstalled = await this.openwaPlugin.isZentFlowInstalled();
 
     let zentFlowPassThrough: boolean | null = null;
-    try {
+    if (!zentFlowInstalled) {
+      zentFlowPassThrough = activeBotMode === 'ai' ? true : null;
+    } else {
       const zfConfig = await this.openwaPlugin.getZentFlowConfig();
       zentFlowPassThrough = zfConfig.passThrough === true;
-    } catch {
-      zentFlowPassThrough = null;
     }
 
-    const zentFlowSyncWarning =
-      activeBotMode === 'ai' && zentFlowPassThrough === false
-        ? 'zent-flow puede estar interceptando mensajes con menu numerico. Usa Sincronizar OpenWA.'
-        : null;
+    let zentFlowSyncWarning: string | null = null;
+    if (!zentFlowInstalled && activeBotMode === 'legacy') {
+      zentFlowSyncWarning =
+        'Plugin zent-flow no instalado en OpenWA. El menu numerico no funcionara hasta instalarlo.';
+    } else if (zentFlowInstalled && activeBotMode === 'ai' && zentFlowPassThrough === false) {
+      zentFlowSyncWarning =
+        'zent-flow puede estar interceptando mensajes con menu numerico. Usa Sincronizar OpenWA.';
+    }
 
     return {
       botAiEnabled: store.botAiEnabled,
@@ -84,6 +94,7 @@ export class SettingsService {
       novitaBalanceUsd: balanceUsd,
       hasSufficientBalance: balanceUsd !== null && balanceUsd >= this.minBalanceUsd(),
       activeBotMode,
+      zentFlowInstalled,
       zentFlowPassThrough,
       zentFlowSyncOk: this.lastZentFlowSync?.ok ?? null,
       zentFlowSyncWarning,
@@ -118,7 +129,12 @@ export class SettingsService {
   async syncZentFlowPlugin() {
     const mode = await this.botRouting.getMode();
     const result = await this.openwaPlugin.syncZentFlowForMode(mode);
-    this.lastZentFlowSync = { ok: result.ok, passThrough: result.passThrough, at: Date.now() };
+    this.lastZentFlowSync = {
+      ok: result.ok,
+      passThrough: result.passThrough,
+      pluginInstalled: result.pluginInstalled,
+      at: Date.now(),
+    };
     return result;
   }
 

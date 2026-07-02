@@ -81,8 +81,8 @@ services:
 
   backend-api:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     networks:
       - internal
@@ -127,8 +127,8 @@ services:
 
   bot-worker:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: apps/api/Dockerfile.worker
     restart: unless-stopped
     networks:
       - internal

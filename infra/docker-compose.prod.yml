@@ -101,8 +101,8 @@ services:
 
   backend-api:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/api/Dockerfile
     restart: always
     networks:
       - app
@@ -155,8 +155,8 @@ services:
 
   bot-worker:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: apps/api/Dockerfile.worker
     restart: always
     networks:
       - app

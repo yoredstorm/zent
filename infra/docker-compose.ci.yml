@@ -27,8 +27,8 @@ services:
 
   backend-api:
     build:
-      context: ../apps/api
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/api/Dockerfile
     networks: [internal]
     ports:
       - "3001:3000"

@@ -124,6 +124,30 @@ export class OpenwaService {
     return this.request<T>(path, method, body);
   }
 
+  /** Instala un plugin OpenWA desde un archivo .zip local. */
+  async installPluginZip(zipPath: string): Promise<void> {
+    if (!fs.existsSync(zipPath)) {
+      throw new Error(`Plugin zip not found: ${zipPath}`);
+    }
+    const buffer = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.append('file', new Blob([buffer]), path.basename(zipPath));
+
+    const url = `${this.baseUrl}/api/plugins/install`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-API-Key': this.apiKey },
+      body: form,
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      const msg = detail
+        ? `${response.status} ${response.statusText}: ${detail.slice(0, 300)}`
+        : `${response.status} ${response.statusText}`;
+      throw new Error(`OpenWA plugin install error: ${msg}`);
+    }
+  }
+
   /** OpenWA v2 envuelve respuestas en { success, data }. */
   private unwrapData<T>(result: unknown): T | null {
     if (result && typeof result === 'object' && 'data' in (result as object)) {
