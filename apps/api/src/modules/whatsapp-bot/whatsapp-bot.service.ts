@@ -287,14 +287,22 @@ export class WhatsappBotService {
   }
 
   private async shouldUseAiBot(): Promise<boolean> {
-    const enabled = this.config.get<string>('NOVITA_BOT_ENABLED', 'false').trim() === 'true';
-    const key = this.config.get<string>('NOVITA_API_KEY', '').trim();
+    const enabled = this.envFlag('NOVITA_BOT_ENABLED');
+    const key = this.envString('NOVITA_API_KEY');
     if (!enabled || !key) return false;
 
     const store = await this.prisma.storeSettings.findFirst();
     if (!store?.botAiEnabled) return false;
 
     return this.novitaBalance.hasSufficientBalance();
+  }
+
+  private envString(key: string, defaultValue = ''): string {
+    return (process.env[key] ?? this.config.get<string>(key, defaultValue) ?? '').trim();
+  }
+
+  private envFlag(key: string): boolean {
+    return this.envString(key, 'false') === 'true';
   }
 
   private aiMessenger() {
@@ -304,6 +312,17 @@ export class WhatsappBotService {
       sendDocument: (url: string, mimetype: string, caption: string) =>
         this.doc({ url, mimetype }, caption),
     };
+  }
+
+  private async dispatchAiTurn(userMessage: string) {
+    await this.botAi.handleTurn({
+      stateKey: this.c.stateKey,
+      chatId: this.c.chatId,
+      userMessage,
+      waSessionId: this.c.waSessionId,
+      contactPhone: this.c.contactPhone,
+      messenger: this.aiMessenger(),
+    });
   }
 
   private async processMessage(body: string) {
@@ -339,6 +358,11 @@ export class WhatsappBotService {
           ? '⏱️ Tu carrito anterior expiró y el stock ya no está reservado. Empecemos de nuevo 👇'
           : '⏱️ Pasó mucho tiempo sin actividad. Empecemos de nuevo 👇',
       );
+      if (await this.shouldUseAiBot()) {
+        await this.botAi.clearAiHistory(this.c.stateKey);
+        await this.dispatchAiTurn(body.trim());
+        return;
+      }
       await this.showMainMenu();
       return;
     }
@@ -350,6 +374,10 @@ export class WhatsappBotService {
 
     if (isGreeting) {
       await this.botAi.clearAiHistory(this.c.stateKey);
+      if (await this.shouldUseAiBot()) {
+        await this.dispatchAiTurn(body.trim());
+        return;
+      }
       await this.showMainMenu();
       return;
     }
@@ -360,14 +388,7 @@ export class WhatsappBotService {
         return;
       }
 
-      await this.botAi.handleTurn({
-        stateKey: this.c.stateKey,
-        chatId: this.c.chatId,
-        userMessage: body.trim(),
-        waSessionId: this.c.waSessionId,
-        contactPhone: this.c.contactPhone,
-        messenger: this.aiMessenger(),
-      });
+      await this.dispatchAiTurn(body.trim());
       return;
     }
 
