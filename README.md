@@ -46,6 +46,10 @@ El admin NO se crea aquí; se crea en el asistente. Los secretos se respaldan en
 las genera iguales y reinicia OpenWA con volumen limpio. Si ves errores 401, en
 Windows ejecuta `infra/fix-openwa-key.ps1` o vuelve a correr `install.sh`.
 
+Para **quitar Zent por completo** del servidor (sin reinstalar): `infra/uninstall.sh`
+o `infra/uninstall.ps1`. Con `--prune-images` / `-PruneImages` también borra imágenes
+Docker construidas localmente. Ver `infra/DEPLOY.md` para la tabla de reset vs uninstall.
+
 ### 2. Asistente de instalación (wizard `/setup`)
 
 Mientras el sistema no esté instalado, cualquier ruta redirige a `/setup` y la API
@@ -60,7 +64,7 @@ Abre `http://TU_HOST:8080/setup` y completa:
 5. Resumen e instalación con log en vivo (SSE).
 6. Listo: entra al panel con sesión iniciada.
 
-Las migraciones de esquema se aplican solas al arrancar (`prisma db push`); no hay
+Las migraciones de esquema se aplican solas al arrancar (`prisma migrate deploy`); no hay
 paso manual de migraciones.
 
 ### 3. Reconexión de WhatsApp
@@ -108,26 +112,17 @@ El bot responde automáticamente y crea pedidos que aparecen en el dashboard.
 ```
 ├── apps/
 │   ├── api/                    # NestJS backend
+│   │   ├── prisma/             # Schema + migraciones
+│   │   │   ├── schema.prisma
+│   │   │   └── migrations/
 │   │   ├── src/
-│   │   │   ├── modules/
-│   │   │   │   ├── auth/       # Autenticación JWT
-│   │   │   │   ├── products/   # CRUD productos
-│   │   │   │   ├── categories/ # CRUD categorías
-│   │   │   │   ├── orders/     # Gestión de pedidos
-│   │   │   │   ├── inventory/  # Control de stock
-│   │   │   │   ├── reports/    # Reportes de ganancias
-│   │   │   │   ├── openwa/     # Integración OpenWA
-│   │   │   │   ├── whatsapp-bot/ # Bot de WhatsApp
-│   │   │   │   └── catalog-pdf/  # Catálogo PDF
-│   │   │   └── prisma/         # Servicio Prisma
+│   │   │   └── modules/        # auth, products, orders, whatsapp-bot, ...
 │   │   └── Dockerfile
 │   └── dashboard/              # Next.js frontend
 │       └── Dockerfile
 ├── infra/
 │   ├── docker-compose.yml
 │   └── traefik/
-├── prisma/
-│   └── schema.prisma
 └── .env.example
 ```
 
@@ -154,6 +149,35 @@ npm run start:worker
 cd apps/dashboard
 npm install
 npm run dev
+```
+
+## Migraciones de base de datos
+
+El schema vive en `apps/api/prisma/`. En desarrollo:
+
+```bash
+cd apps/api
+npx prisma migrate dev --name descripcion_cambio
+```
+
+En producción / Docker, `backend-api` aplica automáticamente `prisma migrate deploy` al arrancar.
+
+Instalaciones que usaban `db push` antes: ver [infra/DEPLOY.md](infra/DEPLOY.md) (sección upgrade).
+
+## CI/CD
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+- Build API + dashboard
+- E2E del wizard `/setup` contra `docker-compose.ci.yml`
+- Tras CI verde en `main`, deploy automático a Dokploy (webhook; secret `DOKPLOY_DEPLOY_WEBHOOK_URL`)
+
+Local:
+
+```bash
+docker compose -p zent-ci -f infra/docker-compose.ci.yml up -d --build --wait
+CI=true node scripts/validate-setup-e2e.mjs http://localhost:3001/api
+docker compose -p zent-ci -f infra/docker-compose.ci.yml down -v
 ```
 
 ## Escalabilidad

@@ -151,6 +151,7 @@ services:
       UPLOADS_DIR: /app/uploads
       STORE_NAME: ${STORE_NAME:-Zent}
       WORKER_MODE: "true"
+      RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
         condition: service_healthy

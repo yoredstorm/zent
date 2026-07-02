@@ -4,6 +4,8 @@
  * Uso: node scripts/validate-setup-e2e.mjs [API_BASE]
  */
 const API = (process.argv[2] || 'http://localhost:3001/api').replace(/\/$/, '');
+const CI = process.env.CI === 'true' || process.argv.includes('--ci');
+const SKIP_WHATSAPP = CI || process.argv.includes('--skip-whatsapp');
 
 const results = [];
 let passed = 0;
@@ -98,6 +100,10 @@ async function testCredentials(status) {
 }
 
 async function testWhatsappEndpoints() {
+  if (SKIP_WHATSAPP) {
+    console.log('  SKIP whatsapp endpoints (--ci / OpenWA no disponible)');
+    return;
+  }
   const st = await get('/setup/whatsapp/status');
   if (st.status === 200 && st.body?.status) ok('GET /api/setup/whatsapp/status', st.body.status);
   else fail('GET /api/setup/whatsapp/status', `status=${st.status}`);
@@ -109,6 +115,10 @@ async function testWhatsappEndpoints() {
 
 async function testInstallFlow(status) {
   if (status.installed) {
+    if (CI) {
+      fail('Instalacion E2E', 'DB no fresca — usar volumen nuevo en CI');
+      return null;
+    }
     console.log('  SKIP instalacion (sistema ya instalado)');
     return null;
   }
@@ -201,6 +211,10 @@ async function testLoginAfterInstall(payload) {
 }
 
 async function testFrontendProxy() {
+  if (CI) {
+    console.log('  SKIP frontend proxy (CI mode)');
+    return;
+  }
   const bases = ['http://localhost:3000', 'http://localhost:8080'];
   for (const base of bases) {
     try {

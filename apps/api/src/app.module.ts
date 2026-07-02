@@ -19,6 +19,8 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { UsersModule } from './modules/users/users.module';
 import { HealthController } from './health.controller';
 import { SeedService } from './seed.service';
 
@@ -42,6 +44,8 @@ import { SeedService } from './seed.service';
     CustomersModule,
     AnalyticsModule,
     SetupModule,
+    SettingsModule,
+    UsersModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, SeedService],

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -44,28 +46,47 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
-        <div>
-          <h2 className="text-center text-3xl font-bold text-gray-900">Iniciar Sesión</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Sistema de Inventario</p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Contraseña</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" required />
-            </div>
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-brand-900 p-4">
+      <Card className="w-full max-w-md !p-8">
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-600 text-lg font-bold text-white">
+            Z
           </div>
-          <button type="submit" disabled={loading} className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50">
-            {loading ? 'Iniciando...' : 'Iniciar Sesión'}
-          </button>
+          <h1 className="text-2xl font-bold text-slate-900">Zent</h1>
+          <p className="text-sm text-slate-500">Panel de inventario y ventas</p>
+        </div>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="zent-input"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
+              Contraseña
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="zent-input"
+              required
+            />
+          </div>
+          <Button type="submit" loading={loading} className="w-full">
+            Iniciar sesión
+          </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

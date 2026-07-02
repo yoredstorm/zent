@@ -1,17 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useRealtime } from '@/lib/useRealtime';
+import { orderStatusLabels } from '@/lib/labels';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Badge } from '@/components/ui/Badge';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Button } from '@/components/ui/Button';
 
-const STATUS_COLORS: Record<string, string> = {
-  NUEVO: 'bg-blue-100 text-blue-800',
-  EN_GESTION: 'bg-yellow-100 text-yellow-800',
-  CONFIRMADO: 'bg-green-100 text-green-800',
-  EN_DELIVERY: 'bg-purple-100 text-purple-800',
-  COMPLETADO: 'bg-gray-100 text-gray-800',
-  CANCELADO: 'bg-red-100 text-red-800',
+const STATUS_TONES: Record<string, 'brand' | 'warning' | 'success' | 'default' | 'danger'> = {
+  NUEVO: 'brand',
+  EN_GESTION: 'warning',
+  CONFIRMADO: 'success',
+  EN_DELIVERY: 'brand',
+  COMPLETADO: 'default',
+  CANCELADO: 'danger',
 };
 
 const STATUS_ORDER = ['NUEVO', 'EN_GESTION', 'CONFIRMADO', 'EN_DELIVERY', 'COMPLETADO', 'CANCELADO'];
@@ -32,6 +38,7 @@ const emptyCustomer = {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
   const [filter, setFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -45,7 +52,12 @@ export default function OrdersPage() {
 
   const loadOrders = useCallback(() => {
     const params = filter ? `?status=${filter}` : '';
-    api.get(`/orders${params}`).then(setOrders).catch(console.error);
+    setLoading(true);
+    api
+      .get(`/orders${params}`)
+      .then(setOrders)
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, [filter]);
 
   useEffect(() => {
@@ -182,33 +194,31 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Pedidos / Leads</h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
-          >
-            + Nuevo pedido
-          </button>
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md"
-          >
-            <option value="">Todos los estados</option>
-            {STATUS_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        title="Pedidos / Leads"
+        actions={
+          <>
+            <Button type="button" onClick={openCreate}>
+              + Nuevo pedido
+            </Button>
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="zent-input w-auto min-w-[180px]"
+            >
+              <option value="">Todos los estados</option>
+              {STATUS_ORDER.map((s) => (
+                <option key={s} value={s}>
+                  {orderStatusLabels[s] ?? s}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      />
 
       {showCreate && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-xl font-bold mb-4">Registrar pedido manual</h2>
             <p className="text-sm text-gray-600 mb-4">
@@ -355,8 +365,20 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-lg shadow overflow-hidden">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-card">
+          {!loading && orders.length === 0 ? (
+            <EmptyState
+              icon={ShoppingCart}
+              title="Sin pedidos aún"
+              description="Registra el primer pedido manual o espera leads por WhatsApp."
+              action={
+                <Button type="button" onClick={openCreate}>
+                  Nuevo pedido
+                </Button>
+              }
+            />
+          ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -386,9 +408,9 @@ export default function OrdersPage() {
                     S/ {Number(o.total).toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[o.status]}`}>
-                      {o.status}
-                    </span>
+                    <Badge tone={STATUS_TONES[o.status] ?? 'default'}>
+                      {orderStatusLabels[o.status] ?? o.status}
+                    </Badge>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{o.source}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -398,6 +420,7 @@ export default function OrdersPage() {
               ))}
             </tbody>
           </table>
+          )}
         </div>
 
         {selected && (
@@ -502,7 +525,7 @@ export default function OrdersPage() {
                 >
                   {STATUS_ORDER.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {orderStatusLabels[s] ?? s}
                     </option>
                   ))}
                 </select>

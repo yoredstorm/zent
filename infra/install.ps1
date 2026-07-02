@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
+. "$PSScriptRoot\lib\teardown.ps1"
 
 $ComposeFile = "docker-compose.prod.yml"
 $EnvFile = ".env"
@@ -17,17 +18,6 @@ $CredFile = "credenciales-zent.txt"
 $script:ResetOpenwa = $false
 $script:FreshEnv = $false
 $script:DidFullReset = $false
-
-$ProdVolumes = @(
-  'zent_postgres_prod',
-  'zent_redis_prod',
-  'zent_openwa_prod',
-  'zent_uploads_prod',
-  'zent_loki_data',
-  'zent_prometheus_data',
-  'zent_grafana_data',
-  'infra_openwa_data'
-)
 
 function New-Secret([int]$Bytes) {
   $buf = New-Object byte[] $Bytes
@@ -100,18 +90,6 @@ function Sync-OpenWaKeysInEnv {
   return $true
 }
 
-function Remove-OrphanComposeContainers {
-  $ids = docker ps -aq --filter "status=created" 2>$null
-  if (-not $ids) { return }
-  foreach ($id in $ids) {
-    $name = docker inspect -f '{{.Name}}' $id 2>$null
-    if ($name -match 'infra-') {
-      Write-Host "==> Eliminando contenedor huerfano: $name"
-      docker rm -f $id 2>$null | Out-Null
-    }
-  }
-}
-
 function Reset-OpenWaVolume {
   Write-Host "==> Reiniciando OpenWA con clave API sincronizada..."
   docker compose -f $ComposeFile stop openwa 2>$null
@@ -130,26 +108,7 @@ function Reset-FullStack {
       exit 1
     }
   }
-  Write-Host "==> Bajando stack y eliminando volumenes del proyecto..."
-  docker compose -f $ComposeFile down -v --remove-orphans 2>$null
-  # Volúmenes legacy con name: fijo (despliegues anteriores a compose por-proyecto)
-  foreach ($vol in $ProdVolumes) {
-    docker volume rm $vol -f 2>$null | Out-Null
-  }
-  docker volume ls -q | ForEach-Object {
-    if ($_ -match 'zent|tienda-zent') {
-      docker volume rm $_ -f 2>$null | Out-Null
-    }
-  }
-  if (Test-Path $EnvFile) {
-    Remove-Item $EnvFile -Force
-    Write-Host "==> Eliminado $EnvFile"
-  }
-  if (Test-Path $CredFile) {
-    Remove-Item $CredFile -Force
-    Write-Host "==> Eliminado $CredFile"
-  }
-  Remove-OrphanComposeContainers
+  Invoke-ZentTeardownAll -ComposeFile $ComposeFile -EnvFile $EnvFile -CredFile $CredFile
   $script:DidFullReset = $true
   $script:FreshEnv = $true
   $script:ResetOpenwa = $true
@@ -226,7 +185,7 @@ if ($script:ResetOpenwa -and -not $script:FreshEnv) {
 }
 
 Write-Host "==> Levantando stack..."
-Remove-OrphanComposeContainers
+Remove-ZentOrphanComposeContainers
 docker compose -f $ComposeFile up -d --build
 
 if ($script:FreshEnv) {

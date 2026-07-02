@@ -1,0 +1,58 @@
+# Stack mínimo para CI (GitHub Actions) — sin OpenWA ni frontend
+networks:
+  internal:
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    networks: [internal]
+    environment:
+      POSTGRES_USER: inventario
+      POSTGRES_PASSWORD: ci_secret
+      POSTGRES_DB: inventario
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventario -d inventario"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  backend-api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    networks: [internal]
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://inventario:ci_secret@postgres:5432/inventario
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ci-jwt-secret-min-32-chars-long!!
+      JWT_REFRESH_SECRET: ci-refresh-secret-min-32-chars!!
+      OPENWA_BASE_URL: http://127.0.0.1:2785
+      OPENWA_API_KEY: ci-openwa-key
+      OPENWA_WEBHOOK_SECRET: ci-webhook-secret
+      CORS_ORIGIN: "*"
+      RUN_MIGRATIONS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s

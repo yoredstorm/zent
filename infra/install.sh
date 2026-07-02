@@ -10,6 +10,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+# shellcheck source=lib/teardown.sh
+source "$(dirname "$0")/lib/teardown.sh"
 
 COMPOSE_FILE="docker-compose.prod.yml"
 ENV_FILE=".env"
@@ -29,17 +31,6 @@ while [ $# -gt 0 ]; do
     *) HOST="$1"; shift ;;
   esac
 done
-
-PROD_VOLUMES=(
-  zent_postgres_prod
-  zent_redis_prod
-  zent_openwa_prod
-  zent_uploads_prod
-  zent_loki_data
-  zent_prometheus_data
-  zent_grafana_data
-  infra_openwa_data
-)
 
 gen() { openssl rand -hex "$1"; }
 
@@ -107,19 +98,6 @@ sync_openwa_keys_in_env() {
   return 0
 }
 
-remove_orphan_compose_containers() {
-  docker ps -aq --filter "status=created" 2>/dev/null | while read -r id; do
-    [ -n "$id" ] || continue
-    name=$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null || true)
-    case "$name" in
-      *infra-*)
-        echo "==> Eliminando contenedor huerfano: $name"
-        docker rm -f "$id" 2>/dev/null || true
-        ;;
-    esac
-  done
-}
-
 reset_openwa_for_new_key() {
   echo "==> Reiniciando OpenWA para aplicar la clave API (volumen limpio)..."
   docker compose -f "$COMPOSE_FILE" stop openwa 2>/dev/null || true
@@ -139,23 +117,11 @@ reset_full_stack() {
       exit 1
     fi
   fi
-  echo "==> Bajando stack y eliminando volúmenes..."
-  docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
-  for vol in "${PROD_VOLUMES[@]}"; do
-    docker volume rm -f "$vol" 2>/dev/null || true
-  done
-  docker volume ls -q | grep -E 'zent|tienda-zent' | while read -r vol; do
-    docker volume rm -f "$vol" 2>/dev/null || true
-  done
-  if [ -f "$ENV_FILE" ]; then
-    rm -f "$ENV_FILE"
-    echo "==> Eliminado $ENV_FILE"
-  fi
-  if [ -f "$CRED_FILE" ]; then
-    rm -f "$CRED_FILE"
-    echo "==> Eliminado $CRED_FILE"
-  fi
-  remove_orphan_compose_containers
+  export ZENT_COMPOSE_FILE="$COMPOSE_FILE"
+  export ZENT_ENV_FILE="$ENV_FILE"
+  export ZENT_CRED_FILE="$CRED_FILE"
+  export ZENT_TEARDOWN_KEEP_ENV=false
+  zent_teardown_all false
   DID_FULL_RESET=true
   FRESH_ENV=true
   RESET_OPENWA=true
@@ -234,7 +200,7 @@ if [ "$RESET_OPENWA" = true ] && [ "$FRESH_ENV" = false ]; then
 fi
 
 echo "==> Levantando el stack (docker compose up -d --build)..."
-remove_orphan_compose_containers
+zent_remove_orphan_compose_containers
 docker compose -f "$COMPOSE_FILE" up -d --build
 
 if [ "$FRESH_ENV" = true ]; then

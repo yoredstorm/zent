@@ -10,3 +10,4 @@ apps/api/uploads/
 opencode/
 infra/.env
 credenciales-zent.txt
+docs/*

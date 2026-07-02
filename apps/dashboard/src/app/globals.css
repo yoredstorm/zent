@@ -2,13 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+@layer base {
+  :root {
+    --brand: 37 99 235;
+    --surface: 248 250 252;
+    --text: 15 23 42;
+    --muted: 100 116 139;
+  }
+  body {
+    @apply bg-surface text-slate-900 antialiased;
+  }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+@layer components {
+  .zent-card {
+    @apply bg-surface-card rounded-2xl shadow-card border border-slate-100/80 transition-shadow duration-200;
+  }
+  .zent-card-interactive:hover {
+    @apply shadow-card-hover -translate-y-0.5 motion-reduce:transform-none;
+  }
+  .zent-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm
+           placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+  .zent-btn-primary {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5
+           text-sm font-semibold text-white transition hover:bg-brand-700
+           disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
+  }
+  .zent-btn-secondary {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5
+           text-sm font-medium text-slate-700 transition hover:bg-slate-50
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30;
+  }
 }

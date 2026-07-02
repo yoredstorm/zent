@@ -131,7 +131,7 @@ services:
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}}
       ZENT_FLOW_PLUGIN_ENABLED: ${ZENT_FLOW_PLUGIN_ENABLED:-true}
       UPLOADS_DIR: /app/uploads
-      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://77.93.154.87:3001/api}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://${PUBLIC_HOST:-localhost}:3001/api}
       STORE_NAME: ${STORE_NAME:-Zent}
       VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
       CORS_ORIGIN: "*"
@@ -184,6 +184,7 @@ services:
       CART_HOLD_TTL_MINUTES: ${CART_HOLD_TTL_MINUTES:-30}
       CART_HOLD_WARN_MINUTES: ${CART_HOLD_WARN_MINUTES:-5}
       WORKER_MODE: "true"
+      RUN_MIGRATIONS: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -213,17 +214,17 @@ services:
       - "8080:3000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend-http.rule=Host(`77.93.154.87`)"
+      - "traefik.http.routers.frontend-http.rule=Host(`${PUBLIC_HOST}`)"
       - "traefik.http.routers.frontend-http.entrypoints=web"
       - "traefik.http.routers.frontend-http.service=frontend-svc"
-      - "traefik.http.routers.frontend-https.rule=Host(`77.93.154.87`)"
+      - "traefik.http.routers.frontend-https.rule=Host(`${PUBLIC_HOST}`)"
       - "traefik.http.routers.frontend-https.entrypoints=websecure"
       - "traefik.http.routers.frontend-https.tls=true"
       - "traefik.http.routers.frontend-https.service=frontend-svc"
       - "traefik.http.services.frontend-svc.loadbalancer.server.port=3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://77.93.154.87:3001/api
-      NEXT_PUBLIC_APP_URL: http://77.93.154.87:8080
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://${PUBLIC_HOST:-localhost}:3001/api}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://${PUBLIC_HOST:-localhost}:8080}
       INTERNAL_API_URL: http://backend-api:3000/api
     depends_on:
       - backend-api

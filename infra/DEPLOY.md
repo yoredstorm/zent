@@ -18,6 +18,51 @@ Equivalente local Windows: `./dokploy-fresh-install.ps1`
 
 ---
 
+## Upgrade desde db push (instalaciones existentes)
+
+Si la base ya tiene tablas creadas con `db push`, marcar la baseline como aplicada sin ejecutar SQL:
+
+```bash
+docker compose exec backend-api npx prisma migrate resolve --applied 20260701120000_init
+```
+
+Luego reiniciar `backend-api`; a partir de ahí solo `prisma migrate deploy` al arrancar.
+
+---
+
+## Desinstalación completa
+
+Para **eliminar Zent del servidor sin reinstalar** (contenedores, volúmenes, `.env` y credenciales). No toca Dokploy (`dokploy-postgres`, `dokploy-traefik`, etc.).
+
+```bash
+# Linux / VPS
+cd infra
+chmod +x uninstall.sh
+./uninstall.sh
+```
+
+```powershell
+# Windows
+cd infra
+.\uninstall.ps1
+```
+
+| Objetivo | Comando |
+|----------|---------|
+| Reinstalar desde cero (nuevos secretos + stack arriba) | `./install.sh --reset` o `.\install.ps1 -Reset` |
+| Solo volver a `/setup` sin perder datos | `./reset-setup-flag.sh` |
+| **Quitar Zent del servidor** | `./uninstall.sh` |
+| Quitar + liberar imágenes locales del compose | `./uninstall.sh --prune-images` |
+| Dokploy: quitar stack de un prefijo concreto | `./uninstall.sh --project tienda-zent-xxx` |
+
+Opciones útiles:
+
+- `--force` / `-Force` — sin confirmación interactiva
+- `--keep-env` / `-KeepEnv` — conserva `infra/.env` y `credenciales-zent.txt`
+- `--prune-images` / `-PruneImages` — borra imágenes construidas localmente (`--rmi local`)
+
+---
+
 ## Redeploy en Dokploy no muestra /setup (va a /login)
 
 **Causa:** el contenedor es nuevo, pero Docker reutilizaba volúmenes con **nombre fijo global** (`zent_postgres_prod`) de un proyecto Dokploy anterior (`zent-zent-siqm8r`, etc.). En los logs verás:
@@ -122,23 +167,23 @@ docker compose -f docker-compose.prod.yml restart backend-api frontend
 
 ```env
 POSTGRES_USER=inventario
-POSTGRES_PASSWORD=Jaredcito2025@1
+POSTGRES_PASSWORD=changeme
 POSTGRES_DB=inventario
-DATABASE_URL=postgresql://inventario:Jaredcito2025%401@postgres:5432/inventario
-JWT_SECRET=jwt-secret-prod-2024
-JWT_REFRESH_SECRET=jwt-refresh-prod-2024
-ADMIN_EMAIL=the.ares.p@gmail.com
-ADMIN_PASSWORD=Jaredcito2025@1
+DATABASE_URL=postgresql://inventario:changeme@postgres:5432/inventario
+JWT_SECRET=your-jwt-secret-here
+JWT_REFRESH_SECRET=your-refresh-secret-here
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=changeme
 ADMIN_FORCE_RESET=true
 API_MASTER_KEY=owa_k1_...
 OPENWA_API_KEY=owa_k1_...
-OPENWA_WEBHOOK_SECRET=webhook-secret-2024
+OPENWA_WEBHOOK_SECRET=webhook-secret-change-me
 GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=Jaredcito2025@1
+GF_SECURITY_ADMIN_PASSWORD=changeme
 ```
 
-Mal: `...Jaredcito2025@1@postgres...` (el `@` del password rompe la URL).  
-Bien: `...Jaredcito2025%401@postgres...`
+Mal: `...changeme@1@postgres...` (el `@` del password rompe la URL).  
+Bien: `...changeme%401@postgres...` (si el password contiene `@`, codifícalo como `%40`)
 
 ### 2. En Dokploy → Terminal
 
@@ -272,19 +317,19 @@ Todos deben estar `Up` (no `Restarting`).
 ## 2. Health checks
 
 ```bash
-curl -s http://77.93.154.87:3001/api/health
-curl -s http://77.93.154.87:3001/health   # bot-worker si expuesto internamente
+curl -s http://${PUBLIC_HOST}:3001/api/health
+curl -s http://${PUBLIC_HOST}:3001/health   # bot-worker si expuesto internamente
 ```
 
 ## 3. Login dashboard Zent
 
-- URL: http://77.93.154.87:8080
+- URL: http://${PUBLIC_HOST}:8080
 - Credenciales: `ADMIN_EMAIL` / `ADMIN_PASSWORD` de Dokploy
 - Con `ADMIN_FORCE_RESET=true` en el primer deploy se sincroniza la contraseña
 
 ## 4. Grafana — dashboards y logs
 
-- URL: http://77.93.154.87:3002
+- URL: http://${PUBLIC_HOST}:3002
 - Usuario: `GF_SECURITY_ADMIN_USER` (default `admin`)
 - Contraseña: `GF_SECURITY_ADMIN_PASSWORD` de Dokploy
 
@@ -319,7 +364,7 @@ Buscar: `OPENWA_API_KEY validated`, `Webhook registered`, `Enqueued message`
 
 ## 5. Prometheus
 
-- URL: http://77.93.154.87:9090
+- URL: http://${PUBLIC_HOST}:9090
 - Métricas de contenedores vía cAdvisor
 
 ## 6. Probar webhook WhatsApp manualmente
@@ -342,7 +387,7 @@ Respuesta esperada: `{"status":"queued"}`. Luego revisar logs de `bot-worker` en
 
 ## 7. WhatsApp en producción
 
-1. OpenWA conectado: https://77.93.154.87:2786
+1. OpenWA conectado: https://${PUBLIC_HOST}:2786
 2. Webhook registrado automáticamente a `http://backend-api:3000/api/webhooks/openwa`
 3. Escribir `hola` o `menu` al número conectado
 
@@ -359,7 +404,7 @@ depends_on:
     condition: service_healthy
 ```
 
-**En el panel OpenWA** (https://77.93.154.87:2786 → REDIS):
+**En el panel OpenWA** (https://${PUBLIC_HOST}:2786 → REDIS):
 
 1. Habilitar Redis — ON
 2. **Usar contenedor Redis integrado** — OFF
@@ -380,7 +425,7 @@ http://backend-api:3000/api/webhooks/openwa
 OpenWA bloquea IPs privadas (172.x) por SSRF. El compose incluye `SSRF_ALLOWED_HOSTS=backend-api` en el servicio `openwa` para permitir esa URL. Si creas el webhook a mano y ves *"Host backend-api resolves to a blocked internal address"*, redeploy con ese env o usa temporalmente la URL pública:
 
 ```
-http://77.93.154.87:3001/api/webhooks/openwa
+http://${PUBLIC_HOST}:3001/api/webhooks/openwa
 ```
 
 Evento: solo `message.received`.
@@ -390,7 +435,7 @@ Evento: solo `message.received`.
 ```
 API_MASTER_KEY=owa_k1_...   # contenedor openwa
 OPENWA_API_KEY=owa_k1_...   # backend-api y bot-worker (mismo valor)
-OPENWA_WEBHOOK_SECRET=webhook-secret-2024
+OPENWA_WEBHOOK_SECRET=webhook-secret-change-me
 ```
 
 **Verificación en Grafana (Loki):**
@@ -419,3 +464,32 @@ docker volume rm zent_openwa_prod
 ```
 
 Redeploy en Dokploy (con `API_MASTER_KEY` y `OPENWA_API_KEY` en Environment).
+
+---
+
+## CD automático (GitHub Actions → Dokploy)
+
+1. Push/merge a `main` → CI (build + E2E en GitHub Actions)
+2. Si CI verde → job `deploy-dokploy` llama el webhook Compose de Dokploy
+3. Dokploy hace `git pull` + rebuild según `infra/docker-compose.prod.yml`
+
+**GitHub:** secret `DOKPLOY_DEPLOY_WEBHOOK_URL` (Settings → Secrets → Actions). No commitear la URL.
+
+**Dokploy:** desactivar Auto Deploy nativo del proveedor Git si usas solo el webhook de Actions (evita doble deploy). Rama en General debe coincidir con `main`.
+
+**Probar webhook manualmente:**
+
+```bash
+curl -fsS -X POST "$DOKPLOY_DEPLOY_WEBHOOK_URL" \
+  -H "Content-Type: application/json" \
+  -H "X-GitHub-Event: push" \
+  -d '{"ref":"refs/heads/main","repository":{"full_name":"OWNER/REPO"},"commits":[{"modified":["README.md"]}]}'
+```
+
+---
+
+## Rollback de migraciones
+
+- No hay rollback automático. Para revertir: redeploy de imagen anterior en Dokploy.
+- Migraciones Prisma son forward-only en prod; evitar `db push` una vez en migrate.
+- Si una migración falló a medias, revisar logs de `backend-api` y estado con `npx prisma migrate status` dentro del contenedor.

@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -10,10 +14,12 @@ export default function ProductsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
   const [productImages, setProductImages] = useState<any[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageRef = useRef<HTMLInputElement>(null);
+  const formSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadProducts();
@@ -21,7 +27,23 @@ export default function ProductsPage() {
   }, []);
 
   const loadProducts = () => {
-    api.get('/products').then(setProducts).catch(console.error);
+    setListLoading(true);
+    api
+      .get('/products')
+      .then(setProducts)
+      .catch(console.error)
+      .finally(() => setListLoading(false));
+  };
+
+  const openCreateForm = () => {
+    setShowForm(true);
+    setEditing(null);
+    setProductImages([]);
+    setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
+    requestAnimationFrame(() => {
+      formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      formSectionRef.current?.querySelector<HTMLInputElement>('input[name="sku"]')?.focus();
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -117,23 +139,23 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Productos</h1>
-          <p className="text-sm text-gray-500 mt-1">Para subir fotos, haz clic en <strong>Editar</strong> o <strong>Fotos</strong> en un producto.</p>
-        </div>
-        <button onClick={() => { setShowForm(true); setEditing(null); setProductImages([]); setForm({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-          + Nuevo Producto
-        </button>
-      </div>
+      <PageHeader
+        title="Productos"
+        subtitle="Para subir fotos, haz clic en Editar o Fotos en un producto."
+        actions={
+          <Button type="button" onClick={openCreateForm}>
+            + Nuevo Producto
+          </Button>
+        }
+      />
 
       {showForm && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <div ref={formSectionRef} className="zent-card mb-6 p-6 animate-fade-in">
           <h2 className="text-xl font-bold mb-4">{editing ? 'Editar' : 'Nuevo'} Producto</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">SKU</label>
-              <input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              <input name="sku" type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="zent-input mt-1" required />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Nombre</label>
@@ -205,7 +227,21 @@ export default function ProductsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {!listLoading && products.length === 0 && !showForm ? (
+        <div className="zent-card overflow-hidden">
+          <EmptyState
+            icon={Package}
+            title="Sin productos aún"
+            description="Crea tu primer producto para empezar a vender."
+            action={
+              <Button type="button" onClick={openCreateForm}>
+                Crear primer producto
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-card">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -251,6 +287,7 @@ export default function ProductsPage() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
