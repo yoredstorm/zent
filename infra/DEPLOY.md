@@ -473,18 +473,34 @@ Redeploy en Dokploy (con `API_MASTER_KEY` y `OPENWA_API_KEY` en Environment).
 2. Si CI verde → job `deploy-dokploy` llama el webhook Compose de Dokploy
 3. Dokploy hace `git pull` + rebuild según `infra/docker-compose.prod.yml`
 
-**GitHub:** secret `DOKPLOY_DEPLOY_WEBHOOK_URL` (Settings → Secrets → Actions). No commitear la URL.
+**GitHub:** secret `DOKPLOY_DEPLOY_WEBHOOK_URL` (Settings → Secrets and variables → Actions → Repository secrets). Valor: la URL que muestra Dokploy en el compose, p. ej. `http://TU_IP:3000/api/deploy/compose/TOKEN`. Sin espacios al final.
 
-**Dokploy:** desactivar Auto Deploy nativo del proveedor Git si usas solo el webhook de Actions (evita doble deploy). Rama en General debe coincidir con `main`.
+**Dokploy (obligatorio para que el webhook funcione):**
 
-**Probar webhook manualmente:**
+1. **Auto Deploy: activado** en el compose (General). Si está apagado, el webhook responde `400` con *"Automatic deployments are disabled for this compose"*.
+2. **Rama** en General = la rama real del repo (`master` en este proyecto, no `main` si no la usas).
+3. **Watch paths:** vacío (deploy en cada push) o incluir `infra/`, `apps/api`, `apps/dashboard`.
+4. Para evitar **doble deploy:** en GitHub → repo → Settings → Webhooks, elimina el webhook que Dokploy registró al conectar GitHub (no desactives el toggle Auto Deploy del compose).
+
+**Errores frecuentes del webhook:**
+
+| HTTP | Mensaje | Qué hacer |
+|------|---------|-----------|
+| 400 | Automatic deployments are disabled… | Activar Auto Deploy en el compose |
+| 400 | Error deploying Compose | Ver logs de deploy en Dokploy (cola/redis) |
+| 301 | Branch Not Match | Rama en Dokploy = `refs/heads/master` (o la que uses) |
+| 301 | Watch Paths Not Match | Ajustar watch paths o el payload `commits.modified` |
+
+**Probar webhook manualmente** (desde bash; en PowerShell usa comillas simples en el JSON):
 
 ```bash
-curl -fsS -X POST "$DOKPLOY_DEPLOY_WEBHOOK_URL" \
+curl -sS -X POST "$DOKPLOY_DEPLOY_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "X-GitHub-Event: push" \
-  -d '{"ref":"refs/heads/main","repository":{"full_name":"OWNER/REPO"},"commits":[{"modified":["README.md"]}]}'
+  -d '{"ref":"refs/heads/master","repository":{"full_name":"yoredstorm/zent"},"head_commit":{"id":"abc123","message":"test"},"commits":[{"modified":["infra/docker-compose.prod.yml"]}]}'
 ```
+
+Respuesta esperada: `{"message":"Compose deployed successfully"}`
 
 ---
 

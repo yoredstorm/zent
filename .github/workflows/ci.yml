@@ -85,8 +85,27 @@ jobs:
             echo "DOKPLOY_DEPLOY_WEBHOOK_URL not set — skip deploy"
             exit 0
           fi
-          curl -fsS -X POST "$WEBHOOK_URL" \
+          payload=$(jq -n \
+            --arg ref "${{ github.ref }}" \
+            --arg repo "${{ github.repository }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg msg "${{ github.event.head_commit.message }}" \
+            '{
+              ref: $ref,
+              repository: { full_name: $repo },
+              head_commit: { id: $sha, message: ($msg // "Deploy from GitHub Actions") },
+              commits: [{ modified: ["infra/docker-compose.prod.yml", "apps/api", "apps/dashboard"] }]
+            }')
+          echo "Triggering Dokploy deploy for ${{ github.ref }} (${{ github.sha }})"
+          response=$(curl -sS -w "\n%{http_code}" -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -H "X-GitHub-Event: push" \
-            -d "{\"ref\":\"${{ github.ref }}\",\"repository\":{\"full_name\":\"${{ github.repository }}\"},\"commits\":[{\"modified\":[\"infra/docker-compose.prod.yml\",\"apps/api/package.json\",\"apps/dashboard/package.json\"]}]}"
-          echo "Dokploy deploy triggered"
+            -d "$payload")
+          body=$(echo "$response" | sed '$d')
+          code=$(echo "$response" | tail -n 1)
+          echo "Dokploy response ($code): $body"
+          if [ "$code" != "200" ]; then
+            echo "::error::Dokploy webhook HTTP $code — $body"
+            echo "Check Dokploy Compose: Auto Deploy ON, branch matches ${{ github.ref_name }}, watch paths include infra/ or are empty."
+            exit 1
+          fi
