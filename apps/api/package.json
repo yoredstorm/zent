@@ -43,13 +43,16 @@
     "@nestjs/schematics": "^10.1.0",
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
     "@types/multer": "^2.1.0",
     "@types/node": "^20.10.6",
     "@types/passport-jwt": "^4.0.0",
     "@typescript-eslint/eslint-plugin": "^6.18.0",
     "@typescript-eslint/parser": "^6.18.0",
     "eslint": "^8.56.0",
+    "jest": "^30.4.2",
     "prisma": "^5.8.0",
+    "ts-jest": "^29.4.11",
     "typescript": "^5.3.3"
   }
 }

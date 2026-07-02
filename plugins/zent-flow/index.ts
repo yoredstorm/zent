@@ -50,6 +50,7 @@ export default class ZentFlow implements IPlugin {
   private async onMessage(ctx: PluginContext, hook: HookContext<IncomingMessage>): Promise<{ continue: boolean }> {
     const cfg = this.config;
     if (!cfg || hook.source !== 'Engine' || !hook.sessionId) return { continue: true };
+    if (cfg.passThrough) return { continue: true };
     const m = hook.data;
     if (m.fromMe || typeof m.body !== 'string' || !m.chatId || !m.id) return { continue: true };
     if (m.isGroup && !cfg.respondInGroups) return { continue: true };

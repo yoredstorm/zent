@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { SettingsService } from './settings.service';
@@ -61,5 +61,12 @@ export class BotAiSettingsController {
   @ApiOperation({ summary: 'List playbook template variables' })
   variables() {
     return this.settings.getBotAiVariables();
+  }
+
+  @Post('sync-openwa')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Sync zent-flow plugin with active bot mode' })
+  syncOpenwa() {
+    return this.settings.syncZentFlowPlugin();
   }
 }

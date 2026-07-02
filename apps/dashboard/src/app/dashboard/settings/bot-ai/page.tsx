@@ -20,6 +20,10 @@ type BotAiSettings = {
   novitaModel: string;
   novitaBalanceUsd: number | null;
   hasSufficientBalance: boolean;
+  activeBotMode?: 'ai' | 'legacy';
+  zentFlowPassThrough?: boolean | null;
+  zentFlowSyncOk?: boolean | null;
+  zentFlowSyncWarning?: string | null;
 };
 
 type TemplateVariable = {
@@ -57,6 +61,10 @@ export default function BotAiSettingsPage() {
   const [novitaModel, setNovitaModel] = useState('');
   const [variables, setVariables] = useState<TemplateVariable[]>([]);
   const [preview, setPreview] = useState('');
+  const [activeBotMode, setActiveBotMode] = useState<'ai' | 'legacy'>('legacy');
+  const [zentFlowPassThrough, setZentFlowPassThrough] = useState<boolean | null>(null);
+  const [zentFlowSyncWarning, setZentFlowSyncWarning] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -75,6 +83,9 @@ export default function BotAiSettingsPage() {
       setHasBalance(settings.hasSufficientBalance);
       setNovitaModel(settings.novitaModel);
       setVariables(vars);
+      setActiveBotMode(settings.activeBotMode ?? 'legacy');
+      setZentFlowPassThrough(settings.zentFlowPassThrough ?? null);
+      setZentFlowSyncWarning(settings.zentFlowSyncWarning ?? null);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'No se pudo cargar la configuracion del asistente');
     } finally {
@@ -137,6 +148,33 @@ export default function BotAiSettingsPage() {
     }
   };
 
+  const modeLabel = activeBotMode === 'ai' ? 'IA conversacional' : 'Menu numerico';
+  const modeTone =
+    activeBotMode === 'ai' ? 'bg-brand-100 text-brand-800' : 'bg-slate-100 text-slate-700';
+
+  const syncOpenwa = async () => {
+    setSyncing(true);
+    try {
+      const result = await api.post<{ ok: boolean; passThrough: boolean; error?: string }>(
+        '/settings/bot-ai/sync-openwa',
+      );
+      if (result.ok) {
+        toast.success(
+          result.passThrough
+            ? 'OpenWA sincronizado: zent-flow en modo pass-through (IA activa)'
+            : 'OpenWA sincronizado: menu numerico activo',
+        );
+      } else {
+        toast.error(result.error || 'No se pudo sincronizar zent-flow');
+      }
+      await loadAll();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Error al sincronizar OpenWA');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -187,8 +225,30 @@ export default function BotAiSettingsPage() {
                 <h2 className="text-lg font-semibold text-slate-800">Estado</h2>
                 <p className="text-sm text-slate-500">Modelo: {novitaModel}</p>
               </div>
-              <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone}`}>{statusLabel}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-sm font-medium ${modeTone}`}>
+                  Modo: {modeLabel}
+                </span>
+                <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone}`}>{statusLabel}</span>
+              </div>
             </div>
+
+            {zentFlowSyncWarning ? (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {zentFlowSyncWarning}
+              </div>
+            ) : null}
+
+            {activeBotMode === 'ai' && zentFlowPassThrough === false ? (
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="flex-1 text-sm text-amber-900">
+                  zent-flow puede seguir mostrando menus numericos. Sincroniza OpenWA.
+                </p>
+                <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
+                  Sincronizar OpenWA
+                </Button>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -215,6 +275,11 @@ export default function BotAiSettingsPage() {
               Saldo Novita:{' '}
               {balanceUsd != null ? `$${balanceUsd.toFixed(4)} USD` : 'No disponible'}
               {keyConfigured ? ' · API key configurada' : ' · Sin API key'}
+              {zentFlowPassThrough != null
+                ? zentFlowPassThrough
+                  ? ' · zent-flow: pass-through'
+                  : ' · zent-flow: menu activo'
+                : ''}
             </p>
           </Card>
 
@@ -308,7 +373,10 @@ export default function BotAiSettingsPage() {
             ) : null}
           </Card>
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
+              Sincronizar OpenWA
+            </Button>
             <Button type="submit" loading={saving}>
               Guardar cambios
             </Button>

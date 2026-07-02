@@ -504,6 +504,44 @@ Respuesta esperada: `{"message":"Compose deployed successfully"}`
 
 ---
 
+## Modo IA vs menu numerico (WhatsApp)
+
+Cuando el asistente IA (Novita) esta activo, el bot debe responder de forma **conversacional**, sin menus 1-2-3-4.
+
+### Como funciona
+
+1. **Dashboard** → Configuracion → Asistente IA: activar asistente + `NOVITA_BOT_ENABLED`, API key y saldo Novita.
+2. Al guardar, el backend sincroniza el plugin OpenWA **zent-flow** con `passThrough=true` (no intercepta mensajes).
+3. Los mensajes llegan al webhook → worker → `BotAiOrchestratorService`.
+4. Si la IA esta apagada o sin saldo, zent-flow vuelve a `passThrough=false` y muestra el menu numerico.
+
+### Checklist post-deploy
+
+1. IA activa en `/dashboard/settings/bot-ai` (badge **Modo: IA conversacional**).
+2. Clic en **Sincronizar OpenWA** si aparece advertencia de zent-flow.
+3. Reiniciar `backend-api` y `bot-worker` tras cambios de codigo o migraciones.
+4. Probar WhatsApp: escribir **Hola** → respuesta conversacional (no menu numerico).
+5. Verificar en bandeja que el estado no quede en `SELECCION_CATEGORIA` al saludar.
+
+### Variables relevantes
+
+| Variable | Uso |
+|----------|-----|
+| `NOVITA_BOT_ENABLED` | Habilita ruta IA en el servidor |
+| `NOVITA_API_KEY` | Clave Novita (secreto) |
+| `ZENT_FLOW_PLUGIN_ENABLED` | Plugin instalado en OpenWA (prod default `true`) |
+
+### Reinstalar plugin zent-flow tras actualizar codigo
+
+```bash
+cd plugins && npm run package:zent-flow
+./infra/scripts/setup-zent-flow-plugin.sh
+```
+
+En Windows: `infra/scripts/setup-zent-flow-plugin.ps1`
+
+---
+
 ## Rollback de migraciones
 
 - No hay rollback automático. Para revertir: redeploy de imagen anterior en Dokploy.

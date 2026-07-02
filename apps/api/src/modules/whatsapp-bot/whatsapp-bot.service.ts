@@ -15,7 +15,7 @@ import { formatPhoneDisplay, resolvePhoneFromIds } from './wa-contact.util';
 import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
 import { BotAiOrchestratorService } from '../bot-ai/bot-ai-orchestrator.service';
-import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
+import { BotRoutingService } from './bot-routing.service';
 
 export type BotPluginAction = 'sendPdf' | 'showCategories' | 'showCart' | 'handoff';
 
@@ -71,7 +71,7 @@ export class WhatsappBotService {
     private abandonedCart: AbandonedCartService,
     private config: ConfigService,
     private botAi: BotAiOrchestratorService,
-    private novitaBalance: NovitaBalanceService,
+    private botRouting: BotRoutingService,
   ) {}
 
   private get storeName(): string {
@@ -287,22 +287,7 @@ export class WhatsappBotService {
   }
 
   private async shouldUseAiBot(): Promise<boolean> {
-    const enabled = this.envFlag('NOVITA_BOT_ENABLED');
-    const key = this.envString('NOVITA_API_KEY');
-    if (!enabled || !key) return false;
-
-    const store = await this.prisma.storeSettings.findFirst();
-    if (!store?.botAiEnabled) return false;
-
-    return this.novitaBalance.hasSufficientBalance();
-  }
-
-  private envString(key: string, defaultValue = ''): string {
-    return (process.env[key] ?? this.config.get<string>(key, defaultValue) ?? '').trim();
-  }
-
-  private envFlag(key: string): boolean {
-    return this.envString(key, 'false') === 'true';
+    return this.botRouting.shouldUseAiBot();
   }
 
   private aiMessenger() {

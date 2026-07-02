@@ -2,6 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChatState } from '@prisma/client';
 
+export type AiPhase = 'browsing' | 'checkout' | 'confirming' | 'handoff';
+
+export interface CheckoutDraft {
+  customerName?: string;
+  customerPhone?: string;
+  address?: string;
+  reference?: string;
+  confirmed?: boolean;
+}
+
 @Injectable()
 export class ChatSessionService {
   constructor(private prisma: PrismaService) {}
@@ -90,6 +100,40 @@ export class ChatSessionService {
     await this.prisma.chatSession.update({
       where: { chatId },
       data: { contextJson: JSON.stringify(ctx) },
+    });
+  }
+
+  async getAiPhase(chatId: string): Promise<AiPhase> {
+    const ctx = await this.getContext(chatId);
+    const phase = ctx.aiPhase;
+    if (phase === 'checkout' || phase === 'confirming' || phase === 'handoff') return phase;
+    return 'browsing';
+  }
+
+  async setAiPhase(chatId: string, phase: AiPhase): Promise<void> {
+    await this.updateContext(chatId, { aiPhase: phase });
+  }
+
+  async getCheckoutDraft(chatId: string): Promise<CheckoutDraft> {
+    const ctx = await this.getContext(chatId);
+    const draft = ctx.checkoutDraft;
+    if (!draft || typeof draft !== 'object') return {};
+    return draft as CheckoutDraft;
+  }
+
+  async saveCheckoutDraft(chatId: string, patch: Partial<CheckoutDraft>): Promise<CheckoutDraft> {
+    const current = await this.getCheckoutDraft(chatId);
+    const merged = { ...current, ...patch };
+    await this.updateContext(chatId, { checkoutDraft: merged });
+    return merged;
+  }
+
+  async clearCheckoutDraft(chatId: string): Promise<void> {
+    const ctx = await this.getContext(chatId);
+    delete ctx.checkoutDraft;
+    await this.prisma.chatSession.update({
+      where: { chatId },
+      data: { contextJson: Object.keys(ctx).length ? JSON.stringify(ctx) : null },
     });
   }
 }

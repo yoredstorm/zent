@@ -2,6 +2,8 @@ import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from './openwa.service';
+import { OpenwaPluginService } from './openwa-plugin.service';
+import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
 
 @Injectable()
 export class OpenwaBootstrapService implements OnApplicationBootstrap {
@@ -14,6 +16,8 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     private config: ConfigService,
     private openwa: OpenwaService,
     private prisma: PrismaService,
+    private openwaPlugin: OpenwaPluginService,
+    private botRouting: BotRoutingService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -99,6 +103,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
 
         await this.openwa.ensureInfrastructure();
         await this.registerWebhookWithRetries(3);
+        await this.syncZentFlowPlugin();
         return;
       } catch (err: any) {
         const msg = err?.message || String(err);
@@ -142,6 +147,20 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
           return;
         }
       }
+    }
+  }
+
+  private async syncZentFlowPlugin(): Promise<void> {
+    try {
+      const mode = await this.botRouting.getMode();
+      const result = await this.openwaPlugin.syncZentFlowForMode(mode);
+      if (result.ok) {
+        this.logger.log(`zent-flow synced on bootstrap (mode=${mode}, passThrough=${result.passThrough})`);
+      } else {
+        this.logger.warn(`zent-flow sync on bootstrap failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`zent-flow sync on bootstrap failed: ${err?.message || err}`);
     }
   }
 }

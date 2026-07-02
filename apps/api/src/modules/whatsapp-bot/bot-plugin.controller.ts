@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { WhatsappBotService, BotPluginAction } from './whatsapp-bot.service';
+import { BotRoutingService } from './bot-routing.service';
 
 interface BotActionBody {
   action: string;
@@ -36,6 +37,7 @@ export class BotPluginController {
   constructor(
     private bot: WhatsappBotService,
     private config: ConfigService,
+    private botRouting: BotRoutingService,
   ) {}
 
   @Post('action')
@@ -58,6 +60,14 @@ export class BotPluginController {
     }
     if (!VALID_ACTIONS.has(body.action as BotPluginAction)) {
       return { ok: false, error: 'unknown_action' };
+    }
+
+    if (await this.botRouting.shouldUseAiBot()) {
+      return {
+        ok: false,
+        error: 'ai_mode_active',
+        message: 'Plugin actions disabled while AI is active',
+      };
     }
 
     await this.bot.runAction(body.action as BotPluginAction, {

@@ -12,8 +12,9 @@ import { BotCommerceFacade, BotCommerceContext } from './bot-commerce.facade';
 import { ChatSessionService } from '../whatsapp-bot/chat-session.service';
 import { CustomersService } from '../customers/customers.service';
 
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 6;
 const MAX_AI_MESSAGES = 40;
+const MAX_MESSAGE_CHARS = 900;
 
 export interface BotTurnMessenger {
   sendText: (text: string) => Promise<void>;
@@ -28,6 +29,44 @@ export interface HandleTurnParams {
   waSessionId?: string;
   contactPhone: string | null;
   messenger: BotTurnMessenger;
+}
+
+export function splitWhatsAppMessage(text: string, maxLen = MAX_MESSAGE_CHARS): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxLen) return [trimmed];
+
+  const parts: string[] = [];
+  const paragraphs = trimmed.split(/\n\n+/);
+  let buffer = '';
+
+  for (const para of paragraphs) {
+    const candidate = buffer ? `${buffer}\n\n${para}` : para;
+    if (candidate.length <= maxLen) {
+      buffer = candidate;
+      continue;
+    }
+    if (buffer) {
+      parts.push(buffer);
+      buffer = '';
+    }
+    if (para.length <= maxLen) {
+      buffer = para;
+      continue;
+    }
+    let start = 0;
+    while (start < para.length) {
+      let end = Math.min(start + maxLen, para.length);
+      if (end < para.length) {
+        const space = para.lastIndexOf(' ', end);
+        if (space > start + 40) end = space;
+      }
+      parts.push(para.slice(start, end).trim());
+      start = end;
+    }
+  }
+  if (buffer) parts.push(buffer);
+  return parts.filter(Boolean);
 }
 
 @Injectable()
@@ -58,7 +97,11 @@ export class BotAiOrchestratorService {
   async handleTurn(params: HandleTurnParams): Promise<void> {
     const { stateKey, userMessage, messenger } = params;
     await this.chatSession.getOrCreate(stateKey);
-    await this.chatSession.updateState(stateKey, ChatState.MENU_PRINCIPAL);
+    await this.chatSession.updateState(stateKey, ChatState.AI_CONVERSATION);
+    const phase = await this.chatSession.getAiPhase(stateKey);
+    if (phase === 'browsing') {
+      await this.chatSession.setAiPhase(stateKey, 'browsing');
+    }
 
     const phone = params.contactPhone;
     const existing = phone ? await this.customers.findByPhone(phone) : null;
@@ -117,7 +160,10 @@ export class BotAiOrchestratorService {
         'Disculpa, tuve un problema procesando tu mensaje. Escribe *menu* para empezar de nuevo o *asesor* para hablar con una persona.';
     }
 
-    await messenger.sendText(lastAssistantText);
+    const chunks = splitWhatsAppMessage(lastAssistantText);
+    for (const chunk of chunks) {
+      await messenger.sendText(chunk);
+    }
 
     const persisted = messages
       .filter((m) => m.role !== 'system')
@@ -162,19 +208,48 @@ export class BotAiOrchestratorService {
           }
           return detail;
         }
+        case 'get_customer_profile':
+          return await this.commerce.getCustomerProfile(ctx);
         case 'add_to_cart':
           return await this.commerce.addToCart(ctx, String(args.productId), Number(args.quantity) || 1);
+        case 'update_cart_item':
+          return await this.commerce.updateCartItem(
+            ctx,
+            String(args.productId),
+            Number(args.quantity) ?? 0,
+          );
         case 'view_cart':
           return await this.commerce.viewCart(ctx);
         case 'remove_from_cart':
           return await this.commerce.removeFromCart(ctx, String(args.productId));
-        case 'submit_order':
+        case 'get_checkout_draft':
+          return await this.commerce.getCheckoutDraft(ctx);
+        case 'save_checkout_field':
+          return await this.commerce.saveCheckoutField(
+            ctx,
+            args.field as 'customerName' | 'customerPhone' | 'address' | 'reference',
+            String(args.value ?? ''),
+          );
+        case 'confirm_order':
+          return await this.commerce.confirmOrder(ctx);
+        case 'submit_order': {
+          const draft = await this.chatSession.getCheckoutDraft(params.stateKey);
+          if (!draft.confirmed) {
+            const checkout = await this.commerce.getCheckoutDraft(ctx);
+            if (!checkout.readyToConfirm) {
+              return {
+                error: 'Completa los datos de entrega y usa confirm_order antes de submit_order',
+                missing: checkout.missing,
+              };
+            }
+          }
           return await this.commerce.submitOrder(ctx, {
-            customerName: String(args.customerName ?? ''),
-            customerPhone: String(args.customerPhone ?? params.contactPhone ?? ''),
-            address: String(args.address ?? ''),
-            reference: args.reference ? String(args.reference) : undefined,
+            customerName: String(args.customerName ?? draft.customerName ?? ''),
+            customerPhone: String(args.customerPhone ?? draft.customerPhone ?? params.contactPhone ?? ''),
+            address: String(args.address ?? draft.address ?? ''),
+            reference: args.reference ? String(args.reference) : draft.reference,
           });
+        }
         case 'handoff_to_human': {
           const result = await this.commerce.handoffToHuman(ctx, args.reason ? String(args.reason) : undefined);
           await params.messenger.sendText(
@@ -205,7 +280,8 @@ export class BotAiOrchestratorService {
   }
 
   async resumeFromHandoff(params: HandleTurnParams): Promise<void> {
-    await this.chatSession.updateState(params.stateKey, ChatState.MENU_PRINCIPAL);
+    await this.chatSession.updateState(params.stateKey, ChatState.AI_CONVERSATION);
+    await this.chatSession.setAiPhase(params.stateKey, 'browsing');
     await params.messenger.sendText(
       '🤖 Volviste al asistente automático. ¿En qué te ayudo hoy?',
     );
@@ -213,5 +289,7 @@ export class BotAiOrchestratorService {
 
   async clearAiHistory(stateKey: string): Promise<void> {
     await this.chatSession.setAiMessages(stateKey, []);
+    await this.chatSession.setAiPhase(stateKey, 'browsing');
+    await this.chatSession.clearCheckoutDraft(stateKey);
   }
 }

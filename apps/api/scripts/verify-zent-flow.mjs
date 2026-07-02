@@ -12,7 +12,6 @@ const defaultConfig = JSON.parse(
 );
 
 const REQUIRED_ACTIONS = ['sendPdf', 'showCategories', 'showCart', 'handoff'];
-const REQUIRED_ACTIONS = ['sendPdf', 'showCategories', 'showCart', 'handoff'];
 
 let failed = 0;
 
@@ -26,7 +25,9 @@ function assert(cond, msg) {
 }
 
 assert(defaultConfig.greeting.includes('ZENT'), 'default greeting mentions ZENT');
-assert(defaultConfig.startOnAnyMessage === true, 'startOnAnyMessage enabled');
+assert(defaultConfig.startOnAnyMessage === true, 'startOnAnyMessage enabled by default for legacy');
+assert(defaultConfig.passThrough === false, 'passThrough false by default');
+assert('passThrough' in defaultConfig, 'passThrough field in default config');
 for (const a of REQUIRED_ACTIONS) {
   assert(
     defaultConfig.options.some((o) => o.action === a),

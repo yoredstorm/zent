@@ -10,12 +10,13 @@ import { OrdersModule } from '../orders/orders.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { WhatsappInboxModule } from '../whatsapp-inbox/whatsapp-inbox.module';
 import { BotAiModule } from '../bot-ai/bot-ai.module';
+import { BotRoutingService } from './bot-routing.service';
 
 @Global()
 @Module({
   imports: [CustomersModule, OrdersModule, InventoryModule, WhatsappInboxModule, BotAiModule],
   controllers: [WhatsappBotController, BotPluginController],
-  providers: [WhatsappBotService, WhatsappBotWorker, CartService, ChatSessionService],
-  exports: [WhatsappBotService, CartService, ChatSessionService],
+  providers: [WhatsappBotService, WhatsappBotWorker, CartService, ChatSessionService, BotRoutingService],
+  exports: [WhatsappBotService, CartService, ChatSessionService, BotRoutingService],
 })
 export class WhatsappBotModule {}

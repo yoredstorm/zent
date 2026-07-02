@@ -119,6 +119,11 @@ export class OpenwaService {
     return response.json();
   }
 
+  /** Public wrapper for OpenWA REST calls (plugins, config, etc.). */
+  async apiRequest<T>(path: string, method: string = 'GET', body?: unknown): Promise<T> {
+    return this.request<T>(path, method, body);
+  }
+
   /** OpenWA v2 envuelve respuestas en { success, data }. */
   private unwrapData<T>(result: unknown): T | null {
     if (result && typeof result === 'object' && 'data' in (result as object)) {

@@ -7,15 +7,21 @@ import { BotAiPromptService } from '../bot-ai/bot-ai-prompt.service';
 import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
 import { SecretsService } from '../setup/secrets.service';
 import { fetchNovitaBalance, parseNovitaBalanceUsd } from '../bot-ai/novita.client';
+import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
+import { OpenwaPluginService } from '../openwa/openwa-plugin.service';
 
 @Injectable()
 export class SettingsService {
+  private lastZentFlowSync: { ok: boolean; passThrough: boolean; at: number } | null = null;
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
     private prompt: BotAiPromptService,
     private novitaBalance: NovitaBalanceService,
     private secrets: SecretsService,
+    private botRouting: BotRoutingService,
+    private openwaPlugin: OpenwaPluginService,
   ) {}
 
   async getStore() {
@@ -45,9 +51,27 @@ export class SettingsService {
     const store = await this.prisma.storeSettings.findFirst();
     if (!store) throw new NotFoundException('Tienda no configurada');
 
-    const keyConfigured = !!this.config.get<string>('NOVITA_API_KEY', '').trim();
-    const envEnabled = this.config.get<string>('NOVITA_BOT_ENABLED', 'false').trim() === 'true';
+    const keyConfigured = !!(
+      process.env.NOVITA_API_KEY?.trim() || this.config.get<string>('NOVITA_API_KEY', '').trim()
+    );
+    const envEnabled =
+      (process.env.NOVITA_BOT_ENABLED ?? this.config.get<string>('NOVITA_BOT_ENABLED', 'false')).trim() ===
+      'true';
     const balanceUsd = await this.novitaBalance.getAvailableBalanceUsd();
+    const activeBotMode = await this.botRouting.getMode();
+
+    let zentFlowPassThrough: boolean | null = null;
+    try {
+      const zfConfig = await this.openwaPlugin.getZentFlowConfig();
+      zentFlowPassThrough = zfConfig.passThrough === true;
+    } catch {
+      zentFlowPassThrough = null;
+    }
+
+    const zentFlowSyncWarning =
+      activeBotMode === 'ai' && zentFlowPassThrough === false
+        ? 'zent-flow puede estar interceptando mensajes con menu numerico. Usa Sincronizar OpenWA.'
+        : null;
 
     return {
       botAiEnabled: store.botAiEnabled,
@@ -59,6 +83,10 @@ export class SettingsService {
       novitaModel: this.config.get('NOVITA_MODEL', 'deepseek/deepseek-v3.2'),
       novitaBalanceUsd: balanceUsd,
       hasSufficientBalance: balanceUsd !== null && balanceUsd >= this.minBalanceUsd(),
+      activeBotMode,
+      zentFlowPassThrough,
+      zentFlowSyncOk: this.lastZentFlowSync?.ok ?? null,
+      zentFlowSyncWarning,
     };
   }
 
@@ -68,7 +96,7 @@ export class SettingsService {
 
     const { novitaApiKey, novitaBotEnabled, ...storeFields } = dto;
 
-    const updated = await this.prisma.storeSettings.update({
+    await this.prisma.storeSettings.update({
       where: { id: current.id },
       data: storeFields,
     });
@@ -82,7 +110,16 @@ export class SettingsService {
       this.secrets.upsertEnvConfig('NOVITA_BOT_ENABLED', novitaBotEnabled ? 'true' : 'false');
     }
 
+    await this.syncZentFlowPlugin();
+
     return this.getBotAiSettings();
+  }
+
+  async syncZentFlowPlugin() {
+    const mode = await this.botRouting.getMode();
+    const result = await this.openwaPlugin.syncZentFlowForMode(mode);
+    this.lastZentFlowSync = { ok: result.ok, passThrough: result.passThrough, at: Date.now() };
+    return result;
   }
 
   async getBotAiPreview() {

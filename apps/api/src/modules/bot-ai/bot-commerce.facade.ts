@@ -6,8 +6,12 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { CustomersService, normalizePhone } from '../customers/customers.service';
 import { OrdersService } from '../orders/orders.service';
 import { VendorNotifyService } from '../orders/vendor-notify.service';
-import { ChatSessionService } from '../whatsapp-bot/chat-session.service';
+import {
+  ChatSessionService,
+  CheckoutDraft,
+} from '../whatsapp-bot/chat-session.service';
 import { ChatState } from '@prisma/client';
+import type { Cart } from '../whatsapp-bot/cart.types';
 
 export interface BotCommerceContext {
   stateKey: string;
@@ -113,6 +117,24 @@ export class BotCommerceFacade {
     };
   }
 
+  async getCustomerProfile(ctx: BotCommerceContext) {
+    const phone = ctx.contactPhone;
+    if (!phone) {
+      return { registered: false, phone: null, name: null, address: null, reference: null };
+    }
+    const customer = await this.customers.findByPhone(phone);
+    if (!customer) {
+      return { registered: false, phone, name: null, address: null, reference: null };
+    }
+    return {
+      registered: true,
+      phone: customer.phone,
+      name: customer.name,
+      address: customer.address,
+      reference: customer.reference,
+    };
+  }
+
   private async syncCartHold(ctx: BotCommerceContext) {
     const cart = await this.cart.getCart(ctx.stateKey);
     const phone = ctx.contactPhone;
@@ -157,6 +179,26 @@ export class BotCommerceFacade {
     };
   }
 
+  async updateCartItem(ctx: BotCommerceContext, productId: string, quantity: number) {
+    if (quantity <= 0) {
+      return this.removeFromCart(ctx, productId);
+    }
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product || !product.isActive) {
+      return { error: 'Producto no encontrado' };
+    }
+    const available = await this.stock.getAvailableStock(product.id, {
+      excludeStateKey: ctx.stateKey,
+    });
+    if (quantity > available) {
+      return { error: `Solo hay ${available} unidad(es) disponibles` };
+    }
+    await this.cart.updateQuantity(ctx.stateKey, productId, quantity);
+    await this.syncCartHold(ctx);
+    const cart = await this.cart.getCart(ctx.stateKey);
+    return { ok: true, cart: this.formatCart(cart) };
+  }
+
   async viewCart(ctx: BotCommerceContext) {
     const cart = await this.cart.getCart(ctx.stateKey);
     return this.formatCart(cart);
@@ -169,7 +211,7 @@ export class BotCommerceFacade {
     return { ok: true, cart: this.formatCart(cart) };
   }
 
-  private formatCart(cart: { items: { productId: string; nombre: string; quantity: number; unitPrice: number }[]; total: number }) {
+  private formatCart(cart: Cart) {
     return {
       items: cart.items.map((i) => ({
         productId: i.productId,
@@ -178,8 +220,89 @@ export class BotCommerceFacade {
         unitPrice: i.unitPrice,
         lineTotal: i.quantity * i.unitPrice,
       })),
+      subtotal: cart.subtotal,
+      deliveryCost: cart.deliveryCost,
       total: cart.total,
       itemCount: cart.items.length,
+    };
+  }
+
+  async getCheckoutDraft(ctx: BotCommerceContext) {
+    const cart = await this.cart.getCart(ctx.stateKey);
+    const draft = await this.chatSession.getCheckoutDraft(ctx.stateKey);
+    const profile = await this.getCustomerProfile(ctx);
+
+    const customerName = draft.customerName ?? profile.name ?? '';
+    const customerPhone = draft.customerPhone ?? profile.phone ?? ctx.contactPhone ?? '';
+    const address = draft.address ?? profile.address ?? '';
+    const reference = draft.reference ?? profile.reference ?? '';
+
+    const missing: string[] = [];
+    if (!customerName.trim()) missing.push('customerName');
+    if (!customerPhone.trim()) missing.push('customerPhone');
+    if (!address.trim()) missing.push('address');
+
+    return {
+      cart: this.formatCart(cart),
+      draft: {
+        customerName,
+        customerPhone,
+        address,
+        reference,
+        confirmed: draft.confirmed === true,
+      },
+      missing,
+      readyToConfirm: missing.length === 0 && cart.items.length > 0,
+    };
+  }
+
+  async saveCheckoutField(
+    ctx: BotCommerceContext,
+    field: keyof CheckoutDraft,
+    value: string,
+  ) {
+    const allowed: Array<keyof CheckoutDraft> = [
+      'customerName',
+      'customerPhone',
+      'address',
+      'reference',
+    ];
+    if (!allowed.includes(field)) {
+      return { error: 'Campo no permitido' };
+    }
+    const draft = await this.chatSession.saveCheckoutDraft(ctx.stateKey, {
+      [field]: value.trim(),
+      confirmed: false,
+    });
+    await this.chatSession.setAiPhase(ctx.stateKey, 'checkout');
+    return { ok: true, draft };
+  }
+
+  async confirmOrder(ctx: BotCommerceContext) {
+    const checkout = await this.getCheckoutDraft(ctx);
+    if (checkout.cart.itemCount === 0) {
+      return { error: 'El carrito está vacío' };
+    }
+    if (!checkout.readyToConfirm) {
+      return { error: 'Faltan datos de entrega', missing: checkout.missing };
+    }
+
+    await this.chatSession.saveCheckoutDraft(ctx.stateKey, { confirmed: true });
+    await this.chatSession.setAiPhase(ctx.stateKey, 'confirming');
+
+    return {
+      ok: true,
+      summary: {
+        items: checkout.cart.items,
+        subtotal: checkout.cart.subtotal,
+        deliveryCost: checkout.cart.deliveryCost,
+        total: checkout.cart.total,
+        customerName: checkout.draft.customerName,
+        customerPhone: checkout.draft.customerPhone,
+        address: checkout.draft.address,
+        reference: checkout.draft.reference,
+      },
+      message: 'Pedido listo para enviar. Usa submit_order para crear el pedido.',
     };
   }
 
@@ -192,23 +315,33 @@ export class BotCommerceFacade {
       return { error: 'El carrito está vacío' };
     }
 
-    const customerPhone = normalizePhone(data.customerPhone);
+    const draft = await this.chatSession.getCheckoutDraft(ctx.stateKey);
+    const customerName = data.customerName.trim() || draft.customerName?.trim() || '';
+    const customerPhone = normalizePhone(data.customerPhone || draft.customerPhone || ctx.contactPhone || '');
+    const address = data.address.trim() || draft.address?.trim() || '';
+    const reference = data.reference?.trim() || draft.reference?.trim();
+
+    if (!customerName || !customerPhone || !address) {
+      return { error: 'Faltan datos de entrega (nombre, teléfono, dirección)' };
+    }
+
     const customer = await this.customers.upsertFromOrder({
-      customerName: data.customerName.trim(),
+      customerName,
       customerPhone,
-      address: data.address.trim(),
-      reference: data.reference?.trim(),
+      address,
+      reference,
     });
 
     try {
       const order = await this.orders.create({
-        customerName: data.customerName.trim(),
+        customerName,
         customerPhone,
-        address: data.address.trim(),
-        reference: data.reference?.trim(),
+        address,
+        reference,
         customerId: customer.id,
         chatId: ctx.chatId,
         source: 'WHATSAPP',
+        deliveryCost: cart.deliveryCost,
         items: cart.items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -219,12 +352,16 @@ export class BotCommerceFacade {
 
       await this.cart.clearCart(ctx.stateKey);
       await this.cartHold.release(ctx.stateKey);
+      await this.chatSession.clearCheckoutDraft(ctx.stateKey);
+      await this.chatSession.setAiPhase(ctx.stateKey, 'browsing');
       await this.chatSession.updateState(ctx.stateKey, ChatState.PEDIDO_CREADO, { cartJson: null });
 
       return {
         ok: true,
         orderId: order.id,
         shortId: order.id.slice(0, 8),
+        subtotal: cart.subtotal,
+        deliveryCost: cart.deliveryCost,
         total: cart.total,
       };
     } catch (err) {
@@ -235,6 +372,7 @@ export class BotCommerceFacade {
 
   async handoffToHuman(ctx: BotCommerceContext, _reason?: string) {
     await this.chatSession.updateState(ctx.stateKey, ChatState.HANDOFF_HUMANO);
+    await this.chatSession.setAiPhase(ctx.stateKey, 'handoff');
     const phone = ctx.contactPhone;
     const existing = phone ? await this.customers.findByPhone(phone) : null;
 

@@ -8,6 +8,7 @@ export interface MenuNode {
 }
 
 export interface ZentFlowConfig {
+  passThrough?: boolean;
   flow: {
     triggers: string[];
     greeting: string;
@@ -60,6 +61,7 @@ export function parseConfig(raw: Record<string, unknown>): ZentFlowConfig {
   if (!zentApiUrl) throw new Error('zent-flow: zentApiUrl is required');
   if (!zentApiSecret) throw new Error('zent-flow: zentApiSecret is required');
   return {
+    passThrough: raw.passThrough === true,
     flow: { triggers, greeting, startOnAnyMessage, options },
     respondInGroups: raw.respondInGroups === true,
     zentApiUrl,
