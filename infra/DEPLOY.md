@@ -489,7 +489,7 @@ Redeploy en Dokploy (con `API_MASTER_KEY` y `OPENWA_API_KEY` en Environment).
 ## CD automático (GitHub Actions → Dokploy)
 
 1. Push/merge a `main` o `master` → CI (build + E2E en GitHub Actions)
-2. Si CI verde → job `deploy-dokploy` llama el webhook Compose de Dokploy
+2. Si CI verde → job `deploy-dokploy` llama el webhook Compose de Dokploy con el watch path centinela `.dokploy/ci-approved-deploy`
 3. Dokploy hace `git pull` + rebuild según `infra/docker-compose.prod.yml`
 
 **GitHub:** secret `DOKPLOY_DEPLOY_WEBHOOK_URL` (Settings → Secrets and variables → Actions → Repository secrets). Valor: la URL que muestra Dokploy en el compose, p. ej. `http://TU_IP:3000/api/deploy/compose/TOKEN`. Sin espacios al final.
@@ -498,14 +498,16 @@ Redeploy en Dokploy (con `API_MASTER_KEY` y `OPENWA_API_KEY` en Environment).
 
 1. **Auto Deploy: activado** en el compose (General). Si está apagado, el webhook responde `400` con *"Automatic deployments are disabled for this compose"*.
 2. **Rama** en General = la rama real del repo (`master` en este proyecto, no `main` si no la usas).
-3. **Watch paths:** vacío (deploy en cada push) o incluir `infra/`, `apps/api`, `apps/dashboard`.
-4. Para evitar **doble deploy:** en GitHub → repo → Settings → Webhooks, elimina el webhook directo que Dokploy registró al conectar GitHub. No desactives el toggle **Auto Deploy** del compose, porque el endpoint `/api/deploy/compose/...` que llama GitHub Actions lo requiere activo.
+3. **Watch paths:** poner solo `.dokploy/ci-approved-deploy`. No lo dejes vacío y no incluyas `infra/`, `apps/api` ni `apps/dashboard`, porque eso permite deploy directo al hacer push antes de que termine CI.
+4. Opcional extra para evitar llamadas innecesarias: en GitHub → repo → Settings → Webhooks, elimina el webhook directo que Dokploy registró al conectar GitHub. No desactives el toggle **Auto Deploy** del compose, porque el endpoint `/api/deploy/compose/...` que llama GitHub Actions lo requiere activo.
 
 Con esa configuración queda un solo camino:
 
 ```text
 git push → GitHub Actions CI → deploy-dokploy → Dokploy
 ```
+
+El webhook directo GitHub→Dokploy puede seguir recibiendo el push, pero con ese watch path no despliega porque el push real no modifica `.dokploy/ci-approved-deploy`. Solo el job `deploy-dokploy` envía ese path en su payload después de que CI pasa.
 
 **Errores frecuentes del webhook:**
 
