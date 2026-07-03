@@ -83,7 +83,7 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     environment: production
     steps:
-      - name: Trigger Dokploy Compose deploy
+      - name: Trigger Dokploy Compose deploy after CI
         env:
           WEBHOOK_URL: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL }}
         run: |
@@ -112,6 +112,7 @@ jobs:
           echo "Dokploy response ($code): $body"
           if [ "$code" != "200" ]; then
             echo "::error::Dokploy webhook HTTP $code — $body"
-            echo "Check Dokploy Compose: Auto Deploy ON, branch matches ${{ github.ref_name }}, watch paths include infra/ or are empty."
+            echo "Check Dokploy Compose: Auto Deploy ON for webhook API, branch matches ${{ github.ref_name }}, and DOKPLOY_DEPLOY_WEBHOOK_URL points to the current compose."
+            echo "To avoid double deploys, remove the direct GitHub webhook created by Dokploy; GitHub Actions should be the only caller of this URL."
             exit 1
           fi

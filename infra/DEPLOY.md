@@ -344,6 +344,25 @@ Tras redeploy, en **Dashboards → Zent** aparecen:
 
 Si no aparecen: redeploy en Dokploy o reinicia el contenedor `grafana`. Los dashboards van **dentro de la imagen** (`infra/monitoring/grafana/Dockerfile`); no dependen de montar carpetas en el servidor.
 
+### Dashboard Zent → Observabilidad
+
+El dashboard incluye `/dashboard/observability` para abrir Grafana, Prometheus y ver el panel de logs embebido.
+
+Variables del servicio `frontend`:
+
+| Variable | Uso |
+|----------|-----|
+| `NEXT_PUBLIC_GRAFANA_URL` | URL pública de Grafana, default `http://${PUBLIC_HOST}:3002` |
+| `NEXT_PUBLIC_PROMETHEUS_URL` | URL pública de Prometheus, default `http://${PUBLIC_HOST}:9090` |
+
+Para que el iframe cargue dentro del dashboard, Grafana debe tener:
+
+```env
+GF_SECURITY_ALLOW_EMBEDDING=true
+```
+
+Si Grafana pide login o el navegador bloquea el frame, usa el botón **Abrir Grafana** desde la misma página.
+
 ### Importar manualmente (alternativa)
 
 1. Grafana → **Dashboards** → **New** → **Import**
@@ -469,18 +488,24 @@ Redeploy en Dokploy (con `API_MASTER_KEY` y `OPENWA_API_KEY` en Environment).
 
 ## CD automático (GitHub Actions → Dokploy)
 
-1. Push/merge a `main` → CI (build + E2E en GitHub Actions)
+1. Push/merge a `main` o `master` → CI (build + E2E en GitHub Actions)
 2. Si CI verde → job `deploy-dokploy` llama el webhook Compose de Dokploy
 3. Dokploy hace `git pull` + rebuild según `infra/docker-compose.prod.yml`
 
 **GitHub:** secret `DOKPLOY_DEPLOY_WEBHOOK_URL` (Settings → Secrets and variables → Actions → Repository secrets). Valor: la URL que muestra Dokploy en el compose, p. ej. `http://TU_IP:3000/api/deploy/compose/TOKEN`. Sin espacios al final.
 
-**Dokploy (obligatorio para que el webhook funcione):**
+**Dokploy (obligatorio para que el webhook usado por GitHub Actions funcione):**
 
 1. **Auto Deploy: activado** en el compose (General). Si está apagado, el webhook responde `400` con *"Automatic deployments are disabled for this compose"*.
 2. **Rama** en General = la rama real del repo (`master` en este proyecto, no `main` si no la usas).
 3. **Watch paths:** vacío (deploy en cada push) o incluir `infra/`, `apps/api`, `apps/dashboard`.
-4. Para evitar **doble deploy:** en GitHub → repo → Settings → Webhooks, elimina el webhook que Dokploy registró al conectar GitHub (no desactives el toggle Auto Deploy del compose).
+4. Para evitar **doble deploy:** en GitHub → repo → Settings → Webhooks, elimina el webhook directo que Dokploy registró al conectar GitHub. No desactives el toggle **Auto Deploy** del compose, porque el endpoint `/api/deploy/compose/...` que llama GitHub Actions lo requiere activo.
+
+Con esa configuración queda un solo camino:
+
+```text
+git push → GitHub Actions CI → deploy-dokploy → Dokploy
+```
 
 **Errores frecuentes del webhook:**
 

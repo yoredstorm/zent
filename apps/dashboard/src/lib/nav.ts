@@ -7,6 +7,7 @@ import {
   Users,
   ShoppingCart,
   BarChart3,
+  Activity,
   MessageCircle,
   Settings,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ export const navItems = [
   { href: '/dashboard/customers', label: 'Clientes', icon: Users, roles: ['ADMIN', 'VENDEDOR'] as Role[] },
   { href: '/dashboard/orders', label: 'Pedidos', icon: ShoppingCart, roles: ['ADMIN', 'VENDEDOR', 'AGENTE'] as Role[] },
   { href: '/dashboard/reports', label: 'Reportes', icon: BarChart3, roles: ['ADMIN', 'VENDEDOR'] as Role[] },
+  { href: '/dashboard/observability', label: 'Observabilidad', icon: Activity, roles: ['ADMIN', 'VENDEDOR'] as Role[] },
   { href: '/dashboard/whatsapp', label: 'WhatsApp', icon: MessageCircle, roles: ['ADMIN', 'VENDEDOR', 'AGENTE'] as Role[] },
   { href: '/dashboard/settings/store', label: 'Configuracion', icon: Settings, roles: ['ADMIN'] as Role[] },
 ];
