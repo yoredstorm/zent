@@ -16,6 +16,10 @@ import { formatKeycap } from './wa-format.util';
 import { ChatState } from '@prisma/client';
 import { BotAiOrchestratorService } from '../bot-ai/bot-ai-orchestrator.service';
 import { BotRoutingService } from './bot-routing.service';
+import { BotCommerceFacade } from '../bot-ai/bot-commerce.facade';
+import { BotIntentService } from './bot-intent.service';
+import { BotTurnLogService } from './bot-turn-log.service';
+import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
 
 export type BotPluginAction = 'sendPdf' | 'showCategories' | 'showCart' | 'handoff';
 
@@ -72,6 +76,10 @@ export class WhatsappBotService {
     private config: ConfigService,
     private botAi: BotAiOrchestratorService,
     private botRouting: BotRoutingService,
+    private commerce: BotCommerceFacade,
+    private botIntent: BotIntentService,
+    private turnLog: BotTurnLogService,
+    private waMessages: WaMessageService,
   ) {}
 
   private get storeName(): string {
@@ -300,6 +308,43 @@ export class WhatsappBotService {
   }
 
   private async dispatchAiTurn(userMessage: string) {
+    const intent = this.botIntent.parseAddToCartIntent(userMessage);
+    if (intent) {
+      const pendingId = await this.chatSession.getPendingProduct(this.c.stateKey);
+      if (pendingId) {
+        const ctx = {
+          stateKey: this.c.stateKey,
+          chatId: this.c.chatId,
+          waSessionId: this.c.waSessionId,
+          contactPhone: this.c.contactPhone,
+        };
+        const logId = await this.turnLog.startTurn({
+          stateKey: this.c.stateKey,
+          chatId: this.c.chatId,
+          waSessionId: this.c.waSessionId,
+          mode: 'ai',
+          userMessage,
+        });
+        const added = await this.commerce.addToCart(ctx, pendingId, intent.quantity);
+        const reply =
+          'ok' in added && added.ok
+            ? `Listo, agregué ${intent.quantity}x al carrito. Total: S/ ${added.cart.total.toFixed(2)}. ¿Seguimos comprando o confirmamos pedido?`
+            : `No pude agregar: ${'error' in added ? added.error : 'error desconocido'}`;
+        await this.txt(reply);
+        await this.waMessages.logSystem(this.c.chatId, reply, {
+          waSessionId: this.c.waSessionId,
+          contactPhone: this.c.contactPhone,
+        });
+        await this.turnLog.appendTool(logId, {
+          name: 'add_to_cart_fast',
+          args: { productId: pendingId, quantity: intent.quantity },
+          result: added,
+        });
+        await this.turnLog.completeTurn(logId, reply);
+        return;
+      }
+    }
+
     await this.botAi.handleTurn({
       stateKey: this.c.stateKey,
       chatId: this.c.chatId,
@@ -408,6 +453,11 @@ export class WhatsappBotService {
         break;
       case ChatState.HANDOFF_HUMANO:
         await this.txt('Un asesor te atenderá pronto. Por favor espera.');
+        break;
+      case ChatState.AI_CONVERSATION:
+        await this.txt(
+          'El asistente no está disponible en este momento. Escribe *menu* para ver opciones o *asesor* para hablar con una persona.',
+        );
         break;
     }
   }

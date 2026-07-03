@@ -560,6 +560,50 @@ En Windows: `infra/scripts/setup-zent-flow-plugin.ps1`
 
 ---
 
+## Trazabilidad del bot WhatsApp
+
+Tras el deploy con la migracion `bot_turn_logs`, el vendedor puede auditar cada turno del bot.
+
+### Que hace el cliente
+
+- Siempre recibe respuesta: exito, error amigable o confirmacion de carrito.
+- Si el worker o la IA fallan, se envia: *"Disculpa, hubo un problema tecnico..."* y opcion *asesor*.
+- Tras ver un producto, **Agregar 5** / **añadir 3** agrega al carrito sin pasar por el LLM (si hay producto pendiente en sesion).
+
+### Que ve el vendedor (dashboard)
+
+1. **Bandeja WhatsApp** → conversacion → **Ver actividad del bot**: tabla con modo, tools, errores y duracion.
+2. Meta del chat: estado bot, **fase IA**, **producto pendiente** (debug).
+3. Mensajes con etiqueta **Sistema** (gris) para fallbacks y confirmaciones rapidas.
+
+### API
+
+| Endpoint | Uso |
+|----------|-----|
+| `GET /whatsapp/conversations/:chatId/activity` | Ultimos 50 turnos (`BotTurnLog`) |
+| `GET /whatsapp/conversations/:chatId/meta` | Incluye `pendingProductId`, `aiPhase` |
+
+### Alertas al vendedor
+
+Si el mismo chat falla **2+ veces en 5 minutos**, se envia WhatsApp a `VENDOR_NOTIFY_PHONES` (si esta configurado).
+
+### Checklist manual post-deploy
+
+1. `npx prisma migrate deploy` en `backend-api` (tabla `bot_turn_logs`).
+2. Reiniciar `backend-api` y `bot-worker`.
+3. Flujo: buscar producto → ver detalle → escribir **Agregar 2** → confirmacion con total.
+4. Simular error (desactivar Novita temporalmente) → cliente recibe mensaje fallback.
+5. Dashboard → Actividad del bot muestra tools (`get_product_details`, `add_to_cart_fast`, etc.).
+
+### Logs en Grafana
+
+```
+{service="bot-worker"} |= "Error processing"
+{service="backend-api"} |= "AI turn failed"
+```
+
+---
+
 ## Rollback de migraciones
 
 - No hay rollback automático. Para revertir: redeploy de imagen anterior en Dokploy.

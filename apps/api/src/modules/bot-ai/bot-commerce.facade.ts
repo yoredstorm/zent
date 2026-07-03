@@ -106,6 +106,7 @@ export class BotCommerceFacade {
     const availableStock = await this.stock.getAvailableStock(product.id, {
       excludeStateKey: ctx.stateKey,
     });
+    await this.chatSession.setPendingProduct(ctx.stateKey, product.id);
     return {
       id: product.id,
       nombre: product.nombre,
@@ -172,6 +173,7 @@ export class BotCommerceFacade {
     });
     await this.syncCartHold(ctx);
     const cart = await this.cart.getCart(ctx.stateKey);
+    await this.chatSession.clearPendingProduct(ctx.stateKey);
     return {
       ok: true,
       message: `Agregado ${quantity}x ${product.nombre}`,

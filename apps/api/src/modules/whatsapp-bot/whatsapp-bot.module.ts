@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, forwardRef } from '@nestjs/common';
 import { WhatsappBotService } from './whatsapp-bot.service';
 import { WhatsappBotController } from './whatsapp-bot.controller';
 import { BotPluginController } from './bot-plugin.controller';
@@ -11,12 +11,28 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { WhatsappInboxModule } from '../whatsapp-inbox/whatsapp-inbox.module';
 import { BotAiModule } from '../bot-ai/bot-ai.module';
 import { BotRoutingService } from './bot-routing.service';
+import { BotIntentService } from './bot-intent.service';
+import { BotTurnLogService } from './bot-turn-log.service';
 
 @Global()
 @Module({
-  imports: [CustomersModule, OrdersModule, InventoryModule, WhatsappInboxModule, BotAiModule],
+  imports: [CustomersModule, OrdersModule, InventoryModule, WhatsappInboxModule, forwardRef(() => BotAiModule)],
   controllers: [WhatsappBotController, BotPluginController],
-  providers: [WhatsappBotService, WhatsappBotWorker, CartService, ChatSessionService, BotRoutingService],
-  exports: [WhatsappBotService, CartService, ChatSessionService, BotRoutingService],
+  providers: [
+    WhatsappBotService,
+    WhatsappBotWorker,
+    CartService,
+    ChatSessionService,
+    BotRoutingService,
+    BotIntentService,
+    BotTurnLogService,
+  ],
+  exports: [
+    WhatsappBotService,
+    CartService,
+    ChatSessionService,
+    BotRoutingService,
+    BotTurnLogService,
+  ],
 })
 export class WhatsappBotModule {}

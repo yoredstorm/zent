@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { MessageCircle, RefreshCw } from 'lucide-react';
+import { MessageCircle, RefreshCw, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useRealtime } from '@/lib/useRealtime';
@@ -45,6 +45,17 @@ interface WaMessage {
   mediaUrl?: string | null;
   mimeType?: string | null;
   caption?: string | null;
+  createdAt: string;
+}
+
+interface BotTurnLog {
+  id: string;
+  mode: string;
+  userMessage: string | null;
+  assistantMessage: string | null;
+  toolsJson: Array<{ name: string; args: Record<string, unknown>; error?: string }> | null;
+  error: string | null;
+  durationMs: number | null;
   createdAt: string;
 }
 
@@ -96,6 +107,7 @@ function resolveMediaSrc(url?: string | null): string | null {
 
 function MessageBubble({ m }: { m: WaMessage }) {
   const isOut = m.direction === 'OUT';
+  const isSystem = m.source === 'system';
   const type = m.messageType || 'text';
   const mediaSrc = resolveMediaSrc(m.mediaUrl);
 
@@ -103,12 +115,21 @@ function MessageBubble({ m }: { m: WaMessage }) {
     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow ${
-          isOut ? 'bg-green-100' : 'bg-white'
+          isSystem ? 'bg-slate-200 text-slate-700 border border-slate-300' : isOut ? 'bg-green-100' : 'bg-white'
         }`}
       >
         {isOut && (
-          <div className="text-[10px] text-gray-500 mb-1">
-            {m.source === 'agent' ? 'Asesor' : 'Bot'}
+          <div className="text-[10px] text-gray-500 mb-1 flex items-center gap-1">
+            {isSystem ? (
+              <>
+                <Info className="h-3 w-3" />
+                Sistema
+              </>
+            ) : m.source === 'agent' ? (
+              'Asesor'
+            ) : (
+              'Bot'
+            )}
           </div>
         )}
         {type === 'image' && mediaSrc && (
@@ -151,6 +172,8 @@ export default function WhatsAppPage() {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [meta, setMeta] = useState<any>(null);
+  const [activity, setActivity] = useState<BotTurnLog[]>([]);
+  const [showActivity, setShowActivity] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -191,6 +214,13 @@ export default function WhatsAppPage() {
       .catch(() => setMeta(null));
   }, []);
 
+  const loadActivity = useCallback((chatId: string) => {
+    api
+      .get<BotTurnLog[]>(`/whatsapp/conversations/${encodeChatId(chatId)}/activity?limit=50`)
+      .then(setActivity)
+      .catch(() => setActivity([]));
+  }, []);
+
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
@@ -212,6 +242,7 @@ export default function WhatsAppPage() {
           const chatId = event.payload?.chatId as string | undefined;
           if (chatId && selected?.chatId === chatId) {
             loadMessages(chatId, false);
+            loadActivity(chatId);
           } else if (event.type === 'message.received' && chatId) {
             toast.message('Nuevo mensaje de WhatsApp', {
               description: displayName(
@@ -226,7 +257,7 @@ export default function WhatsAppPage() {
           }
         }
       },
-      [loadConversations, loadMessages, selected?.chatId, conversations],
+      [loadConversations, loadMessages, loadActivity, selected?.chatId, conversations],
     ),
   );
 
@@ -236,6 +267,7 @@ export default function WhatsAppPage() {
     setMessages([]);
     loadMessages(c.chatId, true, true);
     loadMeta(c.chatId);
+    loadActivity(c.chatId);
   };
 
   const handleSync = async () => {
@@ -462,6 +494,12 @@ export default function WhatsAppPage() {
                   <div className="space-y-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     <div className="flex flex-wrap gap-3">
                       {meta.session?.state && <span>Bot: {meta.session.state}</span>}
+                      {meta.aiPhase && <span>Fase IA: {meta.aiPhase}</span>}
+                      {meta.pendingProductId && (
+                        <span className="font-mono text-[10px]">
+                          Producto pendiente: {meta.pendingProductId.slice(0, 8)}…
+                        </span>
+                      )}
                       {meta.customer && (
                         <Link href="/dashboard/customers" className="font-medium text-brand-600 hover:underline">
                           Ver cliente
@@ -488,6 +526,45 @@ export default function WhatsAppPage() {
                             </li>
                           ))}
                         </ul>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowActivity((v) => !v)}
+                      className="text-left font-medium text-brand-600 hover:underline"
+                    >
+                      {showActivity ? 'Ocultar' : 'Ver'} actividad del bot ({activity.length})
+                    </button>
+                    {showActivity && activity.length > 0 && (
+                      <div className="max-h-48 overflow-auto rounded-lg border border-slate-200 bg-white">
+                        <table className="w-full text-left text-[10px]">
+                          <thead className="sticky top-0 bg-slate-100">
+                            <tr>
+                              <th className="p-1">Hora</th>
+                              <th className="p-1">Modo</th>
+                              <th className="p-1">Tools</th>
+                              <th className="p-1">Error</th>
+                              <th className="p-1">ms</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activity.map((row) => (
+                              <tr key={row.id} className="border-t border-slate-100">
+                                <td className="p-1 whitespace-nowrap">{formatTime(row.createdAt)}</td>
+                                <td className="p-1">{row.mode}</td>
+                                <td className="p-1">
+                                  {Array.isArray(row.toolsJson) && row.toolsJson.length > 0
+                                    ? row.toolsJson.map((t) => t.name).join(', ')
+                                    : '—'}
+                                </td>
+                                <td className="p-1 text-danger truncate max-w-[120px]" title={row.error ?? ''}>
+                                  {row.error ? row.error.slice(0, 40) : '—'}
+                                </td>
+                                <td className="p-1">{row.durationMs ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>

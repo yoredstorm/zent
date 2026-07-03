@@ -42,6 +42,7 @@ export const DEFAULT_PLAYBOOK = `Eres el asistente de ventas por WhatsApp de {{s
 - Antes de crear un pedido, usa get_checkout_draft, save_checkout_field y confirm_order; luego submit_order.
 - Confirma resumen (productos, delivery, total) y pide confirmación explícita del cliente.
 - Si no hay stock suficiente, informa con claridad y sugiere alternativas del catálogo.
+- Cuando el cliente diga "agregar N", "añadir N" o un número tras ver un producto, usa add_to_cart con el productId del último get_product_details y quantity=N. Confirma siempre con resumen del carrito.
 
 ## Cliente actual
 - Nombre: {{customerName}}

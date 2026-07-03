@@ -2,6 +2,11 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/commo
 import { Worker, Job } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { WhatsappBotService } from './whatsapp-bot.service';
+import { OpenwaService } from '../openwa/openwa.service';
+import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
+import { BotTurnLogService } from './bot-turn-log.service';
+import { VendorNotifyService } from '../orders/vendor-notify.service';
+import { BotRoutingService } from './bot-routing.service';
 
 interface WebhookJob {
   chatId: string;
@@ -12,6 +17,9 @@ interface WebhookJob {
   idempotencyKey: string;
 }
 
+const FALLBACK_TEXT =
+  'Disculpa, hubo un problema técnico. Intenta de nuevo en un momento o escribe *asesor* para hablar con una persona.';
+
 @Injectable()
 export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
   private worker: Worker;
@@ -21,6 +29,11 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private config: ConfigService,
     private bot: WhatsappBotService,
+    private openwa: OpenwaService,
+    private waMessages: WaMessageService,
+    private turnLog: BotTurnLogService,
+    private vendorNotify: VendorNotifyService,
+    private botRouting: BotRoutingService,
   ) {}
 
   onModuleInit() {
@@ -47,6 +60,10 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     await this.worker?.close();
   }
 
+  private buildStateKey(chatId: string, waSessionId?: string): string {
+    return waSessionId ? `${waSessionId}::${chatId}` : chatId;
+  }
+
   private async processJob(job: Job<WebhookJob>) {
     const { chatId, body, from, senderPhone, waSessionId, idempotencyKey } = job.data;
 
@@ -55,15 +72,47 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.processedKeys.add(idempotencyKey);
-    if (this.processedKeys.size > 10000) {
-      this.processedKeys.clear();
-    }
-
     try {
       await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
+      this.processedKeys.add(idempotencyKey);
+      if (this.processedKeys.size > 10000) {
+        this.processedKeys.clear();
+      }
     } catch (error: any) {
-      this.logger.error(`Error processing message from ${chatId}: ${error.message}`);
+      const message = error?.message || String(error);
+      this.logger.error(`Error processing message from ${chatId}: ${message}`);
+
+      const stateKey = this.buildStateKey(chatId, waSessionId);
+      const mode = (await this.botRouting.shouldUseAiBot()) ? 'ai' : 'legacy';
+      const logId = await this.turnLog.startTurn({
+        stateKey,
+        chatId,
+        waSessionId,
+        mode,
+        userMessage: body,
+      });
+      await this.turnLog.failTurn(logId, message.slice(0, 2000), FALLBACK_TEXT);
+
+      try {
+        await this.openwa.sendText({
+          chatId,
+          text: FALLBACK_TEXT,
+          sessionId: waSessionId,
+        });
+        await this.waMessages.logSystem(chatId, FALLBACK_TEXT, {
+          waSessionId,
+          contactPhone: senderPhone ?? null,
+        });
+      } catch (sendErr: any) {
+        this.logger.error(`Fallback send failed for ${chatId}: ${sendErr?.message || sendErr}`);
+      }
+
+      await this.vendorNotify.trackBotFailure({
+        chatId: stateKey,
+        customerPhone: senderPhone ?? null,
+        error: message,
+      });
+
       throw error;
     }
   }

@@ -13,7 +13,7 @@ import {
 } from './wa-conversation.util';
 import { messagePreview, parseOpenWaMessage } from './wa-message-mapper.util';
 
-export type WaMessageSource = 'customer' | 'bot' | 'agent';
+export type WaMessageSource = 'customer' | 'bot' | 'agent' | 'system';
 
 export interface WaConversationSummary {
   chatId: string;
@@ -194,6 +194,20 @@ export class WaMessageService {
       messageId: msg.id,
       messageType: msg.messageType,
       source: data.source,
+    });
+  }
+
+  async logSystem(
+    chatId: string,
+    body: string,
+    opts?: { waSessionId?: string; contactPhone?: string | null },
+  ): Promise<void> {
+    await this.logOutbound({
+      chatId,
+      body: `[Sistema] ${body}`,
+      source: 'system',
+      waSessionId: opts?.waSessionId,
+      contactPhone: opts?.contactPhone,
     });
   }
 
@@ -537,6 +551,16 @@ export class WaMessageService {
       waChatId,
     );
 
+    const sessionContext = session?.contextJson
+      ? (() => {
+          try {
+            return JSON.parse(session.contextJson) as Record<string, unknown>;
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
     return {
       chatId: decoded,
       waChatId,
@@ -545,6 +569,12 @@ export class WaMessageService {
       customer,
       openOrder,
       activeCart,
+      pendingProductId:
+        typeof sessionContext.pendingProductId === 'string'
+          ? sessionContext.pendingProductId
+          : null,
+      aiPhase:
+        typeof sessionContext.aiPhase === 'string' ? sessionContext.aiPhase : null,
     };
   }
 

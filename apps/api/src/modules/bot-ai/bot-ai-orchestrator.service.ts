@@ -10,11 +10,19 @@ import { BotAiPromptService } from './bot-ai-prompt.service';
 import { BOT_AI_TOOLS } from './bot-ai.tools';
 import { BotCommerceFacade, BotCommerceContext } from './bot-commerce.facade';
 import { ChatSessionService } from '../whatsapp-bot/chat-session.service';
+import { BotTurnLogService } from '../whatsapp-bot/bot-turn-log.service';
 import { CustomersService } from '../customers/customers.service';
 
 const MAX_TOOL_ROUNDS = 6;
 const MAX_AI_MESSAGES = 40;
 const MAX_MESSAGE_CHARS = 900;
+const NOVITA_TIMEOUT_MS = 45_000;
+
+const FALLBACK_TEXT =
+  'Disculpa, hubo un problema técnico. Intenta de nuevo en un momento o escribe *asesor* para hablar con una persona.';
+
+const MAX_ROUNDS_TEXT =
+  'Necesito un poco más de información. ¿Qué producto quieres agregar?';
 
 export interface BotTurnMessenger {
   sendText: (text: string) => Promise<void>;
@@ -79,6 +87,7 @@ export class BotAiOrchestratorService {
     private commerce: BotCommerceFacade,
     private chatSession: ChatSessionService,
     private customers: CustomersService,
+    private turnLog: BotTurnLogService,
   ) {}
 
   private get model(): string {
@@ -96,79 +105,128 @@ export class BotAiOrchestratorService {
 
   async handleTurn(params: HandleTurnParams): Promise<void> {
     const { stateKey, userMessage, messenger } = params;
-    await this.chatSession.getOrCreate(stateKey);
-    await this.chatSession.updateState(stateKey, ChatState.AI_CONVERSATION);
-    const phase = await this.chatSession.getAiPhase(stateKey);
-    if (phase === 'browsing') {
-      await this.chatSession.setAiPhase(stateKey, 'browsing');
-    }
-
-    const phone = params.contactPhone;
-    const existing = phone ? await this.customers.findByPhone(phone) : null;
-    const systemPrompt = await this.prompt.buildSystemPrompt({
-      customerName: existing?.name,
-      customerPhone: existing?.phone ?? phone,
+    const startedAt = Date.now();
+    const logId = await this.turnLog.startTurn({
+      stateKey,
+      chatId: params.chatId,
+      waSessionId: params.waSessionId,
+      mode: 'ai',
+      userMessage,
     });
 
-    const history = (await this.chatSession.getAiMessages(
-      stateKey,
-    )) as ChatCompletionMessageParam[];
-    const messages: ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-      ...history,
-      { role: 'user', content: userMessage },
-    ];
-
-    const client = createNovitaClient(this.config);
-    let rounds = 0;
-    let lastAssistantText = '';
-
-    while (rounds < MAX_TOOL_ROUNDS) {
-      rounds++;
-      const completion = await client.chat.completions.create({
-        model: this.model,
-        messages,
-        tools: BOT_AI_TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.4,
-        max_tokens: 800,
-      });
-
-      const choice = completion.choices[0]?.message;
-      if (!choice) break;
-
-      messages.push(choice as ChatCompletionMessageParam);
-
-      if (choice.tool_calls?.length) {
-        for (const call of choice.tool_calls) {
-          const toolResult = await this.runTool(call, params);
-          messages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: JSON.stringify(toolResult),
-          });
-        }
-        continue;
+    try {
+      await this.chatSession.getOrCreate(stateKey);
+      await this.chatSession.updateState(stateKey, ChatState.AI_CONVERSATION);
+      const phase = await this.chatSession.getAiPhase(stateKey);
+      if (phase === 'browsing') {
+        await this.chatSession.setAiPhase(stateKey, 'browsing');
       }
 
-      lastAssistantText = (choice.content ?? '').trim();
-      break;
-    }
+      const phone = params.contactPhone;
+      const existing = phone ? await this.customers.findByPhone(phone) : null;
+      const systemPrompt = await this.prompt.buildSystemPrompt({
+        customerName: existing?.name,
+        customerPhone: existing?.phone ?? phone,
+      });
 
-    if (!lastAssistantText) {
-      lastAssistantText =
-        'Disculpa, tuve un problema procesando tu mensaje. Escribe *menu* para empezar de nuevo o *asesor* para hablar con una persona.';
-    }
+      const history = (await this.chatSession.getAiMessages(
+        stateKey,
+      )) as ChatCompletionMessageParam[];
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...history,
+        { role: 'user', content: userMessage },
+      ];
 
-    const chunks = splitWhatsAppMessage(lastAssistantText);
-    for (const chunk of chunks) {
-      await messenger.sendText(chunk);
-    }
+      const client = createNovitaClient(this.config);
+      let rounds = 0;
+      let lastAssistantText = '';
 
-    const persisted = messages
-      .filter((m) => m.role !== 'system')
-      .slice(-MAX_AI_MESSAGES) as ChatCompletionMessageParam[];
-    await this.chatSession.setAiMessages(stateKey, persisted);
+      while (rounds < MAX_TOOL_ROUNDS) {
+        rounds++;
+        const completion = await client.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            tools: BOT_AI_TOOLS,
+            tool_choice: 'auto',
+            temperature: 0.4,
+            max_tokens: 800,
+          },
+          { signal: AbortSignal.timeout(NOVITA_TIMEOUT_MS) },
+        );
+
+        const choice = completion.choices[0]?.message;
+        if (!choice) break;
+
+        messages.push(choice as ChatCompletionMessageParam);
+
+        if (choice.tool_calls?.length) {
+          for (const call of choice.tool_calls) {
+            const fn = call.type === 'function' ? call.function : null;
+            let args: Record<string, unknown> = {};
+            if (fn?.arguments) {
+              try {
+                args = JSON.parse(fn.arguments);
+              } catch {
+                args = {};
+              }
+            }
+            const toolResult = await this.runTool(call, params);
+            const toolError =
+              toolResult &&
+              typeof toolResult === 'object' &&
+              'error' in (toolResult as Record<string, unknown>)
+                ? String((toolResult as { error: unknown }).error)
+                : undefined;
+            await this.turnLog.appendTool(logId, {
+              name: fn?.name ?? 'unknown',
+              args,
+              result: toolResult,
+              error: toolError,
+            });
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify(toolResult),
+            });
+          }
+          continue;
+        }
+
+        lastAssistantText = (choice.content ?? '').trim();
+        break;
+      }
+
+      if (!lastAssistantText) {
+        lastAssistantText =
+          rounds >= MAX_TOOL_ROUNDS
+            ? MAX_ROUNDS_TEXT
+            : 'Disculpa, tuve un problema procesando tu mensaje. Escribe *menu* para empezar de nuevo o *asesor* para hablar con una persona.';
+      }
+
+      const chunks = splitWhatsAppMessage(lastAssistantText);
+      for (const chunk of chunks) {
+        await messenger.sendText(chunk);
+      }
+
+      const persisted = messages
+        .filter((m) => m.role !== 'system')
+        .slice(-MAX_AI_MESSAGES) as ChatCompletionMessageParam[];
+      await this.chatSession.setAiMessages(stateKey, persisted);
+
+      await this.turnLog.completeTurn(logId, lastAssistantText, Date.now() - startedAt);
+    } catch (err: any) {
+      const message = err?.message || String(err);
+      this.logger.error(`AI turn failed for ${stateKey}: ${message}`);
+      await this.turnLog.failTurn(logId, message.slice(0, 2000), FALLBACK_TEXT);
+      try {
+        await messenger.sendText(FALLBACK_TEXT);
+      } catch (sendErr: any) {
+        this.logger.error(`AI fallback send failed: ${sendErr?.message || sendErr}`);
+        throw err;
+      }
+    }
   }
 
   private async runTool(

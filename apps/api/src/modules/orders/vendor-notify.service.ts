@@ -20,6 +20,7 @@ interface VendorOrderNotify {
 @Injectable()
 export class VendorNotifyService {
   private readonly logger = new Logger(VendorNotifyService.name);
+  private botFailureCounts = new Map<string, { count: number; firstAt: number }>();
 
   constructor(
     private openwa: OpenwaService,
@@ -99,6 +100,44 @@ export class VendorNotifyService {
       `Atiéndelo desde el inbox de WhatsApp en el dashboard.`;
 
     await this.sendToVendors(phones, text, `handoff ${data.chatId}`);
+  }
+
+  async trackBotFailure(data: {
+    chatId: string;
+    customerPhone?: string | null;
+    error: string;
+  }): Promise<void> {
+    const now = Date.now();
+    const windowMs = 5 * 60 * 1000;
+    const entry = this.botFailureCounts.get(data.chatId);
+    if (!entry || now - entry.firstAt > windowMs) {
+      this.botFailureCounts.set(data.chatId, { count: 1, firstAt: now });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count < 2) return;
+
+    this.botFailureCounts.delete(data.chatId);
+    await this.notifyBotError(data);
+  }
+
+  async notifyBotError(data: {
+    chatId: string;
+    customerPhone?: string | null;
+    error: string;
+  }): Promise<void> {
+    const phones = this.getVendorPhones();
+    if (phones.length === 0) return;
+
+    const phone = data.customerPhone?.trim() || 'cliente';
+    const text =
+      `⚠️ *Bot falló con cliente*\n\n` +
+      `*Tel:* ${phone}\n` +
+      `*Chat:* ${data.chatId}\n` +
+      `*Error:* ${data.error.slice(0, 200)}\n\n` +
+      `Revisa la bandeja de WhatsApp → Actividad del bot.`;
+
+    await this.sendToVendors(phones, text, `bot-error ${data.chatId}`);
   }
 
   private async sendToVendors(phones: string[], text: string, label: string): Promise<void> {

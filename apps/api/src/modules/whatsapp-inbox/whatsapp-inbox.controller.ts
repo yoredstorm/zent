@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WaMessageService } from './wa-message.service';
 import { OpenwaService } from '../openwa/openwa.service';
+import { BotTurnLogService } from '../whatsapp-bot/bot-turn-log.service';
 import { SendWaMessageDto } from './dto/send-message.dto';
 import { SendWaMediaDto } from './dto/send-media.dto';
 
@@ -15,6 +16,7 @@ export class WhatsappInboxController {
   constructor(
     private waMessages: WaMessageService,
     private openwa: OpenwaService,
+    private turnLog: BotTurnLogService,
   ) {}
 
   @Get('conversations')
@@ -32,6 +34,12 @@ export class WhatsappInboxController {
   @ApiOperation({ summary: 'Conversation metadata (session, customer, order)' })
   getMeta(@Param('chatId') chatId: string) {
     return this.waMessages.getConversationMeta(chatId);
+  }
+
+  @Get('conversations/:chatId/activity')
+  @ApiOperation({ summary: 'Bot turn activity log (tools, errors)' })
+  getActivity(@Param('chatId') chatId: string, @Query('limit') limit?: string) {
+    return this.turnLog.listForChat(chatId, limit ? parseInt(limit, 10) : 50);
   }
 
   @Post('conversations/:chatId/sync')

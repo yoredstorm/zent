@@ -182,6 +182,24 @@ model ChatSession {
   @@map("chat_sessions")
 }
 
+model BotTurnLog {
+  id               String   @id @default(uuid())
+  stateKey         String
+  chatId           String
+  waSessionId      String?
+  mode             String
+  userMessage      String?  @db.Text
+  assistantMessage String?  @db.Text
+  toolsJson        Json?
+  error            String?  @db.Text
+  durationMs       Int?
+  createdAt        DateTime @default(now())
+
+  @@index([chatId, createdAt])
+  @@index([stateKey, createdAt])
+  @@map("bot_turn_logs")
+}
+
 model WaMessage {
   id           String   @id @default(uuid())
   chatId       String

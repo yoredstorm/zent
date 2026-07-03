@@ -136,4 +136,23 @@ export class ChatSessionService {
       data: { contextJson: Object.keys(ctx).length ? JSON.stringify(ctx) : null },
     });
   }
+
+  async setPendingProduct(chatId: string, productId: string): Promise<void> {
+    await this.updateContext(chatId, { pendingProductId: productId });
+  }
+
+  async getPendingProduct(chatId: string): Promise<string | null> {
+    const ctx = await this.getContext(chatId);
+    const id = ctx.pendingProductId;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  }
+
+  async clearPendingProduct(chatId: string): Promise<void> {
+    const ctx = await this.getContext(chatId);
+    delete ctx.pendingProductId;
+    await this.prisma.chatSession.update({
+      where: { chatId },
+      data: { contextJson: Object.keys(ctx).length ? JSON.stringify(ctx) : null },
+    });
+  }
 }
