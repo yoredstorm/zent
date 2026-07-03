@@ -3,7 +3,7 @@
  * Requiere variables de entorno; no ejecutar en producción con credenciales reales en el repo.
  *
  * Uso:
- *   SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=changeme node seed.js
+ *   SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=changeme node seed.js siempre
  */
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
