@@ -1,6 +1,12 @@
+import { OPTIONAL_DEPS_METADATA } from '@nestjs/common/constants';
 import { WorkflowEventsService } from './workflow-events.service';
 
 describe('WorkflowEventsService', () => {
+  it('marks the injectable fetch override as optional for Nest DI', () => {
+    const optionalDeps = Reflect.getMetadata(OPTIONAL_DEPS_METADATA, WorkflowEventsService) ?? [];
+    expect(optionalDeps).toContain(1);
+  });
+
   it('signs payloads with HMAC SHA256', async () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
     const config = {

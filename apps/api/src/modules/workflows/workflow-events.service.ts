@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+
+export const WORKFLOW_FETCH = Symbol('WORKFLOW_FETCH');
 
 export type WorkflowEventName =
   | 'order.created'
@@ -16,6 +18,8 @@ export class WorkflowEventsService {
 
   constructor(
     private config: ConfigService,
+    @Optional()
+    @Inject(WORKFLOW_FETCH)
     private fetchImpl: typeof fetch = fetch,
   ) {}
 
