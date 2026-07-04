@@ -1,5 +1,36 @@
 # Verificación post-deploy (VPS / Dokploy)
 
+## Produccion: evitar /setup en cada redeploy
+
+Si cada redeploy te manda otra vez al wizard de instalacion, revisa en **Dokploy → Environment**:
+
+```env
+ADMIN_FORCE_RESET=false
+SETUP_FORCE_RESET=false
+```
+
+Con `ADMIN_FORCE_RESET=true` (o `SETUP_FORCE_RESET=true`), al arrancar `backend-api` se ejecuta [`seed.service.ts`](../apps/api/src/seed.service.ts) y pone `system_install.installed = false`. **No borra la base de datos**; solo reabre `/setup`.
+
+| Situacion | `ADMIN_FORCE_RESET` | `SETUP_FORCE_RESET` |
+|-----------|---------------------|---------------------|
+| Produccion normal | `false` | `false` |
+| Primer deploy / sync password admin | `true` **un solo** redeploy | `false` |
+| Reabrir wizard sin borrar DB | `false` | `true` **un solo** redeploy |
+
+Tras completar `/setup` o recuperar el sistema, **vuelve ambos a `false`** antes del siguiente redeploy.
+
+Verificar en Terminal de Dokploy:
+
+```bash
+curl -s http://localhost:3001/api/setup/status
+# "installed": true → login en :8080
+# "installed": false → completa /setup una vez con los flags ya en false
+```
+
+Plantilla de variables: [`infra/dokploy.env.example`](dokploy.env.example).
+
+---
+
 ## Instalacion limpia en Dokploy (antes del primer deploy)
 
 En el **servidor VPS** (Terminal Dokploy o SSH con `sudo`), desde la carpeta del repo:
@@ -97,7 +128,7 @@ Luego redeploy desde Dokploy.
 | Opción | Qué hacer |
 |--------|-----------|
 | A — Env (1 redeploy) | En Dokploy Environment: `SETUP_FORCE_RESET=true` → Redeploy → completa `/setup` → pon `false` y redeploy |
-| B — Env si ya tienes `ADMIN_FORCE_RESET=true` | Con el código reciente, `ADMIN_FORCE_RESET=true` también reabre `/setup` al arrancar el API. Tras el setup, pon `ADMIN_FORCE_RESET=false` |
+| B — Env si `ADMIN_FORCE_RESET=true` por error | Ese flag reabre `/setup` en **cada** arranque del API. Pon `ADMIN_FORCE_RESET=false` y redeploy (ver seccion [Produccion: evitar /setup en cada redeploy](#produccion-evitar-setup-en-cada-redeploy)) |
 | C — Terminal | Ver sección [Reset completo](#reset-completo-empezar-de-cero) → `reset-setup-flag.sh` |
 | D — Borrar DB | `docker volume rm -f zent_postgres_prod` y redeploy |
 
@@ -174,7 +205,12 @@ JWT_SECRET=your-jwt-secret-here
 JWT_REFRESH_SECRET=your-refresh-secret-here
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=changeme
-ADMIN_FORCE_RESET=true
+# Solo true en el primer deploy o recuperacion; en produccion debe ser false
+ADMIN_FORCE_RESET=false
+SETUP_FORCE_RESET=false
+PUBLIC_HOST=tu-ip-o-dominio
+NEXT_PUBLIC_GRAFANA_URL=http://tu-ip-o-dominio:3002
+NEXT_PUBLIC_PROMETHEUS_URL=http://tu-ip-o-dominio:9090
 API_MASTER_KEY=owa_k1_...
 OPENWA_API_KEY=owa_k1_...
 OPENWA_WEBHOOK_SECRET=webhook-secret-change-me
@@ -280,7 +316,8 @@ docker logs $(docker ps -q -f name=backend-api) --tail 80
 |---|---|---|
 | `backend-api` en `Restarting` / `Exited` | `DATABASE_URL` vacía o Postgres caído | Revisar Environment en Dokploy (sin comentarios `#`), redeploy |
 | Logs: `PrismaClientInitializationError` | URL de DB incorrecta | `DATABASE_URL=postgresql://inventario:changeme@postgres:5432/inventario` |
-| `:3001/api/health` OK pero login 401 | Admin no creado o password vieja | `ADMIN_FORCE_RESET=true` y redeploy |
+| `:3001/api/health` OK pero login 401 | Admin no creado o password vieja | `ADMIN_FORCE_RESET=true` en **un** redeploy, completa login; luego `false` |
+| Cada redeploy vuelve a `/setup` | `ADMIN_FORCE_RESET=true` o `SETUP_FORCE_RESET=true` en Environment | Pon ambos en `false` y redeploy; ver [Produccion: evitar /setup en cada redeploy](#produccion-evitar-setup-en-cada-redeploy) |
 | `:8080/api/health` 500 y `:3001` falla | API caída | Arreglar `backend-api` primero |
 
 **En Dokploy Environment:** no uses líneas con `#` (comentarios). Algunos paneles las interpretan mal. Pega solo variables `KEY=value`.
@@ -325,7 +362,7 @@ curl -s http://${PUBLIC_HOST}:3001/health   # bot-worker si expuesto internament
 
 - URL: http://${PUBLIC_HOST}:8080
 - Credenciales: `ADMIN_EMAIL` / `ADMIN_PASSWORD` de Dokploy
-- Con `ADMIN_FORCE_RESET=true` en el primer deploy se sincroniza la contraseña
+- En el **primer** deploy puedes usar `ADMIN_FORCE_RESET=true` una vez para sincronizar la contraseña; luego pon `false` (si queda en `true`, cada redeploy reabre `/setup`)
 
 ## 4. Grafana — dashboards y logs
 
