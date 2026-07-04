@@ -540,7 +540,7 @@ Cuando el asistente IA (Novita) esta activo, el bot debe responder de forma **co
 1. **Dashboard** → Configuracion → Asistente IA: activar asistente + `NOVITA_BOT_ENABLED`, API key y saldo Novita.
 2. Al guardar, el backend sincroniza el plugin OpenWA **zent-flow** con `passThrough=true` (no intercepta mensajes).
 3. Los mensajes llegan al webhook → worker → `BotAiOrchestratorService`.
-4. Si la IA esta apagada o sin saldo, zent-flow vuelve a `passThrough=false` y muestra el menu numerico.
+4. Si la IA esta configurada pero el saldo no se puede leer o esta bajo, el bot mantiene ruta IA y muestra advertencias en dashboard; no debe volver silenciosamente al menu numerico.
 
 ### Checklist post-deploy
 
@@ -556,7 +556,31 @@ Cuando el asistente IA (Novita) esta activo, el bot debe responder de forma **co
 |----------|-----|
 | `NOVITA_BOT_ENABLED` | Habilita ruta IA en el servidor |
 | `NOVITA_API_KEY` | Clave Novita (secreto) |
+| `NOVITA_MIN_BALANCE_USD` | Saldo minimo operativo (default `0.01`) |
+| `NOVITA_LOW_BALANCE_ALERT_USD` | Umbral para alerta al vendedor (default `3`) |
+| `NOVITA_LOW_BALANCE_ALERT_COOLDOWN_MINUTES` | Minutos para no duplicar alertas de saldo bajo |
 | `ZENT_FLOW_PLUGIN_ENABLED` | Plugin instalado en OpenWA (prod default `true`) |
+
+### Diagnostico de inbox y webhook
+
+Si OpenWA muestra mensajes pero el dashboard no muestra conversaciones:
+
+1. Abrir `/dashboard/whatsapp`.
+2. Revisar el bloque **Diagnostico** del estado vacio.
+3. Verificar:
+   - `Ultimo webhook`: debe tener hora reciente.
+   - `Estado`: `queued` o `stored`.
+   - `Mensajes DB`: mayor que `0` tras recibir mensajes.
+   - `Webhook esperado`: `http://backend-api:3000/api/webhooks/openwa`.
+4. Usar **Sincronizar recientes** para intentar importar ultimos chats desde OpenWA.
+
+Endpoints utiles:
+
+| Endpoint | Uso |
+|----------|-----|
+| `GET /whatsapp/diagnostics` | Ultimo webhook, razon ignorada, contadores DB |
+| `POST /whatsapp/sync/recent` | Importacion best-effort de chats recientes OpenWA |
+| `GET /settings/bot-ai/balance?force=1` | Saldo Novita y estado de alerta |
 
 ### Plugin zent-flow no encontrado (404)
 
@@ -628,6 +652,92 @@ Si el mismo chat falla **2+ veces en 5 minutos**, se envia WhatsApp a `VENDOR_NO
 {service="bot-worker"} |= "Error processing"
 {service="backend-api"} |= "AI turn failed"
 ```
+
+---
+
+## n8n como motor de workflows IA
+
+Zent mantiene el backend como fuente de verdad para catalogo, stock, carrito, pagos y pedidos. La IA conversa y usa tools del backend; el backend emite eventos firmados a n8n para automatizaciones externas como validacion de pagos, delivery, CRM y avisos.
+
+### Variables
+
+```env
+N8N_WORKFLOWS_ENABLED=true
+N8N_WEBHOOK_BASE_URL=https://n8n.example.com/webhook/zent
+N8N_WEBHOOK_SECRET=strong-secret
+BOT_AI_PAYMENT_METHODS=Transferencia, Yape/Plin o pago contra entrega
+BOT_AI_ORDER_STATUSES=NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.
+BOT_AI_WORKFLOW_POLICIES=Si el cliente envía referencia de pago, registra la referencia y espera validación del vendedor o automatización.
+```
+
+### Dashboard
+
+1. Abrir **Configuracion → Asistente IA → Automatizaciones n8n**.
+2. Activar n8n, configurar `Webhook base URL` y `Secreto HMAC`.
+3. Guardar cambios.
+4. Usar **Probar n8n**: envia `test.ping` a `${N8N_WEBHOOK_BASE_URL}/test.ping`.
+
+### Eventos enviados
+
+| Evento | Cuando ocurre | Uso sugerido |
+|--------|---------------|--------------|
+| `order.created` | Se crea un pedido | Avisar vendedor, CRM, task delivery |
+| `payment.reference_submitted` | Cliente envia referencia de pago | Validar pago o pedir revision humana |
+| `order.status_changed` | Cambia estado del pedido | Notificar cliente/vendedor |
+| `handoff.requested` | Cliente pide humano | Avisar vendedor |
+| `novita.low_balance` | Saldo Novita bajo umbral | Alertar owner |
+| `test.ping` | Boton dashboard | Verificar conectividad |
+
+Payload saliente:
+
+```json
+{
+  "event": "order.created",
+  "payload": {
+    "orderId": "...",
+    "shortId": "abcd1234",
+    "status": "NUEVO",
+    "total": 120,
+    "customerPhone": "51999999999",
+    "source": "WHATSAPP"
+  },
+  "sentAt": "2026-07-03T00:00:00.000Z"
+}
+```
+
+Headers salientes:
+
+```http
+Content-Type: application/json
+X-Zent-Event: order.created
+X-Zent-Signature: sha256=<hmac-sha256-del-body-con-N8N_WEBHOOK_SECRET>
+```
+
+### Callback desde n8n
+
+Endpoint:
+
+```http
+POST /api/webhooks/n8n/order-status
+X-Zent-Signature: sha256=<hmac-sha256-del-body>
+```
+
+Body:
+
+```json
+{
+  "orderId": "...",
+  "status": "CONFIRMADO",
+  "note": "Pago validado por n8n"
+}
+```
+
+Guardrails:
+
+- n8n no modifica stock directamente.
+- n8n solo puede enviar estados existentes en `OrderStatus`.
+- La IA no debe afirmar que un pago fue validado hasta que backend/n8n lo confirme.
+- Si n8n esta caido, el pedido igual se crea y queda visible en dashboard.
 
 ---
 

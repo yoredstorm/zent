@@ -1,4 +1,5 @@
 import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { normalizePhone } from '../customers/customers.service';
@@ -14,6 +15,13 @@ import {
 import { messagePreview, parseOpenWaMessage } from './wa-message-mapper.util';
 
 export type WaMessageSource = 'customer' | 'bot' | 'agent' | 'system';
+export type WebhookDiagnosticStatus = 'queued' | 'stored' | 'ignored';
+
+interface WebhookDiagnostic {
+  at: string;
+  status: WebhookDiagnosticStatus;
+  ignoredReason: string | null;
+}
 
 export interface WaConversationSummary {
   chatId: string;
@@ -51,6 +59,7 @@ export class WaMessageService {
   private readonly lastSyncAt = new Map<string, number>();
   private static readonly SYNC_THROTTLE_MS = 30_000;
   private chatHistoryApiUnavailable = false;
+  private lastWebhookDiagnostic: WebhookDiagnostic | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -58,7 +67,102 @@ export class WaMessageService {
     @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
     private cartHold: CartHoldService,
+    private config: ConfigService,
   ) {}
+
+  recordWebhookDiagnostic(status: WebhookDiagnosticStatus, ignoredReason?: string | null) {
+    this.lastWebhookDiagnostic = {
+      at: new Date().toISOString(),
+      status,
+      ignoredReason: ignoredReason ?? null,
+    };
+  }
+
+  async getDiagnostics() {
+    const [waMessageCount, chatSessionCount] = await Promise.all([
+      this.prisma.waMessage.count(),
+      this.prisma.chatSession.count(),
+    ]);
+    let openwaSessionId: string | null = null;
+    try {
+      openwaSessionId = await this.openwa.resolveSessionId();
+    } catch {
+      openwaSessionId = null;
+    }
+
+    return {
+      lastWebhookAt: this.lastWebhookDiagnostic?.at ?? null,
+      lastWebhookStatus: this.lastWebhookDiagnostic?.status ?? null,
+      lastIgnoredReason: this.lastWebhookDiagnostic?.ignoredReason ?? null,
+      waMessageCount,
+      chatSessionCount,
+      openwaSessionId,
+      openwaWebhookUrlExpected: this.config.get<string>(
+        'OPENWA_WEBHOOK_URL',
+        'http://backend-api:3000/api/webhooks/openwa',
+      ),
+    };
+  }
+
+  private unwrapChatList(raw: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>;
+    if (raw && typeof raw === 'object') {
+      const obj = raw as Record<string, unknown>;
+      if (Array.isArray(obj.data)) return obj.data as Array<Record<string, unknown>>;
+      if (Array.isArray(obj.chats)) return obj.chats as Array<Record<string, unknown>>;
+    }
+    return [];
+  }
+
+  private chatIdFromOpenWaChat(chat: Record<string, unknown>): string | null {
+    const candidates = [
+      chat.id,
+      chat.chatId,
+      chat.from,
+      chat.to,
+      (chat.contact as Record<string, unknown> | undefined)?.id,
+      (chat.contact as Record<string, unknown> | undefined)?.chatId,
+    ];
+    const id = candidates.find((v) => typeof v === 'string' && v.includes('@'));
+    return typeof id === 'string' ? id : null;
+  }
+
+  async syncRecentFromOpenWA(limit = 20) {
+    let sessionId: string;
+    try {
+      sessionId = await this.openwa.resolveSessionId();
+    } catch (err: any) {
+      return { ok: false, synced: 0, reason: 'openwa_session_unavailable', error: err?.message };
+    }
+
+    let chats: Array<Record<string, unknown>>;
+    try {
+      const raw = await this.openwa.apiRequest<unknown>(
+        `/api/sessions/${sessionId}/chats?limit=${Math.min(limit, 50)}`,
+      );
+      chats = this.unwrapChatList(raw);
+    } catch (err: any) {
+      return {
+        ok: false,
+        synced: 0,
+        reason: 'chat_list_api_unavailable',
+        error: err?.message || String(err),
+      };
+    }
+
+    let synced = 0;
+    let attempted = 0;
+    for (const chat of chats.slice(0, Math.min(limit, 50))) {
+      const waChatId = this.chatIdFromOpenWaChat(chat);
+      if (!waChatId) continue;
+      attempted += 1;
+      const convId = buildConversationId(waChatId, sessionId);
+      const result = await this.syncFromOpenWA(convId, { limit: 20, force: true });
+      synced += result.synced ?? 0;
+    }
+
+    return { ok: true, attempted, synced };
+  }
 
   private canonicalWaChatId(chatId: string): string {
     return parseWaConversationId(chatId).waChatId;

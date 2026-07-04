@@ -30,6 +30,18 @@ export class WhatsappInboxController {
     }
   }
 
+  @Get('diagnostics')
+  @ApiOperation({ summary: 'WhatsApp inbox and webhook diagnostics' })
+  diagnostics() {
+    return this.waMessages.getDiagnostics();
+  }
+
+  @Post('sync/recent')
+  @ApiOperation({ summary: 'Best-effort sync recent chats from OpenWA' })
+  syncRecent(@Query('limit') limit?: string) {
+    return this.waMessages.syncRecentFromOpenWA(limit ? parseInt(limit, 10) : 20);
+  }
+
   @Get('conversations/:chatId/meta')
   @ApiOperation({ summary: 'Conversation metadata (session, customer, order)' })
   getMeta(@Param('chatId') chatId: string) {

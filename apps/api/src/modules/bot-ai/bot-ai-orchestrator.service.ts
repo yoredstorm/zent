@@ -282,6 +282,19 @@ export class BotAiOrchestratorService {
           return await this.commerce.removeFromCart(ctx, String(args.productId));
         case 'get_checkout_draft':
           return await this.commerce.getCheckoutDraft(ctx);
+        case 'get_payment_methods':
+          return await this.commerce.getPaymentMethods();
+        case 'find_customer_orders':
+          return await this.commerce.findCustomerOrders(ctx, Number(args.limit) || 5);
+        case 'get_order_status':
+          return await this.commerce.getOrderStatus(ctx, String(args.orderId));
+        case 'submit_payment_reference':
+          return await this.commerce.submitPaymentReference(
+            ctx,
+            String(args.orderId),
+            String(args.reference),
+            args.method ? String(args.method) : undefined,
+          );
         case 'save_checkout_field':
           return await this.commerce.saveCheckoutField(
             ctx,

@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { SettingsService } from './settings.service';
@@ -63,10 +63,24 @@ export class BotAiSettingsController {
     return this.settings.getBotAiVariables();
   }
 
+  @Get('balance')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Get Novita balance and low-balance alert state' })
+  balance(@Query('force') force?: string) {
+    return this.settings.getBotAiBalance(force === '1' || force === 'true');
+  }
+
   @Post('sync-openwa')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Sync zent-flow plugin with active bot mode' })
   syncOpenwa() {
     return this.settings.syncZentFlowPlugin();
+  }
+
+  @Post('test-n8n')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Send a test event to n8n workflows' })
+  testN8n() {
+    return this.settings.testN8n();
   }
 }

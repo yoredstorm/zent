@@ -13,6 +13,7 @@ const SECRET_KEYS = [
   'OPENWA_WEBHOOK_SECRET',
   'GF_SECURITY_ADMIN_PASSWORD',
   'NOVITA_API_KEY',
+  'N8N_WEBHOOK_SECRET',
 ] as const;
 
 /** Variables de configuracion no secreta incluidas en credenciales-zent.txt. */
@@ -44,6 +45,11 @@ const CONFIG_KEYS = [
   'NOVITA_BASE_URL',
   'NOVITA_MODEL',
   'NOVITA_MIN_BALANCE_USD',
+  'N8N_WORKFLOWS_ENABLED',
+  'N8N_WEBHOOK_BASE_URL',
+  'BOT_AI_PAYMENT_METHODS',
+  'BOT_AI_ORDER_STATUSES',
+  'BOT_AI_WORKFLOW_POLICIES',
 ] as const;
 
 /** Valores placeholder conocidos que NO deben considerarse secretos validos. */

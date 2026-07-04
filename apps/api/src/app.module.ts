@@ -21,6 +21,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
+import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { HealthController } from './health.controller';
 import { SeedService } from './seed.service';
 
@@ -46,6 +47,7 @@ import { SeedService } from './seed.service';
     SetupModule,
     SettingsModule,
     UsersModule,
+    WorkflowsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService, SeedService],

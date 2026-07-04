@@ -12,6 +12,18 @@ const quickChecks = [
     query: '{service=~"backend-api|bot-worker"}',
   },
   {
+    label: 'Webhooks guardados',
+    query: '{service="backend-api"} |= "Webhook stored inbound"',
+  },
+  {
+    label: 'Webhooks ignorados',
+    query: '{service="backend-api"} |= "Webhook ignored"',
+  },
+  {
+    label: 'Routing legacy',
+    query: '{service="bot-worker"} |= "mode=legacy"',
+  },
+  {
     label: 'Errores globales',
     query: '{container=~".*backend-api.*|.*bot-worker.*|.*openwa.*|.*frontend.*"} |~ "(?i)(error|failed|exception|fatal)"',
   },

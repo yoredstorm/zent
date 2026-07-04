@@ -59,6 +59,16 @@ interface BotTurnLog {
   createdAt: string;
 }
 
+interface WhatsAppDiagnostics {
+  lastWebhookAt: string | null;
+  lastWebhookStatus: 'queued' | 'stored' | 'ignored' | null;
+  lastIgnoredReason: string | null;
+  waMessageCount: number;
+  chatSessionCount: number;
+  openwaSessionId: string | null;
+  openwaWebhookUrlExpected: string;
+}
+
 const QUICK_EMOJIS = ['😀', '😂', '👍', '❤️', '🙏', '✅', '🎉', '😊', '👋', '🔥'];
 
 const FILTER_OPTIONS: { id: InboxFilter; label: string }[] = [
@@ -178,6 +188,8 @@ export default function WhatsAppPage() {
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingRecent, setSyncingRecent] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<WhatsAppDiagnostics | null>(null);
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState('');
   const [openwaUrl, setOpenwaUrl] = useState<string | null>(null);
@@ -191,6 +203,13 @@ export default function WhatsAppPage() {
       toast.error('No se pudo cargar conversaciones');
     });
   }, [filter]);
+
+  const loadDiagnostics = useCallback(() => {
+    api
+      .get<WhatsAppDiagnostics>('/whatsapp/diagnostics')
+      .then(setDiagnostics)
+      .catch(() => setDiagnostics(null));
+  }, []);
 
   const loadMessages = useCallback(async (chatId: string, showLoader = true, sync = false) => {
     if (showLoader) setLoadingMessages(true);
@@ -223,7 +242,8 @@ export default function WhatsAppPage() {
 
   useEffect(() => {
     loadConversations();
-  }, [loadConversations]);
+    loadDiagnostics();
+  }, [loadConversations, loadDiagnostics]);
 
   useEffect(() => {
     api.get('/openwa/config').then((c) => setOpenwaUrl(c.publicUrl)).catch(() => {});
@@ -282,6 +302,26 @@ export default function WhatsAppPage() {
       toast.error('No se pudo sincronizar con OpenWA');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSyncRecent = async () => {
+    setSyncingRecent(true);
+    try {
+      const result = await api.post<{ ok: boolean; synced?: number; reason?: string; error?: string }>(
+        '/whatsapp/sync/recent?limit=20',
+      );
+      if (result.ok) {
+        toast.success(`Sincronización reciente: ${result.synced ?? 0} mensaje(s)`);
+      } else {
+        toast.error(result.reason || result.error || 'OpenWA no expuso lista de chats');
+      }
+      loadConversations();
+      loadDiagnostics();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo sincronizar recientes');
+    } finally {
+      setSyncingRecent(false);
     }
   };
 
@@ -409,11 +449,49 @@ export default function WhatsAppPage() {
             </div>
             <div className="flex-1 overflow-y-auto">
               {conversations.length === 0 ? (
-                <EmptyState
-                  icon={MessageCircle}
-                  title="Sin conversaciones"
-                  description="Abre un chat para sincronizar desde OpenWA."
-                />
+                <div className="space-y-4 p-4">
+                  <EmptyState
+                    icon={MessageCircle}
+                    title="Sin conversaciones"
+                    description={
+                      diagnostics?.lastWebhookAt
+                        ? 'El backend recibió webhooks, pero aún no hay conversaciones listadas.'
+                        : 'No se han registrado webhooks recientes desde OpenWA.'
+                    }
+                  />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                    <div className="mb-2 font-semibold text-slate-800">Diagnóstico</div>
+                    <div>Último webhook: {diagnostics?.lastWebhookAt ? formatTime(diagnostics.lastWebhookAt) : 'ninguno'}</div>
+                    <div>Estado: {diagnostics?.lastWebhookStatus ?? 'sin datos'}</div>
+                    {diagnostics?.lastIgnoredReason && (
+                      <div>Ignorado por: {diagnostics.lastIgnoredReason}</div>
+                    )}
+                    <div>Mensajes DB: {diagnostics?.waMessageCount ?? 0}</div>
+                    <div>Sesiones chat DB: {diagnostics?.chatSessionCount ?? 0}</div>
+                    <div>OpenWA session: {diagnostics?.openwaSessionId ?? 'no disponible'}</div>
+                    <div className="mt-2 break-all">
+                      Webhook esperado: {diagnostics?.openwaWebhookUrlExpected ?? 'no configurado'}
+                    </div>
+                    {!diagnostics?.lastWebhookAt && (
+                      <div className="mt-2 rounded-lg bg-amber-50 p-2 text-amber-800">
+                        Revisa `OPENWA_WEBHOOK_URL` y logs de `backend-api`.
+                      </div>
+                    )}
+                    {diagnostics?.waMessageCount && diagnostics.waMessageCount > 0 ? (
+                      <div className="mt-2 rounded-lg bg-amber-50 p-2 text-amber-800">
+                        Hay mensajes en DB pero no aparecen aquí; revisa normalización de chatId/session.
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" onClick={loadConversations}>
+                      Actualizar conversaciones
+                    </Button>
+                    <Button type="button" variant="secondary" loading={syncingRecent} onClick={handleSyncRecent}>
+                      Sincronizar recientes
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 conversations.map((c) => (
                   <button

@@ -7,9 +7,10 @@ import { NovitaBalanceService } from './novita-balance.service';
 import { InventoryModule } from '../inventory/inventory.module';
 import { CustomersModule } from '../customers/customers.module';
 import { OrdersModule } from '../orders/orders.module';
+import { WorkflowsModule } from '../workflows/workflows.module';
 
 @Module({
-  imports: [InventoryModule, CustomersModule, OrdersModule],
+  imports: [InventoryModule, CustomersModule, OrdersModule, WorkflowsModule],
   providers: [
     NovitaBalanceService,
     BotCatalogContextService,

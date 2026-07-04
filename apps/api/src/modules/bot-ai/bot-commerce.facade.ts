@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../whatsapp-bot/cart.service';
 import { CartHoldService } from '../inventory/cart-hold.service';
@@ -12,6 +13,7 @@ import {
 } from '../whatsapp-bot/chat-session.service';
 import { ChatState } from '@prisma/client';
 import type { Cart } from '../whatsapp-bot/cart.types';
+import { WorkflowEventsService } from '../workflows/workflow-events.service';
 
 export interface BotCommerceContext {
   stateKey: string;
@@ -31,6 +33,8 @@ export class BotCommerceFacade {
     private orders: OrdersService,
     private vendorNotify: VendorNotifyService,
     private chatSession: ChatSessionService,
+    private config: ConfigService,
+    private workflowEvents: WorkflowEventsService,
   ) {}
 
   async listCategories() {
@@ -258,6 +262,122 @@ export class BotCommerceFacade {
     };
   }
 
+  async getPaymentMethods() {
+    return {
+      methods:
+        this.config.get<string>('BOT_AI_PAYMENT_METHODS', '').trim() ||
+        'Transferencia, Yape/Plin o pago contra entrega',
+      requiresValidation: true,
+      note: 'Registra la referencia de pago y espera validación antes de confirmar que el pago fue aprobado.',
+    };
+  }
+
+  async findCustomerOrders(ctx: BotCommerceContext, limit = 5) {
+    const phone = ctx.contactPhone?.replace(/\D/g, '');
+    if (!phone || phone.length < 8) {
+      return { orders: [], message: 'No pude identificar tu teléfono de WhatsApp.' };
+    }
+
+    const rows = await this.prisma.order.findMany({
+      where: { customerPhone: { contains: phone.slice(-9) } },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 10),
+      include: { items: { include: { product: true } } },
+    });
+
+    return {
+      orders: rows.map((o) => ({
+        id: o.id,
+        shortId: o.id.slice(0, 8),
+        status: o.status,
+        total: Number(o.total),
+        createdAt: o.createdAt,
+        items: o.items.map((i) => ({
+          quantity: i.quantity,
+          productName: i.product?.nombre ?? 'Producto',
+        })),
+      })),
+    };
+  }
+
+  private async findCustomerOrder(ctx: BotCommerceContext, orderId: string) {
+    const clean = orderId.trim();
+    const phone = ctx.contactPhone?.replace(/\D/g, '');
+    const where = {
+      AND: [
+        clean.length >= 8
+          ? { OR: [{ id: clean }, { id: { startsWith: clean } }] }
+          : { id: clean },
+        phone && phone.length >= 8 ? { customerPhone: { contains: phone.slice(-9) } } : {},
+      ],
+    };
+    return this.prisma.order.findFirst({
+      where,
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getOrderStatus(ctx: BotCommerceContext, orderId: string) {
+    const order = await this.findCustomerOrder(ctx, orderId);
+    if (!order) {
+      return { error: 'No encontré ese pedido para tu número de WhatsApp.' };
+    }
+
+    return {
+      id: order.id,
+      shortId: order.id.slice(0, 8),
+      status: order.status,
+      total: Number(order.total),
+      paymentMethod: order.paymentMethod,
+      createdAt: order.createdAt,
+      items: order.items.map((i) => ({
+        quantity: i.quantity,
+        productName: i.product?.nombre ?? 'Producto',
+      })),
+    };
+  }
+
+  async submitPaymentReference(
+    ctx: BotCommerceContext,
+    orderId: string,
+    reference: string,
+    method?: string,
+  ) {
+    const order = await this.findCustomerOrder(ctx, orderId);
+    if (!order) {
+      return { error: 'No encontré ese pedido para tu número de WhatsApp.' };
+    }
+
+    const cleanReference = reference.trim();
+    if (!cleanReference) return { error: 'La referencia de pago está vacía.' };
+
+    const noteLine = `[Pago IA] ${method ? `${method}: ` : ''}${cleanReference}`;
+    const updated = await this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        ...(method?.trim() ? { paymentMethod: method.trim() } : {}),
+        notes: [order.notes, noteLine].filter(Boolean).join('\n'),
+      },
+    });
+
+    await this.workflowEvents.emit('payment.reference_submitted', {
+      orderId: updated.id,
+      shortId: updated.id.slice(0, 8),
+      method: method?.trim() || null,
+      reference: cleanReference,
+      customerPhone: updated.customerPhone,
+    });
+
+    return {
+      ok: true,
+      orderId: updated.id,
+      shortId: updated.id.slice(0, 8),
+      status: updated.status,
+      message: 'Referencia registrada. Esperaremos validación antes de confirmar el pago.',
+    };
+  }
+
   async saveCheckoutField(
     ctx: BotCommerceContext,
     field: keyof CheckoutDraft,
@@ -392,6 +512,12 @@ export class BotCommerceFacade {
       customerName: existing?.name ?? undefined,
       customerPhone: existing?.phone ?? phone ?? undefined,
       waSessionId: ctx.waSessionId,
+    });
+    void this.workflowEvents.emit('handoff.requested', {
+      chatId: ctx.chatId,
+      customerName: existing?.name ?? null,
+      customerPhone: existing?.phone ?? phone ?? null,
+      waSessionId: ctx.waSessionId ?? null,
     });
 
     return { ok: true, handoff: true };

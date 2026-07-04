@@ -39,6 +39,7 @@ export class WhatsappBotController {
       const payload = JSON.stringify(body);
       if (!this.openwa.verifyWebhookSignature(signature, payload)) {
         this.logger.warn('Webhook rejected: invalid signature');
+        this.waMessages.recordWebhookDiagnostic('ignored', 'invalid_signature');
         return { status: 'invalid_signature' };
       }
     }
@@ -48,6 +49,8 @@ export class WhatsappBotController {
 
     if (event && event !== 'message.received') {
       this.logger.log(`Webhook ignored: event=${event}`);
+      this.logger.warn('Webhook ignored reason=event chatId=missing');
+      this.waMessages.recordWebhookDiagnostic('ignored', 'event');
       return { status: 'ignored', reason: 'event' };
     }
 
@@ -81,12 +84,16 @@ export class WhatsappBotController {
 
     if (!chatId) {
       this.logger.log('Webhook ignored: missing chatId');
+      this.logger.warn('Webhook ignored reason=missing_chatId chatId=missing');
+      this.waMessages.recordWebhookDiagnostic('ignored', 'missing_chatId');
       return { status: 'ignored', reason: 'missing_chatId' };
     }
 
     const hasContent = !!(messageBody || caption || mediaUrl || hasMedia || messageType !== 'text');
     if (!hasContent) {
       this.logger.log(`Webhook ignored: empty message (chatId=${chatId})`);
+      this.logger.warn(`Webhook ignored reason=missing_fields chatId=${chatId}`);
+      this.waMessages.recordWebhookDiagnostic('ignored', 'missing_fields');
       return { status: 'ignored', reason: 'missing_fields' };
     }
 
@@ -111,6 +118,8 @@ export class WhatsappBotController {
       } catch (err) {
         this.logger.warn(`Failed to persist fromMe message: ${err}`);
       }
+      this.logger.log(`Webhook stored inbound chatId=${chatId} session=${waSessionId ?? 'auto'} type=${messageType}`);
+      this.waMessages.recordWebhookDiagnostic('stored');
       return { status: 'stored', reason: 'fromMe' };
     }
 
@@ -131,8 +140,10 @@ export class WhatsappBotController {
     } catch (err) {
       this.logger.warn(`Failed to persist inbound message: ${err}`);
     }
+    this.logger.log(`Webhook stored inbound chatId=${chatId} session=${waSessionId ?? 'auto'} type=${messageType}`);
 
     if (!messageBody) {
+      this.waMessages.recordWebhookDiagnostic('stored');
       return { status: 'stored', reason: 'media_only' };
     }
 
@@ -155,6 +166,7 @@ export class WhatsappBotController {
     this.logger.log(
       `Enqueued message from ${chatId} session=${waSessionId ?? 'auto'} body="${messageBody.slice(0, 40)}"`,
     );
+    this.waMessages.recordWebhookDiagnostic('queued');
     return { status: 'queued' };
   }
 }

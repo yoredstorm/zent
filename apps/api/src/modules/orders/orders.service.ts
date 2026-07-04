@@ -8,6 +8,7 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { RealtimeService } from '../realtime/realtime.service';
 import { VendorNotifyService } from './vendor-notify.service';
 import { buildStatusNotifyMessage } from './order-notify.util';
+import { WorkflowEventsService } from '../workflows/workflow-events.service';
 
 @Injectable()
 export class OrdersService {
@@ -20,6 +21,7 @@ export class OrdersService {
     private stock: StockReservationService,
     private realtime: RealtimeService,
     private vendorNotify: VendorNotifyService,
+    private workflowEvents: WorkflowEventsService,
   ) {}
 
   async findAll(filters?: { status?: string; source?: string }) {
@@ -187,6 +189,15 @@ export class OrdersService {
       void this.vendorNotify.notifyNewOrder(full);
     }
 
+    void this.workflowEvents.emit('order.created', {
+      orderId: full.id,
+      shortId: full.id.slice(0, 8),
+      status: full.status,
+      total: Number(full.total),
+      customerPhone: full.customerPhone,
+      source: full.source,
+    });
+
     this.realtime.publish('order.created', {
       orderId: full.id,
       status: full.status,
@@ -318,6 +329,11 @@ export class OrdersService {
 
     if (dto.status && dto.status !== previous.status) {
       await this.notifyCustomerStatusChange(order, dto.status);
+      void this.workflowEvents.emit('order.status_changed', {
+        orderId: order.id,
+        status: order.status,
+        customerPhone: order.customerPhone,
+      });
     }
 
     this.realtime.publish('order.updated', {

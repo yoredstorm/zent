@@ -114,6 +114,60 @@ export const BOT_AI_TOOLS: ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'get_payment_methods',
+      description: 'Devuelve formas de pago disponibles y reglas para registrar referencia.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_customer_orders',
+      description: 'Busca pedidos recientes del cliente por teléfono WhatsApp.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_order_status',
+      description: 'Obtiene estado y resumen de un pedido por ID corto o completo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          orderId: { type: 'string' },
+        },
+        required: ['orderId'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'submit_payment_reference',
+      description: 'Registra referencia de pago para un pedido y dispara validación n8n.',
+      parameters: {
+        type: 'object',
+        properties: {
+          orderId: { type: 'string' },
+          reference: { type: 'string' },
+          method: { type: 'string' },
+        },
+        required: ['orderId', 'reference'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'save_checkout_field',
       description: 'Guarda un campo de entrega: customerName, customerPhone, address o reference.',
       parameters: {

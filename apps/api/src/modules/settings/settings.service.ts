@@ -9,6 +9,7 @@ import { SecretsService } from '../setup/secrets.service';
 import { fetchNovitaBalance, parseNovitaBalanceUsd } from '../bot-ai/novita.client';
 import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
 import { OpenwaPluginService } from '../openwa/openwa-plugin.service';
+import { WorkflowEventsService } from '../workflows/workflow-events.service';
 
 @Injectable()
 export class SettingsService {
@@ -27,6 +28,7 @@ export class SettingsService {
     private secrets: SecretsService,
     private botRouting: BotRoutingService,
     private openwaPlugin: OpenwaPluginService,
+    private workflowEvents: WorkflowEventsService,
   ) {}
 
   async getStore() {
@@ -62,23 +64,25 @@ export class SettingsService {
     const envEnabled =
       (process.env.NOVITA_BOT_ENABLED ?? this.config.get<string>('NOVITA_BOT_ENABLED', 'false')).trim() ===
       'true';
-    const balanceUsd = await this.novitaBalance.getAvailableBalanceUsd();
-    const activeBotMode = await this.botRouting.getMode();
+    const routingStatus = await this.botRouting.getStatus();
+    const balanceUsd = routingStatus.balanceUsd;
+    const activeBotMode = routingStatus.effectiveMode;
+    const desiredBotMode = routingStatus.desiredMode;
     const zentFlowInstalled = await this.openwaPlugin.isZentFlowInstalled();
 
     let zentFlowPassThrough: boolean | null = null;
     if (!zentFlowInstalled) {
-      zentFlowPassThrough = activeBotMode === 'ai' ? true : null;
+      zentFlowPassThrough = desiredBotMode === 'ai' ? true : null;
     } else {
       const zfConfig = await this.openwaPlugin.getZentFlowConfig();
       zentFlowPassThrough = zfConfig.passThrough === true;
     }
 
     let zentFlowSyncWarning: string | null = null;
-    if (!zentFlowInstalled && activeBotMode === 'legacy') {
+    if (!zentFlowInstalled && desiredBotMode === 'legacy') {
       zentFlowSyncWarning =
         'Plugin zent-flow no instalado en OpenWA. El menu numerico no funcionara hasta instalarlo.';
-    } else if (zentFlowInstalled && activeBotMode === 'ai' && zentFlowPassThrough === false) {
+    } else if (zentFlowInstalled && desiredBotMode === 'ai' && zentFlowPassThrough === false) {
       zentFlowSyncWarning =
         'zent-flow puede estar interceptando mensajes con menu numerico. Usa Sincronizar OpenWA.';
     }
@@ -92,12 +96,22 @@ export class SettingsService {
       novitaBotEnabled: envEnabled,
       novitaModel: this.config.get('NOVITA_MODEL', 'deepseek/deepseek-v3.2'),
       novitaBalanceUsd: balanceUsd,
-      hasSufficientBalance: balanceUsd !== null && balanceUsd >= this.minBalanceUsd(),
+      hasSufficientBalance: balanceUsd !== null && balanceUsd >= routingStatus.minBalanceUsd,
       activeBotMode,
+      desiredBotMode,
+      effectiveBotMode: routingStatus.effectiveMode,
+      routingReasons: routingStatus.reasons,
+      minBalanceUsd: routingStatus.minBalanceUsd,
       zentFlowInstalled,
       zentFlowPassThrough,
       zentFlowSyncOk: this.lastZentFlowSync?.ok ?? null,
+      zentFlowSyncAt: this.lastZentFlowSync?.at ?? null,
       zentFlowSyncWarning,
+      n8nWorkflowsEnabled:
+        this.config.get<string>('N8N_WORKFLOWS_ENABLED', 'false').trim() === 'true',
+      n8nWebhookBaseUrl: this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
+      n8nWebhookBaseUrlConfigured: !!this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
+      n8nWebhookSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
     };
   }
 
@@ -105,7 +119,14 @@ export class SettingsService {
     const current = await this.prisma.storeSettings.findFirst();
     if (!current) throw new NotFoundException('Tienda no configurada');
 
-    const { novitaApiKey, novitaBotEnabled, ...storeFields } = dto;
+    const {
+      novitaApiKey,
+      novitaBotEnabled,
+      n8nWorkflowsEnabled,
+      n8nWebhookBaseUrl,
+      n8nWebhookSecret,
+      ...storeFields
+    } = dto;
 
     await this.prisma.storeSettings.update({
       where: { id: current.id },
@@ -121,14 +142,26 @@ export class SettingsService {
       this.secrets.upsertEnvConfig('NOVITA_BOT_ENABLED', novitaBotEnabled ? 'true' : 'false');
     }
 
+    if (n8nWorkflowsEnabled !== undefined) {
+      this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', n8nWorkflowsEnabled ? 'true' : 'false');
+    }
+
+    if (n8nWebhookBaseUrl !== undefined) {
+      this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', n8nWebhookBaseUrl.trim());
+    }
+
+    if (n8nWebhookSecret?.trim()) {
+      this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', n8nWebhookSecret.trim());
+    }
+
     await this.syncZentFlowPlugin();
 
     return this.getBotAiSettings();
   }
 
   async syncZentFlowPlugin() {
-    const mode = await this.botRouting.getMode();
-    const result = await this.openwaPlugin.syncZentFlowForMode(mode);
+    const status = await this.botRouting.getStatus();
+    const result = await this.openwaPlugin.syncZentFlowForMode(status.desiredMode);
     this.lastZentFlowSync = {
       ok: result.ok,
       passThrough: result.passThrough,
@@ -136,6 +169,23 @@ export class SettingsService {
       at: Date.now(),
     };
     return result;
+  }
+
+  async getBotAiBalance(force = false) {
+    return this.novitaBalance.getBalanceStatus(force);
+  }
+
+  async testN8n() {
+    await this.workflowEvents.emit('test.ping', {
+      source: 'dashboard',
+      at: new Date().toISOString(),
+    });
+    return {
+      ok: true,
+      enabled: this.workflowEvents.enabled(),
+      baseUrlConfigured: !!this.workflowEvents.baseUrl(),
+      secretConfigured: !!this.workflowEvents.secret(),
+    };
   }
 
   async getBotAiPreview() {

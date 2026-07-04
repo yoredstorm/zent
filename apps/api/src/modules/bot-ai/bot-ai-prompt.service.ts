@@ -9,6 +9,9 @@ export const BOT_AI_VARIABLES = [
   { key: 'deliveryFee', label: 'Costo de delivery', description: 'Tarifa plana de envío si aplica' },
   { key: 'businessDescription', label: 'Descripción del negocio', description: 'Qué vende la tienda' },
   { key: 'policies', label: 'Políticas', description: 'Envíos, pagos, devoluciones' },
+  { key: 'paymentMethods', label: 'Formas de pago', description: 'Métodos activos para cobrar pedidos' },
+  { key: 'orderStatuses', label: 'Estados de pedido', description: 'Estados disponibles y significado para cliente' },
+  { key: 'workflowPolicies', label: 'Automatizaciones', description: 'Reglas activas de n8n para pagos y delivery' },
   { key: 'catalogSummary', label: 'Resumen de catálogo', description: 'Productos disponibles con stock' },
   { key: 'customerName', label: 'Nombre del cliente', description: 'Si está registrado' },
   { key: 'customerPhone', label: 'Teléfono del cliente', description: 'Número de WhatsApp' },
@@ -27,6 +30,15 @@ export const DEFAULT_PLAYBOOK = `Eres el asistente de ventas por WhatsApp de {{s
 ## Políticas
 {{policies}}
 
+## Formas de pago
+{{paymentMethods}}
+
+## Estados de pedido
+{{orderStatuses}}
+
+## Automatizaciones
+{{workflowPolicies}}
+
 ## Catálogo actual (productos con stock)
 {{catalogSummary}}
 
@@ -43,6 +55,10 @@ export const DEFAULT_PLAYBOOK = `Eres el asistente de ventas por WhatsApp de {{s
 - Confirma resumen (productos, delivery, total) y pide confirmación explícita del cliente.
 - Si no hay stock suficiente, informa con claridad y sugiere alternativas del catálogo.
 - Cuando el cliente diga "agregar N", "añadir N" o un número tras ver un producto, usa add_to_cart con el productId del último get_product_details y quantity=N. Confirma siempre con resumen del carrito.
+- Si el cliente pregunta por formas de pago, usa get_payment_methods.
+- Si el cliente pregunta por su pedido, usa find_customer_orders o get_order_status.
+- Si el cliente envía una referencia o comprobante de pago, usa submit_payment_reference.
+- Nunca confirmes pago como validado si no existe respuesta explícita de backend o n8n.
 
 ## Cliente actual
 - Nombre: {{customerName}}
@@ -83,6 +99,15 @@ export class BotAiPromptService {
       policies:
         store?.botAiPolicies?.trim() ||
         'Pagos y entregas se coordinan con un asesor tras confirmar el pedido.',
+      paymentMethods:
+        this.config.get<string>('BOT_AI_PAYMENT_METHODS', '').trim() ||
+        'Transferencia, Yape/Plin o pago contra entrega, según disponibilidad del vendedor.',
+      orderStatuses:
+        this.config.get<string>('BOT_AI_ORDER_STATUSES', '').trim() ||
+        'NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.',
+      workflowPolicies:
+        this.config.get<string>('BOT_AI_WORKFLOW_POLICIES', '').trim() ||
+        'Si el cliente envía referencia de pago, registra la referencia y espera validación del vendedor o automatización.',
       catalogSummary,
       customerName: ctx.customerName?.trim() || 'No registrado',
       customerPhone: ctx.customerPhone?.trim() || 'No detectado',

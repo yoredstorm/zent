@@ -140,6 +140,22 @@ export class VendorNotifyService {
     await this.sendToVendors(phones, text, `bot-error ${data.chatId}`);
   }
 
+  async notifyNovitaLowBalance(data: {
+    balanceUsd: number;
+    thresholdUsd: number;
+  }): Promise<void> {
+    const phones = this.getVendorPhones();
+    if (phones.length === 0) return;
+
+    const text =
+      `⚠️ *Saldo Novita bajo*\n\n` +
+      `*Saldo actual:* $${data.balanceUsd.toFixed(2)} USD\n` +
+      `*Umbral:* $${data.thresholdUsd.toFixed(2)} USD\n\n` +
+      `Recarga Novita para evitar interrupciones del asistente IA.`;
+
+    await this.sendToVendors(phones, text, 'novita-low-balance');
+  }
+
   private async sendToVendors(phones: string[], text: string, label: string): Promise<void> {
     for (const phone of phones) {
       try {

@@ -31,4 +31,19 @@ export class UpdateBotAiDto {
   @IsOptional()
   @IsBoolean()
   novitaBotEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Sincroniza N8N_WORKFLOWS_ENABLED en .env' })
+  @IsOptional()
+  @IsBoolean()
+  n8nWorkflowsEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Base URL de webhooks n8n, ej. https://n8n.example.com/webhook/zent' })
+  @IsOptional()
+  @IsString()
+  n8nWebhookBaseUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Secreto HMAC para webhooks n8n (solo si se desea actualizar)' })
+  @IsOptional()
+  @IsString()
+  n8nWebhookSecret?: string;
 }

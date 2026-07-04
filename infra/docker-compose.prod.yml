@@ -134,6 +134,12 @@ services:
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://${PUBLIC_HOST:-localhost}:3001/api}
       STORE_NAME: ${STORE_NAME:-Zent}
       VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
+      N8N_WORKFLOWS_ENABLED: ${N8N_WORKFLOWS_ENABLED:-false}
+      N8N_WEBHOOK_BASE_URL: ${N8N_WEBHOOK_BASE_URL:-}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      BOT_AI_PAYMENT_METHODS: "${BOT_AI_PAYMENT_METHODS:-Transferencia, Yape/Plin o pago contra entrega}"
+      BOT_AI_ORDER_STATUSES: "${BOT_AI_ORDER_STATUSES:-NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.}"
+      BOT_AI_WORKFLOW_POLICIES: "${BOT_AI_WORKFLOW_POLICIES:-Si el cliente envía referencia de pago, registra la referencia y espera validación del vendedor o automatización.}"
       CORS_ORIGIN: "*"
     depends_on:
       postgres:
@@ -181,6 +187,12 @@ services:
       UPLOADS_DIR: /app/uploads
       STORE_NAME: ${STORE_NAME:-Zent}
       VENDOR_NOTIFY_PHONES: ${VENDOR_NOTIFY_PHONES:-}
+      N8N_WORKFLOWS_ENABLED: ${N8N_WORKFLOWS_ENABLED:-false}
+      N8N_WEBHOOK_BASE_URL: ${N8N_WEBHOOK_BASE_URL:-}
+      N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
+      BOT_AI_PAYMENT_METHODS: "${BOT_AI_PAYMENT_METHODS:-Transferencia, Yape/Plin o pago contra entrega}"
+      BOT_AI_ORDER_STATUSES: "${BOT_AI_ORDER_STATUSES:-NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.}"
+      BOT_AI_WORKFLOW_POLICIES: "${BOT_AI_WORKFLOW_POLICIES:-Si el cliente envía referencia de pago, registra la referencia y espera validación del vendedor o automatización.}"
       CART_HOLD_TTL_MINUTES: ${CART_HOLD_TTL_MINUTES:-30}
       CART_HOLD_WARN_MINUTES: ${CART_HOLD_WARN_MINUTES:-5}
       WORKER_MODE: "true"

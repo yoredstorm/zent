@@ -73,6 +73,8 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      const mode = await this.botRouting.getMode();
+      this.logger.log(`Bot routing mode=${mode} chatId=${chatId}`);
       await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
       this.processedKeys.add(idempotencyKey);
       if (this.processedKeys.size > 10000) {
