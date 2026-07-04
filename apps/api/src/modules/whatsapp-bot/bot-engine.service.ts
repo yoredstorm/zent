@@ -210,7 +210,7 @@ export class BotEngineService {
       }
     }
 
-    let n8nChatWebhookOk: boolean | null = null;
+    const n8nChatWebhookOk: boolean | null = null;
     if (cfg.engine === 'n8n') {
       if (!cfg.webhookSecret) blockers.push('n8n_secret_missing');
       if (cfg.n8nChatScope === 'sandbox' && !cfg.n8nChatSandboxPhones.trim()) {
