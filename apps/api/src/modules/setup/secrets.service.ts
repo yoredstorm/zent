@@ -50,6 +50,10 @@ const CONFIG_KEYS = [
   'N8N_WORKFLOWS_ENABLED',
   'N8N_WEBHOOK_BASE_URL',
   'N8N_SALES_MODE',
+  'N8N_CHAT_MODE',
+  'N8N_CHAT_WEBHOOK_URL',
+  'N8N_CHAT_SANDBOX_PHONES',
+  'N8N_CHAT_TIMEOUT_MS',
   'N8N_PUBLIC_URL',
   'N8N_BASIC_AUTH_USER',
   'N8N_SECURE_COOKIE',
@@ -251,6 +255,12 @@ export class SecretsService {
       summary['N8N_WEBHOOK_BASE_URL'] = 'http://n8n:5678/webhook/zent';
     }
     if (!summary['N8N_SALES_MODE']) summary['N8N_SALES_MODE'] = 'sandbox';
+    if (!summary['N8N_CHAT_MODE']) summary['N8N_CHAT_MODE'] = 'disabled';
+    if (!summary['N8N_CHAT_WEBHOOK_URL']) {
+      summary['N8N_CHAT_WEBHOOK_URL'] = 'http://n8n:5678/webhook/zent-chat';
+    }
+    if (!summary['N8N_CHAT_SANDBOX_PHONES']) summary['N8N_CHAT_SANDBOX_PHONES'] = '';
+    if (!summary['N8N_CHAT_TIMEOUT_MS']) summary['N8N_CHAT_TIMEOUT_MS'] = '5000';
     if (!summary['N8N_PUBLIC_URL']) {
       summary['N8N_PUBLIC_URL'] = `http://${summary['PUBLIC_HOST'] ?? 'localhost'}:5678`;
     }

@@ -121,6 +121,13 @@ export class SettingsService {
       n8nPublicUrl: this.config.get<string>('N8N_PUBLIC_URL', '').trim() || null,
       n8nInternalWebhookBaseUrl: this.defaultN8nWebhookBaseUrl(),
       n8nSalesMode: this.n8nSalesMode(),
+      n8nChatMode: this.n8nChatMode(),
+      n8nChatWebhookUrl: this.n8nChatWebhookUrl(),
+      n8nChatSandboxPhones: this.config.get<string>('N8N_CHAT_SANDBOX_PHONES', '').trim(),
+      n8nChatTemplates: [
+        'infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json',
+        'infra/n8n/templates/zent-order-status-chat.workflow.json',
+      ],
       n8nHealth: await this.getN8nHealth(),
       n8nSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
       lastN8nTestResult: this.lastN8nTestResult,
@@ -138,6 +145,9 @@ export class SettingsService {
       n8nWebhookBaseUrl,
       n8nWebhookSecret,
       n8nSalesMode,
+      n8nChatMode,
+      n8nChatWebhookUrl,
+      n8nChatSandboxPhones,
       n8nRestoreDefaults,
       ...storeFields
     } = dto;
@@ -164,6 +174,8 @@ export class SettingsService {
       this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl());
       this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', 'true');
       this.secrets.upsertEnvConfig('N8N_SALES_MODE', 'sandbox');
+      this.secrets.upsertEnvConfig('N8N_CHAT_MODE', 'sandbox');
+      this.secrets.upsertEnvConfig('N8N_CHAT_WEBHOOK_URL', this.defaultN8nChatWebhookUrl());
       if (!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim()) {
         this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', this.secrets.generateSecret(24));
       }
@@ -180,6 +192,19 @@ export class SettingsService {
         ? n8nSalesMode
         : 'sandbox';
       this.secrets.upsertEnvConfig('N8N_SALES_MODE', mode);
+    }
+
+    if (n8nChatMode !== undefined) {
+      const mode = ['disabled', 'sandbox', 'core'].includes(n8nChatMode) ? n8nChatMode : 'disabled';
+      this.secrets.upsertEnvConfig('N8N_CHAT_MODE', mode);
+    }
+
+    if (n8nChatWebhookUrl !== undefined) {
+      this.secrets.upsertEnvConfig('N8N_CHAT_WEBHOOK_URL', n8nChatWebhookUrl.trim());
+    }
+
+    if (n8nChatSandboxPhones !== undefined) {
+      this.secrets.upsertEnvConfig('N8N_CHAT_SANDBOX_PHONES', n8nChatSandboxPhones.trim());
     }
 
     await this.syncZentFlowPlugin();
@@ -233,9 +258,22 @@ export class SettingsService {
     return 'http://n8n:5678/webhook/zent';
   }
 
+  private defaultN8nChatWebhookUrl(): string {
+    return 'http://n8n:5678/webhook/zent-chat';
+  }
+
   private n8nSalesMode(): 'disabled' | 'sandbox' | 'core' {
     const mode = this.config.get<string>('N8N_SALES_MODE', 'sandbox').trim();
     return mode === 'disabled' || mode === 'core' ? mode : 'sandbox';
+  }
+
+  private n8nChatMode(): 'disabled' | 'sandbox' | 'core' {
+    const mode = this.config.get<string>('N8N_CHAT_MODE', 'disabled').trim();
+    return mode === 'sandbox' || mode === 'core' ? mode : 'disabled';
+  }
+
+  private n8nChatWebhookUrl(): string {
+    return this.config.get<string>('N8N_CHAT_WEBHOOK_URL', this.defaultN8nChatWebhookUrl()).trim();
   }
 
   private isEmbeddedN8nConfigured(): boolean {

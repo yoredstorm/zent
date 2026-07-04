@@ -673,6 +673,10 @@ N8N_WORKFLOWS_ENABLED=true
 N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook/zent
 N8N_WEBHOOK_SECRET=strong-secret
 N8N_SALES_MODE=sandbox
+N8N_CHAT_MODE=disabled
+N8N_CHAT_WEBHOOK_URL=http://n8n:5678/webhook/zent-chat
+N8N_CHAT_SANDBOX_PHONES=51999999999
+N8N_CHAT_TIMEOUT_MS=5000
 N8N_PUBLIC_URL=http://77.93.154.87:5678
 N8N_ENCRYPTION_KEY=strong-32-plus-char-secret
 N8N_BASIC_AUTH_USER=admin
@@ -686,6 +690,8 @@ BOT_AI_WORKFLOW_POLICIES=Si el cliente envía referencia de pago, registra la re
 
 Con el compose de produccion, n8n queda embebido como servicio `n8n` y el backend le envia eventos por la red interna Docker. Abre el editor en `N8N_PUBLIC_URL` y usa `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`.
 
+El servicio n8n tambien recibe `ZENT_API_URL=http://backend-api:3000/api` y `ZENT_N8N_SECRET=$N8N_WEBHOOK_SECRET` para que las plantillas importadas llamen las tools internas del backend sin credenciales hardcodeadas.
+
 ### Dashboard
 
 1. Abrir **Configuracion → Asistente IA → Automatizaciones n8n**.
@@ -693,6 +699,8 @@ Con el compose de produccion, n8n queda embebido como servicio `n8n` y el backen
 3. Importa `infra/n8n/examples/zent-sales-sandbox.workflow.json` en n8n y activalo.
 4. Usa **Ejecutar sandbox de ventas**; debe enviar `test.ping`, `order.created`, `payment.reference_submitted` y `order.status_changed` con `sandbox=true`.
 5. Cuando el sandbox este OK, cambia `Modo de ventas n8n` a `Core` para habilitar eventos reales.
+6. Para chat conversacional, en **n8n Flujos de Chat** importa las plantillas versionadas, deja `Modo chat n8n` en `Sandbox`, configura tu telefono en `N8N_CHAT_SANDBOX_PHONES` y prueba desde WhatsApp.
+7. Cuando el flujo responda bien y cree pedidos correctamente, cambia `Modo chat n8n` a `Core`.
 
 ### Plantillas incluidas
 
@@ -701,6 +709,10 @@ Con el compose de produccion, n8n queda embebido como servicio `n8n` y el backen
 | `infra/n8n/examples/zent-sales-sandbox.workflow.json` | Recibe cualquier evento `/webhook/zent/:event` y responde OK para pruebas |
 | `infra/n8n/examples/zent-payment-reference.workflow.json` | Punto de partida para validar referencias de pago |
 | `infra/n8n/examples/zent-order-status.workflow.json` | Punto de partida para notificaciones por cambio de estado |
+| `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` | Flujo conversacional WhatsApp: catalogo, PDF, productos, pedido, pago y cierre |
+| `infra/n8n/templates/zent-order-status-chat.workflow.json` | Flujo conversacional para consultar estado de pedidos |
+
+Los exports experimentales del editor n8n deben guardarse en `infra/n8n/local-flows/`; esa carpeta esta ignorada por git.
 
 ### Eventos enviados
 
@@ -737,6 +749,81 @@ Content-Type: application/json
 X-Zent-Event: order.created
 X-Zent-Signature: sha256=<hmac-sha256-del-body-con-N8N_WEBHOOK_SECRET>
 ```
+
+### Chat WhatsApp dirigido por n8n
+
+El webhook OpenWA sigue entrando a Zent. Si `N8N_CHAT_MODE` esta en `sandbox` o `core`, `WhatsappBotWorker` reenvia el mensaje al puente n8n:
+
+```http
+POST N8N_CHAT_WEBHOOK_URL
+X-Zent-Signature: sha256=<hmac-sha256-del-body-con-N8N_WEBHOOK_SECRET>
+```
+
+Payload:
+
+```json
+{
+  "chatId": "51999999999@c.us",
+  "waSessionId": "default",
+  "contactPhone": "51999999999",
+  "message": "hola, quiero catalogo",
+  "messageType": "text",
+  "context": {}
+}
+```
+
+Respuesta esperada desde n8n:
+
+```json
+{
+  "reply": "Texto para WhatsApp",
+  "handoff": false,
+  "metadata": { "flow": "sales_chat" }
+}
+```
+
+Modes:
+
+- `disabled`: Zent usa el bot actual.
+- `sandbox`: solo se reenvian telefonos incluidos en `N8N_CHAT_SANDBOX_PHONES`.
+- `core`: n8n maneja todos los chats entrantes.
+
+Tools firmadas para plantillas n8n:
+
+- `POST /api/webhooks/n8n/tools/categories.list`
+- `POST /api/webhooks/n8n/tools/products.search`
+- `POST /api/webhooks/n8n/tools/products.by_category`
+- `POST /api/webhooks/n8n/tools/catalog_pdf.active`
+- `POST /api/webhooks/n8n/tools/orders.create_from_chat`
+- `POST /api/webhooks/n8n/tools/orders.find_by_phone`
+- `POST /api/webhooks/n8n/tools/orders.get_status`
+- `POST /api/webhooks/n8n/tools/orders.update_status`
+- `POST /api/webhooks/n8n/tools/messages.send_text`
+
+Autenticacion para tools:
+
+```http
+Authorization: Bearer <N8N_WEBHOOK_SECRET>
+```
+
+Tambien se acepta `X-Zent-Signature: sha256=<hmac>` sobre el body crudo.
+
+Reglas de inventario:
+
+- `orders.create_from_chat` crea el pedido con `source=WHATSAPP` y estado `NUEVO`; valida disponibilidad, pero no descuenta inventario fisico.
+- Cuando el estado pasa a `CONFIRMADO`, `OrdersService.updateStatus()` ejecuta el commit de stock.
+- Cuando pasa a `CANCELADO`, `OrdersService.updateStatus()` restaura stock si ya estaba comprometido.
+- Cuando pasa a `COMPLETADO`, `OrdersService.updateStatus()` envia el mensaje final de cierre al cliente.
+
+Prueba manual recomendada:
+
+1. Importar `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json`.
+2. Activar el workflow y confirmar que el path sea `/webhook/zent-chat`.
+3. Guardar `N8N_CHAT_MODE=sandbox` y tu numero en `N8N_CHAT_SANDBOX_PHONES`.
+4. Enviar "hola", pedir categorias, pedir PDF y buscar un producto.
+5. Confirmar un pedido con payload de prueba en el contexto del workflow o editar la plantilla para capturar datos.
+6. Cambiar el pedido a `CONFIRMADO` y verificar descuento de inventario.
+7. Importar `infra/n8n/templates/zent-order-status-chat.workflow.json` y probar "como va mi pedido #abcd1234".
 
 ### Callback desde n8n
 

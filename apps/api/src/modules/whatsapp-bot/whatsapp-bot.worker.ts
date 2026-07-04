@@ -7,6 +7,7 @@ import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
 import { BotTurnLogService } from './bot-turn-log.service';
 import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { BotRoutingService } from './bot-routing.service';
+import { N8nChatBridgeService } from '../workflows/n8n-chat-bridge.service';
 
 interface WebhookJob {
   chatId: string;
@@ -34,6 +35,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     private turnLog: BotTurnLogService,
     private vendorNotify: VendorNotifyService,
     private botRouting: BotRoutingService,
+    private n8nChatBridge: N8nChatBridgeService,
   ) {}
 
   onModuleInit() {
@@ -64,6 +66,13 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     return waSessionId ? `${waSessionId}::${chatId}` : chatId;
   }
 
+  private markProcessed(idempotencyKey: string) {
+    this.processedKeys.add(idempotencyKey);
+    if (this.processedKeys.size > 10000) {
+      this.processedKeys.clear();
+    }
+  }
+
   private async processJob(job: Job<WebhookJob>) {
     const { chatId, body, from, senderPhone, waSessionId, idempotencyKey } = job.data;
 
@@ -75,11 +84,20 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const mode = await this.botRouting.getMode();
       this.logger.log(`Bot routing mode=${mode} chatId=${chatId}`);
-      await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
-      this.processedKeys.add(idempotencyKey);
-      if (this.processedKeys.size > 10000) {
-        this.processedKeys.clear();
+      if (this.n8nChatBridge.shouldHandle(senderPhone ?? from)) {
+        await this.n8nChatBridge.handleMessage({
+          chatId,
+          waSessionId,
+          contactPhone: senderPhone ?? from,
+          message: body,
+          messageType: 'text',
+          context: { from, routingMode: mode },
+        });
+        this.markProcessed(idempotencyKey);
+        return;
       }
+      await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
+      this.markProcessed(idempotencyKey);
     } catch (error: any) {
       const message = error?.message || String(error);
       this.logger.error(`Error processing message from ${chatId}: ${message}`);

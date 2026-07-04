@@ -1,0 +1,141 @@
+{
+  "name": "Zent Order Status Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "zent-order-status-chat",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-order-status",
+      "name": "Zent Order Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-760, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst message = String(input.message ?? '');\nconst orderId = message.match(/[a-f0-9]{8,}/i)?.[0] ?? input.context?.orderId ?? null;\nconst phone = String(input.contactPhone ?? input.senderPhone ?? input.context?.customerPhone ?? '').replace(/\\D/g, '');\nreturn [{ json: { ...input, orderId, customerPhone: phone, apiUrl: $env.ZENT_API_URL || 'http://backend-api:3000/api', secret: $env.ZENT_N8N_SECRET || '' } }];"
+      },
+      "id": "extract-order",
+      "name": "Extract Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ !!$json.orderId }}", "value2": true }
+          ]
+        }
+      },
+      "id": "has-order-id",
+      "name": "Has Order ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-280, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/orders.get_status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { orderId: $json.orderId, customerPhone: $json.customerPhone } }}"
+      },
+      "id": "orders-get-status",
+      "name": "Tool orders.get_status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, -120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/orders.find_by_phone' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { customerPhone: $json.customerPhone, limit: 5 } }}"
+      },
+      "id": "orders-find-phone",
+      "name": "Tool orders.find_by_phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const labels = {\n  NUEVO: 'recibido, pendiente de revisión.',\n  EN_GESTION: 'en revisión por el equipo.',\n  CONFIRMADO: 'confirmado. El stock ya fue descontado o reservado para entrega.',\n  EN_DELIVERY: 'en reparto.',\n  COMPLETADO: 'entregado y cerrado. ¡Gracias por tu compra!',\n  CANCELADO: 'cancelado.'\n};\nconst status = labels[$json.status] ?? $json.status;\nconst items = ($json.items ?? []).map((i) => `• ${i.quantity}x ${i.productName}`).join('\\n');\nreturn [{ json: { reply: `Tu pedido #${$json.shortId ?? String($json.id).slice(0, 8)} está ${status}\\n${items ? `\\nProductos:\\n${items}` : ''}\\n\\nTotal: S/ ${Number($json.total ?? 0).toFixed(2)}` } }];"
+      },
+      "id": "build-status-reply",
+      "name": "Build Status Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, -120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const orders = $json.orders ?? [];\nif (!orders.length) return [{ json: { reply: 'No encontré pedidos recientes asociados a tu teléfono. Envíame el código del pedido si lo tienes.' } }];\nconst lines = orders.map((o) => `• #${o.shortId}: ${o.status} - S/ ${Number(o.total).toFixed(2)}`).join('\\n');\nreturn [{ json: { reply: `Encontré estos pedidos recientes:\\n${lines}\\n\\nResponde con el código del pedido para ver el detalle.` } }];"
+      },
+      "id": "build-orders-list-reply",
+      "name": "Build Orders List Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: $json.reply, handoff: false, metadata: { flow: 'order_status_chat' } } }}"
+      },
+      "id": "respond-to-zent",
+      "name": "Respond To Zent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [560, 0]
+    }
+  ],
+  "connections": {
+    "Zent Order Status Webhook": {
+      "main": [[{ "node": "Extract Order", "type": "main", "index": 0 }]]
+    },
+    "Extract Order": {
+      "main": [[{ "node": "Has Order ID", "type": "main", "index": 0 }]]
+    },
+    "Has Order ID": {
+      "main": [
+        [{ "node": "Tool orders.get_status", "type": "main", "index": 0 }],
+        [{ "node": "Tool orders.find_by_phone", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tool orders.get_status": {
+      "main": [[{ "node": "Build Status Reply", "type": "main", "index": 0 }]]
+    },
+    "Tool orders.find_by_phone": {
+      "main": [[{ "node": "Build Orders List Reply", "type": "main", "index": 0 }]]
+    },
+    "Build Status Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Build Orders List Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

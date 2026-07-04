@@ -138,6 +138,10 @@ services:
       N8N_WEBHOOK_BASE_URL: ${N8N_WEBHOOK_BASE_URL:-http://n8n:5678/webhook/zent}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
       N8N_SALES_MODE: ${N8N_SALES_MODE:-sandbox}
+      N8N_CHAT_MODE: ${N8N_CHAT_MODE:-disabled}
+      N8N_CHAT_WEBHOOK_URL: ${N8N_CHAT_WEBHOOK_URL:-http://n8n:5678/webhook/zent-chat}
+      N8N_CHAT_SANDBOX_PHONES: ${N8N_CHAT_SANDBOX_PHONES:-}
+      N8N_CHAT_TIMEOUT_MS: ${N8N_CHAT_TIMEOUT_MS:-5000}
       N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:5678}
       BOT_AI_PAYMENT_METHODS: "${BOT_AI_PAYMENT_METHODS:-Transferencia, Yape/Plin o pago contra entrega}"
       BOT_AI_ORDER_STATUSES: "${BOT_AI_ORDER_STATUSES:-NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.}"
@@ -193,6 +197,10 @@ services:
       N8N_WEBHOOK_BASE_URL: ${N8N_WEBHOOK_BASE_URL:-http://n8n:5678/webhook/zent}
       N8N_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-}
       N8N_SALES_MODE: ${N8N_SALES_MODE:-sandbox}
+      N8N_CHAT_MODE: ${N8N_CHAT_MODE:-disabled}
+      N8N_CHAT_WEBHOOK_URL: ${N8N_CHAT_WEBHOOK_URL:-http://n8n:5678/webhook/zent-chat}
+      N8N_CHAT_SANDBOX_PHONES: ${N8N_CHAT_SANDBOX_PHONES:-}
+      N8N_CHAT_TIMEOUT_MS: ${N8N_CHAT_TIMEOUT_MS:-5000}
       N8N_PUBLIC_URL: ${N8N_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:5678}
       BOT_AI_PAYMENT_METHODS: "${BOT_AI_PAYMENT_METHODS:-Transferencia, Yape/Plin o pago contra entrega}"
       BOT_AI_ORDER_STATUSES: "${BOT_AI_ORDER_STATUSES:-NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.}"
@@ -266,6 +274,8 @@ services:
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-change-me}
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
       WEBHOOK_URL: ${N8N_PUBLIC_URL:-http://${PUBLIC_HOST:-localhost}:5678}
+      ZENT_API_URL: http://backend-api:3000/api
+      ZENT_N8N_SECRET: ${N8N_WEBHOOK_SECRET:-}
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Lima}
     volumes:
       - n8n_data:/home/node/.n8n

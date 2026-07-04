@@ -9,6 +9,7 @@ apps/api/uploads/
 .cache/
 opencode/
 infra/.env
+infra/n8n/local-flows/
 credenciales-zent.txt
 docs/*
 infra/dokploy.env.example

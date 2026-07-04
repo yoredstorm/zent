@@ -56,4 +56,19 @@ export class UpdateBotAiDto {
   @IsOptional()
   @IsBoolean()
   n8nRestoreDefaults?: boolean;
+
+  @ApiPropertyOptional({ description: 'Modo chat n8n: disabled, sandbox o core' })
+  @IsOptional()
+  @IsString()
+  n8nChatMode?: string;
+
+  @ApiPropertyOptional({ description: 'Webhook del workflow conversacional n8n' })
+  @IsOptional()
+  @IsString()
+  n8nChatWebhookUrl?: string;
+
+  @ApiPropertyOptional({ description: 'Telefonos separados por coma para sandbox n8n chat' })
+  @IsOptional()
+  @IsString()
+  n8nChatSandboxPhones?: string;
 }

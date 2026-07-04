@@ -1,0 +1,339 @@
+{
+  "name": "Zent WhatsApp Sales Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "zent-chat",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-zent-chat",
+      "name": "Zent Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-900, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst message = String(input.message ?? '').toLowerCase();\nconst context = input.context ?? {};\nlet intent = 'fallback';\nif (/hola|buenas|catalogo|catálogo|menu|menú|pdf/.test(message)) intent = 'catalog';\nif (/producto|precio|stock|buscar|tienes|quiero ver/.test(message)) intent = 'product_search';\nif (/comprar|pedido|confirmo|confirmar/.test(message)) intent = 'create_order';\nif (/pago|yape|plin|transferencia|referencia|voucher/.test(message)) intent = 'payment_reference';\nif (/completado|cerrar venta|entregado/.test(message)) intent = 'complete_order';\nreturn [{\n  json: {\n    ...input,\n    context,\n    intent,\n    query: message.replace(/producto|precio|stock|buscar|tienes|quiero ver/g, '').trim(),\n    apiUrl: $env.ZENT_API_URL || 'http://backend-api:3000/api',\n    secret: $env.ZENT_N8N_SECRET || ''\n  }\n}];"
+      },
+      "id": "classify-intent",
+      "name": "Classify Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-660, 0]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.intent }}",
+        "rules": {
+          "rules": [
+            { "operation": "equal", "value2": "catalog" },
+            { "operation": "equal", "value2": "product_search" },
+            { "operation": "equal", "value2": "create_order" },
+            { "operation": "equal", "value2": "payment_reference" },
+            { "operation": "equal", "value2": "complete_order" }
+          ]
+        },
+        "fallbackOutput": 5
+      },
+      "id": "switch-intent",
+      "name": "Switch Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [-420, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/categories.list' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "id": "categories-list",
+      "name": "Tool categories.list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, -360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Classify Intent').item.json.apiUrl + '/webhooks/n8n/tools/catalog_pdf.active' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $('Classify Intent').item.json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}"
+      },
+      "id": "catalog-pdf-active",
+      "name": "Tool catalog_pdf.active",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, -360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const categories = $('Tool categories.list').first().json.categories ?? [];\nconst pdf = $json;\nconst lines = categories.map((c) => `• ${c.name} (${c.productCount} productos)`).join('\\n');\nconst pdfLine = pdf.available ? `\\n\\nTambién puedes ver el PDF del catálogo aquí: ${pdf.url}` : '';\nreturn [{ json: { reply: `¡Hola! Estas son nuestras categorías:\\n${lines || 'Aún no hay categorías activas.'}${pdfLine}\\n\\nDime qué producto te interesa y te paso opciones.` } }];"
+      },
+      "id": "build-catalog-reply",
+      "name": "Build Catalog Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, -360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/products.search' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { query: $json.query, limit: 8 } }}"
+      },
+      "id": "products-search",
+      "name": "Tool products.search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-160, -170]
+    },
+    {
+      "parameters": {
+        "jsCode": "const products = $json.products ?? [];\nif (!products.length) return [{ json: { reply: 'No encontré ese producto disponible. ¿Quieres que te muestre el catálogo o una categoría?' } }];\nconst lines = products.map((p) => `• ${p.name} - S/ ${Number(p.price).toFixed(2)} - stock ${p.stock}${p.imageUrl ? `\\n  Imagen: ${p.imageUrl}` : ''}`).join('\\n');\nreturn [{ json: { reply: `Encontré estas opciones:\\n${lines}\\n\\nPara comprar, responde con producto, cantidad, nombre y dirección de entrega.` } }];"
+      },
+      "id": "build-products-reply",
+      "name": "Build Products Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [120, -170]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nconst draft = input.context?.orderDraft ?? {};\nconst text = String(input.message ?? '');\nfunction field(name) {\n  const re = new RegExp(`${name}\\\\s*:\\\\s*([^\\\\n;]+)`, 'i');\n  return text.match(re)?.[1]?.trim();\n}\nconst productId = field('producto') || draft.items?.[0]?.productId;\nconst quantity = Number(field('cantidad') || draft.items?.[0]?.quantity || 0);\nconst customerName = field('nombre') || draft.customerName;\nconst customerPhone = field('telefono') || field('teléfono') || draft.customerPhone || input.contactPhone;\nconst address = field('direccion') || field('dirección') || draft.address;\nif (!productId || !Number.isInteger(quantity) || quantity <= 0 || !customerName || !customerPhone || !address) {\n  return [{ json: { reply: 'Para crear tu pedido envíame este formato: producto:<id> cantidad:<n> nombre:<tu nombre> telefono:<tu telefono> direccion:<tu direccion>. Puedes usar el id del producto que te mostré en la lista.' } }];\n}\nreturn [{ json: { ...input, orderPayload: { chatId: input.chatId, customerName, customerPhone, address, reference: draft.reference, notes: 'Pedido creado desde n8n sales chat', items: [{ productId, quantity }] } } }];"
+      },
+      "id": "prepare-order",
+      "name": "Prepare Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 20]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ !!$json.orderPayload }}", "value2": true }
+          ]
+        }
+      },
+      "id": "has-order-payload",
+      "name": "Has Order Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [80, 20]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/orders.create_from_chat' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.orderPayload }}"
+      },
+      "id": "orders-create",
+      "name": "Tool orders.create_from_chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, -40]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reply: `Listo, registré tu pedido #${$json.orderId.slice(0, 8)} por S/ ${Number($json.total).toFixed(2)}. Queda como NUEVO y pasará a confirmación. Si pagas por Yape/Plin o transferencia, envía la referencia.` } }];"
+      },
+      "id": "build-order-reply",
+      "name": "Build Order Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, -40]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reply: 'Referencia recibida. La dejo registrada como pendiente de validación por el vendedor.' } }];"
+      },
+      "id": "payment-reference-reply",
+      "name": "Payment Reference Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 210]
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $json.context?.orderId;\nif (!orderId) return [{ json: { reply: 'Para cerrar una venta necesito el código del pedido.' } }];\nreturn [{ json: { ...$json, updatePayload: { orderId, status: 'COMPLETADO', note: 'Cierre solicitado desde n8n sales chat' } } }];"
+      },
+      "id": "prepare-complete",
+      "name": "Prepare Complete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 390]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ !!$json.updatePayload }}", "value2": true }
+          ]
+        }
+      },
+      "id": "has-complete-payload",
+      "name": "Has Complete Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [80, 390]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.apiUrl + '/webhooks/n8n/tools/orders.update_status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $json.secret }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.updatePayload }}"
+      },
+      "id": "orders-complete",
+      "name": "Tool orders.update_status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 330]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reply: `Pedido #${$json.orderId.slice(0, 8)} marcado como COMPLETADO. Se envió el mensaje final de cierre al cliente.` } }];"
+      },
+      "id": "build-complete-reply",
+      "name": "Build Complete Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [380, 390]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { reply: 'Puedo ayudarte con catálogo, productos, precios, pedido o estado. Escribe por ejemplo: “ver catálogo” o “quiero comprar café”.' } }];"
+      },
+      "id": "fallback-reply",
+      "name": "Fallback Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 570]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: $json.reply, handoff: false, metadata: { flow: 'sales_chat' } } }}"
+      },
+      "id": "respond-to-zent",
+      "name": "Respond To Zent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [860, 120]
+    }
+  ],
+  "connections": {
+    "Zent Chat Webhook": {
+      "main": [[{ "node": "Classify Intent", "type": "main", "index": 0 }]]
+    },
+    "Classify Intent": {
+      "main": [[{ "node": "Switch Intent", "type": "main", "index": 0 }]]
+    },
+    "Switch Intent": {
+      "main": [
+        [{ "node": "Tool categories.list", "type": "main", "index": 0 }],
+        [{ "node": "Tool products.search", "type": "main", "index": 0 }],
+        [{ "node": "Prepare Order", "type": "main", "index": 0 }],
+        [{ "node": "Payment Reference Reply", "type": "main", "index": 0 }],
+        [{ "node": "Prepare Complete", "type": "main", "index": 0 }],
+        [{ "node": "Fallback Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tool categories.list": {
+      "main": [[{ "node": "Tool catalog_pdf.active", "type": "main", "index": 0 }]]
+    },
+    "Tool catalog_pdf.active": {
+      "main": [[{ "node": "Build Catalog Reply", "type": "main", "index": 0 }]]
+    },
+    "Build Catalog Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Tool products.search": {
+      "main": [[{ "node": "Build Products Reply", "type": "main", "index": 0 }]]
+    },
+    "Build Products Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Prepare Order": {
+      "main": [[{ "node": "Has Order Payload", "type": "main", "index": 0 }]]
+    },
+    "Has Order Payload": {
+      "main": [
+        [{ "node": "Tool orders.create_from_chat", "type": "main", "index": 0 }],
+        [{ "node": "Respond To Zent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tool orders.create_from_chat": {
+      "main": [[{ "node": "Build Order Reply", "type": "main", "index": 0 }]]
+    },
+    "Build Order Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Payment Reference Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Prepare Complete": {
+      "main": [[{ "node": "Has Complete Payload", "type": "main", "index": 0 }]]
+    },
+    "Has Complete Payload": {
+      "main": [
+        [{ "node": "Tool orders.update_status", "type": "main", "index": 0 }],
+        [{ "node": "Respond To Zent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Tool orders.update_status": {
+      "main": [[{ "node": "Build Complete Reply", "type": "main", "index": 0 }]]
+    },
+    "Build Complete Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    },
+    "Fallback Reply": {
+      "main": [[{ "node": "Respond To Zent", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

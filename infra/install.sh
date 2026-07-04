@@ -72,6 +72,10 @@ merge_missing_env_defaults() {
   upsert_if_missing N8N_WEBHOOK_BASE_URL 'http://n8n:5678/webhook/zent'
   upsert_if_missing N8N_WEBHOOK_SECRET "$(gen 24)"
   upsert_if_missing N8N_SALES_MODE sandbox
+  upsert_if_missing N8N_CHAT_MODE disabled
+  upsert_if_missing N8N_CHAT_WEBHOOK_URL 'http://n8n:5678/webhook/zent-chat'
+  upsert_if_missing N8N_CHAT_SANDBOX_PHONES ''
+  upsert_if_missing N8N_CHAT_TIMEOUT_MS 5000
   upsert_if_missing N8N_PUBLIC_URL "http://${host}:5678"
   upsert_if_missing N8N_ENCRYPTION_KEY "$(gen 32)"
   upsert_if_missing N8N_BASIC_AUTH_USER admin
@@ -201,6 +205,10 @@ N8N_WORKFLOWS_ENABLED=true
 N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook/zent
 N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET}
 N8N_SALES_MODE=sandbox
+N8N_CHAT_MODE=disabled
+N8N_CHAT_WEBHOOK_URL=http://n8n:5678/webhook/zent-chat
+N8N_CHAT_SANDBOX_PHONES=
+N8N_CHAT_TIMEOUT_MS=5000
 N8N_PUBLIC_URL=http://${HOST}:5678
 N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
 N8N_BASIC_AUTH_USER=admin

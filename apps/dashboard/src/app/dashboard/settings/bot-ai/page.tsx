@@ -38,6 +38,10 @@ type BotAiSettings = {
   n8nPublicUrl?: string | null;
   n8nInternalWebhookBaseUrl?: string;
   n8nSalesMode?: 'disabled' | 'sandbox' | 'core';
+  n8nChatMode?: 'disabled' | 'sandbox' | 'core';
+  n8nChatWebhookUrl?: string;
+  n8nChatSandboxPhones?: string;
+  n8nChatTemplates?: string[];
   n8nHealth?: { ok: boolean; status: number | null; url: string; error?: string };
   n8nSecretConfigured?: boolean;
   lastN8nTestResult?: { ok: boolean; at: number; message?: string } | null;
@@ -129,6 +133,10 @@ export default function BotAiSettingsPage() {
   const [n8nPublicUrl, setN8nPublicUrl] = useState<string | null>(null);
   const [n8nInternalWebhookBaseUrl, setN8nInternalWebhookBaseUrl] = useState('');
   const [n8nSalesMode, setN8nSalesMode] = useState<'disabled' | 'sandbox' | 'core'>('sandbox');
+  const [n8nChatMode, setN8nChatMode] = useState<'disabled' | 'sandbox' | 'core'>('disabled');
+  const [n8nChatWebhookUrl, setN8nChatWebhookUrl] = useState('');
+  const [n8nChatSandboxPhones, setN8nChatSandboxPhones] = useState('');
+  const [n8nChatTemplates, setN8nChatTemplates] = useState<string[]>([]);
   const [n8nHealth, setN8nHealth] = useState<BotAiSettings['n8nHealth']>(undefined);
   const [runningSandbox, setRunningSandbox] = useState(false);
   const [sandboxResult, setSandboxResult] = useState<N8nSandboxResult | null>(null);
@@ -163,6 +171,10 @@ export default function BotAiSettingsPage() {
       setN8nPublicUrl(settings.n8nPublicUrl ?? null);
       setN8nInternalWebhookBaseUrl(settings.n8nInternalWebhookBaseUrl ?? 'http://n8n:5678/webhook/zent');
       setN8nSalesMode(settings.n8nSalesMode ?? 'sandbox');
+      setN8nChatMode(settings.n8nChatMode ?? 'disabled');
+      setN8nChatWebhookUrl(settings.n8nChatWebhookUrl ?? 'http://n8n:5678/webhook/zent-chat');
+      setN8nChatSandboxPhones(settings.n8nChatSandboxPhones ?? '');
+      setN8nChatTemplates(settings.n8nChatTemplates ?? []);
       setN8nHealth(settings.n8nHealth);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'No se pudo cargar la configuracion del asistente');
@@ -218,6 +230,15 @@ export default function BotAiSettingsPage() {
 
   const insertVariable = (key: string) => {
     setPlaybook((prev) => `${prev}{{${key}}}`);
+  };
+
+  const copyText = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copiado`);
+    } catch {
+      toast.error(`No se pudo copiar ${label}`);
+    }
   };
 
   const loadPreview = async () => {
@@ -387,6 +408,9 @@ export default function BotAiSettingsPage() {
         n8nWorkflowsEnabled,
         n8nWebhookBaseUrl: n8nWebhookBaseUrl.trim(),
         n8nSalesMode,
+        n8nChatMode,
+        n8nChatWebhookUrl: n8nChatWebhookUrl.trim(),
+        n8nChatSandboxPhones: n8nChatSandboxPhones.trim(),
       };
       if (novitaApiKey.trim()) payload.novitaApiKey = novitaApiKey.trim();
       if (n8nWebhookSecret.trim()) payload.n8nWebhookSecret = n8nWebhookSecret.trim();
@@ -643,6 +667,110 @@ export default function BotAiSettingsPage() {
                 <option value="core">Core</option>
               </select>
             </Field>
+
+            <div className="rounded-2xl border border-brand-100 bg-brand-50/40 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800">n8n Flujos de Chat</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Importa las plantillas en n8n y activa sandbox solo para telefonos de prueba antes de pasar a core.
+                  </p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-brand-700">
+                  {n8nChatMode === 'core' ? 'Core activo' : n8nChatMode === 'sandbox' ? 'Sandbox' : 'Desactivado'}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field label="Modo chat n8n" hint="Disabled mantiene el bot actual; Sandbox solo enruta telefonos configurados; Core enruta todos los chats.">
+                  <select
+                    className="zent-input bg-white"
+                    value={n8nChatMode}
+                    onChange={(e) => setN8nChatMode(e.target.value as 'disabled' | 'sandbox' | 'core')}
+                  >
+                    <option value="disabled">Desactivado</option>
+                    <option value="sandbox">Sandbox</option>
+                    <option value="core">Core</option>
+                  </select>
+                </Field>
+                <Field label="Telefonos sandbox" hint="Separados por coma. Ejemplo: 51999999999, 51988888888">
+                  <input
+                    className="zent-input bg-white"
+                    value={n8nChatSandboxPhones}
+                    onChange={(e) => setN8nChatSandboxPhones(e.target.value)}
+                    placeholder="51999999999"
+                    inputMode="tel"
+                  />
+                </Field>
+              </div>
+
+              <div className="mt-3">
+                <Field label="N8N_CHAT_WEBHOOK_URL" hint="Debe apuntar al webhook de la plantilla Zent WhatsApp Sales Chat.">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className="zent-input bg-white"
+                      value={n8nChatWebhookUrl}
+                      onChange={(e) => setN8nChatWebhookUrl(e.target.value)}
+                      placeholder="http://n8n:5678/webhook/zent-chat"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => copyText('N8N_CHAT_WEBHOOK_URL', n8nChatWebhookUrl)}
+                    >
+                      Copiar
+                    </Button>
+                  </div>
+                </Field>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-brand-100 bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Variable n8n</div>
+                  <div className="mt-1 break-all font-mono text-sm text-slate-800">ZENT_API_URL=http://backend-api:3000/api</div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-2 !min-h-0 !px-3 !py-1.5 text-xs"
+                    onClick={() => copyText('ZENT_API_URL', 'http://backend-api:3000/api')}
+                  >
+                    Copiar
+                  </Button>
+                </div>
+                <div className="rounded-xl border border-brand-100 bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Variable n8n</div>
+                  <div className="mt-1 break-all font-mono text-sm text-slate-800">ZENT_N8N_SECRET=usa el mismo secreto HMAC</div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    No se muestra por seguridad. Copia el valor desde tu `.env` o configuralo al crear el secreto.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-brand-100 bg-white p-3">
+                <div className="text-sm font-semibold text-slate-800">Plantillas versionadas</div>
+                <div className="mt-2 space-y-2">
+                  {(n8nChatTemplates.length
+                    ? n8nChatTemplates
+                    : [
+                        'infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json',
+                        'infra/n8n/templates/zent-order-status-chat.workflow.json',
+                      ]
+                  ).map((template) => (
+                    <div key={template} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-2 sm:flex-row sm:items-center">
+                      <code className="flex-1 break-all text-xs text-slate-700">{template}</code>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="!min-h-0 !px-3 !py-1.5 text-xs"
+                        onClick={() => copyText('ruta de plantilla', template)}
+                      >
+                        Copiar ruta
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
             <Field
               label="Secreto HMAC"

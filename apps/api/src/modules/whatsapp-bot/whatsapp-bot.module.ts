@@ -13,10 +13,18 @@ import { BotAiModule } from '../bot-ai/bot-ai.module';
 import { BotRoutingService } from './bot-routing.service';
 import { BotIntentService } from './bot-intent.service';
 import { BotTurnLogService } from './bot-turn-log.service';
+import { WorkflowsModule } from '../workflows/workflows.module';
 
 @Global()
 @Module({
-  imports: [CustomersModule, OrdersModule, InventoryModule, WhatsappInboxModule, forwardRef(() => BotAiModule)],
+  imports: [
+    CustomersModule,
+    OrdersModule,
+    InventoryModule,
+    WhatsappInboxModule,
+    forwardRef(() => BotAiModule),
+    forwardRef(() => WorkflowsModule),
+  ],
   controllers: [WhatsappBotController, BotPluginController],
   providers: [
     WhatsappBotService,
