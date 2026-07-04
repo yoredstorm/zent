@@ -14,6 +14,7 @@ import { BotRoutingService } from './bot-routing.service';
 import { BotIntentService } from './bot-intent.service';
 import { BotTurnLogService } from './bot-turn-log.service';
 import { WorkflowsModule } from '../workflows/workflows.module';
+import { BotEngineModule } from './bot-engine.module';
 
 @Global()
 @Module({
@@ -22,6 +23,7 @@ import { WorkflowsModule } from '../workflows/workflows.module';
     OrdersModule,
     InventoryModule,
     WhatsappInboxModule,
+    BotEngineModule,
     forwardRef(() => BotAiModule),
     forwardRef(() => WorkflowsModule),
   ],
@@ -40,6 +42,7 @@ import { WorkflowsModule } from '../workflows/workflows.module';
     CartService,
     ChatSessionService,
     BotRoutingService,
+    BotEngineModule,
     BotTurnLogService,
   ],
 })

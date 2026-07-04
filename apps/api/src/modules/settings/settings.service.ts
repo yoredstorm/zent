@@ -8,6 +8,7 @@ import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
 import { SecretsService } from '../setup/secrets.service';
 import { fetchNovitaBalance, parseNovitaBalanceUsd } from '../bot-ai/novita.client';
 import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
+import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
 import { OpenwaPluginService } from '../openwa/openwa-plugin.service';
 import { WorkflowEventsService } from '../workflows/workflow-events.service';
 
@@ -32,6 +33,7 @@ export class SettingsService {
     private novitaBalance: NovitaBalanceService,
     private secrets: SecretsService,
     private botRouting: BotRoutingService,
+    private botEngine: BotEngineService,
     private openwaPlugin: OpenwaPluginService,
     private workflowEvents: WorkflowEventsService,
   ) {}
@@ -63,75 +65,94 @@ export class SettingsService {
     const store = await this.prisma.storeSettings.findFirst();
     if (!store) throw new NotFoundException('Tienda no configurada');
 
-    const keyConfigured = !!(
-      process.env.NOVITA_API_KEY?.trim() || this.config.get<string>('NOVITA_API_KEY', '').trim()
-    );
-    const envEnabled =
-      (process.env.NOVITA_BOT_ENABLED ?? this.config.get<string>('NOVITA_BOT_ENABLED', 'false')).trim() ===
-      'true';
+    const engineStatus = await this.botEngine.getStatus();
+    const cfg = await this.botEngine.getConfig();
     const routingStatus = await this.botRouting.getStatus();
-    const balanceUsd = routingStatus.balanceUsd;
-    const activeBotMode = routingStatus.effectiveMode;
-    const desiredBotMode = routingStatus.desiredMode;
-    const zentFlowInstalled = await this.openwaPlugin.isZentFlowInstalled();
-
-    let zentFlowPassThrough: boolean | null = null;
-    if (!zentFlowInstalled) {
-      zentFlowPassThrough = desiredBotMode === 'ai' ? true : null;
-    } else {
-      const zfConfig = await this.openwaPlugin.getZentFlowConfig();
-      zentFlowPassThrough = zfConfig.passThrough === true;
-    }
+    const keyConfigured = engineStatus.novitaKeyConfigured;
 
     let zentFlowSyncWarning: string | null = null;
-    if (!zentFlowInstalled && desiredBotMode === 'legacy') {
-      zentFlowSyncWarning =
-        'Plugin zent-flow no instalado en OpenWA. El menu numerico no funcionara hasta instalarlo.';
-    } else if (zentFlowInstalled && desiredBotMode === 'ai' && zentFlowPassThrough === false) {
-      zentFlowSyncWarning =
-        'zent-flow puede estar interceptando mensajes con menu numerico. Usa Sincronizar OpenWA.';
+    if (engineStatus.blockerMessages.length > 0) {
+      zentFlowSyncWarning = engineStatus.blockerMessages[0];
     }
 
+    const n8nChatMode =
+      cfg.engine === 'n8n'
+        ? cfg.n8nChatScope
+        : ('disabled' as const);
+
     return {
+      whatsappBotEngine: cfg.engine,
+      engineStatus: {
+        engine: engineStatus.engine,
+        source: engineStatus.source,
+        blockers: engineStatus.blockers,
+        blockerMessages: engineStatus.blockerMessages,
+        zentFlowPassThrough: engineStatus.zentFlowPassThrough,
+        zentFlowInstalled: engineStatus.zentFlowInstalled,
+        zentFlowPassThroughActual: engineStatus.zentFlowPassThroughActual,
+        openwaConnected: engineStatus.openwaConnected,
+        openwaSessions: engineStatus.openwaSessions,
+        novitaKeyConfigured: engineStatus.novitaKeyConfigured,
+        novitaBalanceUsd: engineStatus.novitaBalanceUsd,
+      },
       botAiEnabled: store.botAiEnabled,
       botAiBusinessDescription: store.botAiBusinessDescription,
       botAiPolicies: store.botAiPolicies,
       botAiPlaybook: store.botAiPlaybook,
       novitaApiKeyConfigured: keyConfigured,
-      novitaBotEnabled: envEnabled,
+      novitaBotEnabled: cfg.engine === 'novita',
       novitaModel: this.config.get('NOVITA_MODEL', 'deepseek/deepseek-v3.2'),
-      novitaBalanceUsd: balanceUsd,
-      hasSufficientBalance: balanceUsd !== null && balanceUsd >= routingStatus.minBalanceUsd,
-      activeBotMode,
-      desiredBotMode,
+      novitaBalanceUsd: engineStatus.novitaBalanceUsd ?? routingStatus.balanceUsd,
+      hasSufficientBalance:
+        (engineStatus.novitaBalanceUsd ?? routingStatus.balanceUsd) !== null &&
+        (engineStatus.novitaBalanceUsd ?? routingStatus.balanceUsd)! >= routingStatus.minBalanceUsd,
+      activeBotMode: cfg.engine === 'novita' ? 'ai' : 'legacy',
+      desiredBotMode: cfg.engine === 'novita' ? 'ai' : 'legacy',
       effectiveBotMode: routingStatus.effectiveMode,
       routingReasons: routingStatus.reasons,
       minBalanceUsd: routingStatus.minBalanceUsd,
-      zentFlowInstalled,
-      zentFlowPassThrough,
+      zentFlowInstalled: engineStatus.zentFlowInstalled,
+      zentFlowPassThrough: engineStatus.zentFlowPassThroughActual,
       zentFlowSyncOk: this.lastZentFlowSync?.ok ?? null,
       zentFlowSyncAt: this.lastZentFlowSync?.at ?? null,
       zentFlowSyncWarning,
-      n8nWorkflowsEnabled:
-        this.config.get<string>('N8N_WORKFLOWS_ENABLED', 'false').trim() === 'true',
-      n8nWebhookBaseUrl: this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
-      n8nWebhookBaseUrlConfigured: !!this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
-      n8nWebhookSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
-      n8nEmbedded: this.isEmbeddedN8nConfigured(),
+      n8nWorkflowsEnabled: cfg.n8nWorkflowsEnabled,
+      n8nWebhookBaseUrl: cfg.n8nWebhookBaseUrl,
+      n8nWebhookBaseUrlConfigured: !!cfg.n8nWebhookBaseUrl,
+      n8nWebhookSecretConfigured: !!cfg.webhookSecret,
+      n8nEmbedded: cfg.n8nWebhookBaseUrl.includes('://n8n:5678/'),
       n8nPublicUrl: this.config.get<string>('N8N_PUBLIC_URL', '').trim() || null,
       n8nInternalWebhookBaseUrl: this.defaultN8nWebhookBaseUrl(),
-      n8nSalesMode: this.n8nSalesMode(),
-      n8nChatMode: this.n8nChatMode(),
-      n8nChatWebhookUrl: this.n8nChatWebhookUrl(),
-      n8nChatSandboxPhones: this.config.get<string>('N8N_CHAT_SANDBOX_PHONES', '').trim(),
+      n8nSalesMode: cfg.n8nSalesMode,
+      n8nChatMode,
+      n8nChatScope: cfg.n8nChatScope,
+      n8nChatWebhookUrl: cfg.n8nChatWebhookUrl,
+      n8nChatSandboxPhones: cfg.n8nChatSandboxPhones,
       n8nChatTemplates: [
         'infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json',
         'infra/n8n/templates/zent-order-status-chat.workflow.json',
       ],
-      n8nHealth: await this.getN8nHealth(),
-      n8nSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
+      n8nHealth: await this.getN8nHealth(cfg.n8nWebhookBaseUrl),
+      n8nSecretConfigured: !!cfg.webhookSecret,
       lastN8nTestResult: this.lastN8nTestResult,
     };
+  }
+
+  async getIntegrationStatus() {
+    const status = await this.botEngine.getStatus();
+    const testPhone = status.n8nChatSandboxPhones.split(',')[0]?.trim() || null;
+    return {
+      ...status,
+      wouldRouteTestPhone: testPhone
+        ? this.botEngine.shouldRouteToN8n(testPhone, status)
+        : status.engine === 'n8n' && status.n8nChatScope === 'core',
+      testPhone,
+    };
+  }
+
+  async testN8nChatWebhook() {
+    const result = await this.botEngine.testN8nChatWebhook();
+    return result;
   }
 
   async updateBotAiSettings(dto: UpdateBotAiDto) {
@@ -141,20 +162,64 @@ export class SettingsService {
     const {
       novitaApiKey,
       novitaBotEnabled,
+      whatsappBotEngine,
       n8nWorkflowsEnabled,
       n8nWebhookBaseUrl,
       n8nWebhookSecret,
       n8nSalesMode,
       n8nChatMode,
+      n8nChatScope,
       n8nChatWebhookUrl,
       n8nChatSandboxPhones,
       n8nRestoreDefaults,
       ...storeFields
     } = dto;
 
+    let engine = whatsappBotEngine as 'legacy' | 'novita' | 'n8n' | undefined;
+    if (!engine && n8nChatMode && n8nChatMode !== 'disabled') engine = 'n8n';
+    if (!engine && novitaBotEnabled) engine = 'novita';
+
+    let chatScope = n8nChatScope as 'sandbox' | 'core' | undefined;
+    if (!chatScope && n8nChatMode) {
+      chatScope = n8nChatMode === 'core' ? 'core' : n8nChatMode === 'sandbox' ? 'sandbox' : undefined;
+    }
+
+    const dbUpdate: Record<string, unknown> = { ...storeFields };
+
+    if (engine) {
+      dbUpdate.whatsappBotEngine = engine;
+      if (engine === 'novita') dbUpdate.botAiEnabled = true;
+      if (engine === 'legacy') dbUpdate.botAiEnabled = false;
+    }
+
+    if (n8nWorkflowsEnabled !== undefined) dbUpdate.n8nWorkflowsEnabled = n8nWorkflowsEnabled;
+    if (n8nWebhookBaseUrl !== undefined) dbUpdate.n8nWebhookBaseUrl = n8nWebhookBaseUrl.trim();
+    if (n8nSalesMode !== undefined) {
+      dbUpdate.n8nSalesMode = ['disabled', 'sandbox', 'core'].includes(n8nSalesMode)
+        ? n8nSalesMode
+        : 'sandbox';
+    }
+    if (chatScope) dbUpdate.n8nChatScope = chatScope;
+    if (n8nChatWebhookUrl !== undefined) dbUpdate.n8nChatWebhookUrl = n8nChatWebhookUrl.trim();
+    if (n8nChatSandboxPhones !== undefined) {
+      dbUpdate.n8nChatSandboxPhones = n8nChatSandboxPhones.trim();
+    }
+
+    if (n8nRestoreDefaults) {
+      dbUpdate.n8nWebhookBaseUrl = this.defaultN8nWebhookBaseUrl();
+      dbUpdate.n8nWorkflowsEnabled = true;
+      dbUpdate.n8nSalesMode = 'sandbox';
+      dbUpdate.n8nChatScope = 'sandbox';
+      dbUpdate.n8nChatWebhookUrl = this.defaultN8nChatWebhookUrl();
+      if (engine === undefined) dbUpdate.whatsappBotEngine = 'n8n';
+      if (!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim()) {
+        this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', this.secrets.generateSecret(24));
+      }
+    }
+
     await this.prisma.storeSettings.update({
       where: { id: current.id },
-      data: storeFields,
+      data: dbUpdate,
     });
 
     if (novitaApiKey?.trim()) {
@@ -162,59 +227,51 @@ export class SettingsService {
       this.novitaBalance.invalidateCache();
     }
 
-    if (novitaBotEnabled !== undefined) {
-      this.secrets.upsertEnvConfig('NOVITA_BOT_ENABLED', novitaBotEnabled ? 'true' : 'false');
-    }
+    const resolvedEngine = engine ?? (await this.botEngine.getConfig()).engine;
+    this.secrets.upsertEnvConfig(
+      'NOVITA_BOT_ENABLED',
+      resolvedEngine === 'novita' ? 'true' : 'false',
+    );
+    this.secrets.upsertEnvConfig(
+      'N8N_CHAT_MODE',
+      resolvedEngine === 'n8n' ? (chatScope ?? 'sandbox') : 'disabled',
+    );
 
     if (n8nWorkflowsEnabled !== undefined) {
       this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', n8nWorkflowsEnabled ? 'true' : 'false');
     }
-
-    if (n8nRestoreDefaults) {
-      this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl());
-      this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', 'true');
-      this.secrets.upsertEnvConfig('N8N_SALES_MODE', 'sandbox');
-      this.secrets.upsertEnvConfig('N8N_CHAT_MODE', 'sandbox');
-      this.secrets.upsertEnvConfig('N8N_CHAT_WEBHOOK_URL', this.defaultN8nChatWebhookUrl());
-      if (!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim()) {
-        this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', this.secrets.generateSecret(24));
-      }
-    } else if (n8nWebhookBaseUrl !== undefined) {
-      this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', n8nWebhookBaseUrl.trim());
+    if (n8nRestoreDefaults || n8nWebhookBaseUrl !== undefined) {
+      const url = n8nRestoreDefaults
+        ? this.defaultN8nWebhookBaseUrl()
+        : n8nWebhookBaseUrl!.trim();
+      this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', url);
     }
-
     if (n8nWebhookSecret?.trim()) {
       this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', n8nWebhookSecret.trim());
     }
-
     if (n8nSalesMode !== undefined) {
-      const mode = ['disabled', 'sandbox', 'core'].includes(n8nSalesMode)
-        ? n8nSalesMode
-        : 'sandbox';
+      const mode = ['disabled', 'sandbox', 'core'].includes(n8nSalesMode) ? n8nSalesMode : 'sandbox';
       this.secrets.upsertEnvConfig('N8N_SALES_MODE', mode);
     }
-
-    if (n8nChatMode !== undefined) {
-      const mode = ['disabled', 'sandbox', 'core'].includes(n8nChatMode) ? n8nChatMode : 'disabled';
-      this.secrets.upsertEnvConfig('N8N_CHAT_MODE', mode);
+    if (n8nChatWebhookUrl !== undefined || n8nRestoreDefaults) {
+      const url = n8nRestoreDefaults
+        ? this.defaultN8nChatWebhookUrl()
+        : n8nChatWebhookUrl!.trim();
+      this.secrets.upsertEnvConfig('N8N_CHAT_WEBHOOK_URL', url);
     }
-
-    if (n8nChatWebhookUrl !== undefined) {
-      this.secrets.upsertEnvConfig('N8N_CHAT_WEBHOOK_URL', n8nChatWebhookUrl.trim());
-    }
-
     if (n8nChatSandboxPhones !== undefined) {
       this.secrets.upsertEnvConfig('N8N_CHAT_SANDBOX_PHONES', n8nChatSandboxPhones.trim());
     }
 
+    this.botEngine.invalidate();
     await this.syncZentFlowPlugin();
 
     return this.getBotAiSettings();
   }
 
   async syncZentFlowPlugin() {
-    const status = await this.botRouting.getStatus();
-    const result = await this.openwaPlugin.syncZentFlowForMode(status.desiredMode);
+    const cfg = await this.botEngine.getConfig();
+    const result = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
     this.lastZentFlowSync = {
       ok: result.ok,
       passThrough: result.passThrough,
@@ -232,8 +289,8 @@ export class SettingsService {
     await this.workflowEvents.emit('test.ping', { source: 'dashboard', at: new Date().toISOString() });
     const result = {
       ok: true,
-      enabled: this.workflowEvents.enabled(),
-      baseUrlConfigured: !!this.workflowEvents.baseUrl(),
+      enabled: await this.workflowEvents.enabled(),
+      baseUrlConfigured: !!(await this.workflowEvents.baseUrl()),
       secretConfigured: !!this.workflowEvents.secret(),
     };
     this.lastN8nTestResult = {
@@ -262,31 +319,11 @@ export class SettingsService {
     return 'http://n8n:5678/webhook/zent-chat';
   }
 
-  private n8nSalesMode(): 'disabled' | 'sandbox' | 'core' {
-    const mode = this.config.get<string>('N8N_SALES_MODE', 'sandbox').trim();
-    return mode === 'disabled' || mode === 'core' ? mode : 'sandbox';
-  }
-
-  private n8nChatMode(): 'disabled' | 'sandbox' | 'core' {
-    const mode = this.config.get<string>('N8N_CHAT_MODE', 'disabled').trim();
-    return mode === 'sandbox' || mode === 'core' ? mode : 'disabled';
-  }
-
-  private n8nChatWebhookUrl(): string {
-    return this.config.get<string>('N8N_CHAT_WEBHOOK_URL', this.defaultN8nChatWebhookUrl()).trim();
-  }
-
-  private isEmbeddedN8nConfigured(): boolean {
-    return this.config
-      .get<string>('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl())
-      .includes('://n8n:5678/');
-  }
-
-  private async getN8nHealth(): Promise<{ ok: boolean; status: number | null; url: string; error?: string }> {
-    const baseUrl = this.config
-      .get<string>('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl())
-      .replace(/\/webhook\/zent\/?$/, '');
-    const url = `${baseUrl}/healthz`;
+  private async getN8nHealth(
+    webhookBaseUrl?: string,
+  ): Promise<{ ok: boolean; status: number | null; url: string; error?: string }> {
+    const base = (webhookBaseUrl ?? this.defaultN8nWebhookBaseUrl()).replace(/\/webhook\/zent\/?$/, '');
+    const url = `${base}/healthz`;
     try {
       const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(3000) });
       return { ok: res.status < 500, status: res.status, url };

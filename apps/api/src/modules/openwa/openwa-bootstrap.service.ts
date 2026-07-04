@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from './openwa.service';
 import { OpenwaPluginService } from './openwa-plugin.service';
 import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
+import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
 
 @Injectable()
 export class OpenwaBootstrapService implements OnApplicationBootstrap {
@@ -18,6 +19,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     private prisma: PrismaService,
     private openwaPlugin: OpenwaPluginService,
     private botRouting: BotRoutingService,
+    private botEngine: BotEngineService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -103,6 +105,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
 
         await this.openwa.ensureInfrastructure();
         await this.registerWebhookWithRetries(3);
+        await this.resumeDisconnectedSessions();
         await this.syncZentFlowPlugin();
         return;
       } catch (err: any) {
@@ -180,7 +183,8 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
       result.webhookOk = true;
 
       result.mode = await this.botRouting.getMode();
-      const zentFlow = await this.openwaPlugin.syncZentFlowForMode(result.mode);
+      const cfg = await this.botEngine.getConfig();
+      const zentFlow = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
       result.zentFlowOk = zentFlow.ok;
       result.ok = result.apiKeyValid && result.infrastructureOk && result.webhookOk && result.zentFlowOk;
       if (!zentFlow.ok) result.error = zentFlow.error ?? 'zent-flow sync failed';
@@ -194,15 +198,41 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
 
   private async syncZentFlowPlugin(): Promise<void> {
     try {
-      const mode = await this.botRouting.getMode();
-      const result = await this.openwaPlugin.syncZentFlowForMode(mode);
+      const cfg = await this.botEngine.getConfig();
+      const result = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
       if (result.ok) {
-        this.logger.log(`zent-flow synced on bootstrap (mode=${mode}, passThrough=${result.passThrough})`);
+        this.logger.log(
+          `zent-flow synced on bootstrap (engine=${cfg.engine}, passThrough=${result.passThrough})`,
+        );
       } else {
         this.logger.warn(`zent-flow sync on bootstrap failed: ${result.error}`);
       }
     } catch (err: any) {
       this.logger.warn(`zent-flow sync on bootstrap failed: ${err?.message || err}`);
     }
+  }
+
+  async resumeDisconnectedSessions(): Promise<{ resumed: string[]; skipped: string[] }> {
+    const resumed: string[] = [];
+    const skipped: string[] = [];
+    try {
+      const sessions = await this.openwa.getSessions();
+      for (const session of sessions) {
+        if (/connected|ready|authenticated/i.test(session.status)) {
+          skipped.push(session.id);
+          continue;
+        }
+        try {
+          await this.openwa.startSession(session.id);
+          resumed.push(session.id);
+          this.logger.log(`Resumed OpenWA session ${session.id}`);
+        } catch (err: any) {
+          this.logger.warn(`Could not resume session ${session.id}: ${err?.message || err}`);
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`resumeDisconnectedSessions failed: ${err?.message || err}`);
+    }
+    return { resumed, skipped };
   }
 }

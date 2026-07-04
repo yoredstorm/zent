@@ -14,6 +14,11 @@ export interface N8nChatBridgeInput {
   context?: Record<string, unknown>;
 }
 
+export interface N8nChatBridgeRuntime {
+  chatWebhookUrl: string;
+  webhookSecret: string;
+}
+
 export interface N8nChatBridgeResult {
   ok: boolean;
   replied: boolean;
@@ -40,6 +45,7 @@ export class N8nChatBridgeService {
     return mode === 'sandbox' || mode === 'core' ? mode : 'disabled';
   }
 
+  /** @deprecated Use BotEngineService.shouldRouteToN8n in worker */
   shouldHandle(contactPhone?: string | null): boolean {
     const mode = this.chatMode();
     if (mode === 'disabled') return false;
@@ -57,7 +63,10 @@ export class N8nChatBridgeService {
     return Boolean(phone && sandboxPhones.some((candidate) => phone.endsWith(candidate) || candidate.endsWith(phone)));
   }
 
-  async handleMessage(input: N8nChatBridgeInput): Promise<N8nChatBridgeResult> {
+  async handleMessage(
+    input: N8nChatBridgeInput,
+    runtime?: N8nChatBridgeRuntime,
+  ): Promise<N8nChatBridgeResult> {
     const startedAt = Date.now();
     const logId = await this.turnLog.startTurn({
       stateKey: input.waSessionId ? `${input.waSessionId}:${input.chatId}` : input.chatId,
@@ -77,11 +86,13 @@ export class N8nChatBridgeService {
         context: input.context ?? {},
       };
       const body = JSON.stringify(payload);
-      const response = await this.fetchImpl(this.chatWebhookUrl(), {
+      const webhookUrl = runtime?.chatWebhookUrl ?? this.chatWebhookUrl();
+      const secret = runtime?.webhookSecret ?? this.secret();
+      const response = await this.fetchImpl(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Zent-Signature': this.sign(body),
+          'X-Zent-Signature': this.sign(body, secret),
         },
         body,
         signal: AbortSignal.timeout(this.timeoutMs()),
@@ -129,8 +140,8 @@ export class N8nChatBridgeService {
       .trim();
   }
 
-  private sign(body: string): string {
-    const secret = this.secret();
+  private sign(body: string, secretOverride?: string): string {
+    const secret = secretOverride ?? this.secret();
     if (!secret) return '';
     return `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
   }

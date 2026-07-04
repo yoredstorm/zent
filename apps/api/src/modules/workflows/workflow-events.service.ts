@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
 
 export const WORKFLOW_FETCH = Symbol('WORKFLOW_FETCH');
 
@@ -28,26 +29,29 @@ export class WorkflowEventsService {
 
   constructor(
     private config: ConfigService,
+    private botEngine: BotEngineService,
     @Optional()
     @Inject(WORKFLOW_FETCH)
     private fetchImpl: typeof fetch = fetch,
   ) {}
 
-  enabled(): boolean {
-    return this.config.get<string>('N8N_WORKFLOWS_ENABLED', 'false') === 'true';
+  async enabled(): Promise<boolean> {
+    const cfg = await this.botEngine.getConfig();
+    return cfg.n8nWorkflowsEnabled;
   }
 
-  baseUrl(): string {
-    return this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim().replace(/\/$/, '');
+  async baseUrl(): Promise<string> {
+    const cfg = await this.botEngine.getConfig();
+    return cfg.n8nWebhookBaseUrl.trim().replace(/\/$/, '');
   }
 
   secret(): string {
     return this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim();
   }
 
-  salesMode(): 'disabled' | 'sandbox' | 'core' {
-    const mode = this.config.get<string>('N8N_SALES_MODE', 'sandbox').trim();
-    return mode === 'disabled' || mode === 'core' ? mode : 'sandbox';
+  async salesMode(): Promise<'disabled' | 'sandbox' | 'core'> {
+    const cfg = await this.botEngine.getConfig();
+    return cfg.n8nSalesMode;
   }
 
   sign(body: string): string {
@@ -64,7 +68,7 @@ export class WorkflowEventsService {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
   }
 
-  private shouldEmit(event: WorkflowEventName, force = false): boolean {
+  private async shouldEmit(event: WorkflowEventName, force = false): Promise<boolean> {
     if (force || event === 'test.ping') return true;
     const salesEvents: WorkflowEventName[] = [
       'order.created',
@@ -73,7 +77,7 @@ export class WorkflowEventsService {
       'handoff.requested',
     ];
     if (!salesEvents.includes(event)) return true;
-    return this.salesMode() === 'core';
+    return (await this.salesMode()) === 'core';
   }
 
   async emitWithResult(
@@ -81,14 +85,14 @@ export class WorkflowEventsService {
     payload: Record<string, unknown>,
     options: { force?: boolean } = {},
   ): Promise<WorkflowEmitResult> {
-    if (!this.enabled()) {
+    if (!(await this.enabled())) {
       return { event, ok: false, skipped: true, status: null, url: null, error: 'disabled' };
     }
-    const baseUrl = this.baseUrl();
+    const baseUrl = await this.baseUrl();
     if (!baseUrl) {
       return { event, ok: false, skipped: true, status: null, url: null, error: 'base_url_missing' };
     }
-    if (!this.shouldEmit(event, options.force)) {
+    if (!(await this.shouldEmit(event, options.force))) {
       return {
         event,
         ok: false,

@@ -59,6 +59,12 @@ export class OpenwaController {
     return this.openwaBootstrap.repairWebhook();
   }
 
+  @Post('sessions/resume')
+  @ApiOperation({ summary: 'Resume disconnected WhatsApp sessions' })
+  resumeSessions() {
+    return this.openwaBootstrap.resumeDisconnectedSessions();
+  }
+
   @Get('qr')
   @ApiOperation({ summary: 'Get QR code for linking' })
   async getQR() {

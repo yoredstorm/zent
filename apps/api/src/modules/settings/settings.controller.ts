@@ -90,4 +90,18 @@ export class BotAiSettingsController {
   runN8nSandbox() {
     return this.settings.runN8nSalesSandbox();
   }
+
+  @Get('integration-status')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'WhatsApp bot engine integration diagnostics' })
+  integrationStatus() {
+    return this.settings.getIntegrationStatus();
+  }
+
+  @Post('n8n/chat/test')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Test n8n chat webhook connectivity' })
+  testN8nChat() {
+    return this.settings.testN8nChatWebhook();
+  }
 }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { OpenwaService } from './openwa.service';
 import type { BotRoutingMode } from '../whatsapp-bot/bot-routing.service';
+import type { WhatsappBotEngine } from '../whatsapp-bot/bot-engine.service';
 
 export interface ZentFlowSyncResult {
   ok: boolean;
@@ -131,8 +132,17 @@ export class OpenwaPluginService {
     }
   }
 
+  async syncZentFlowForEngine(engine: WhatsappBotEngine): Promise<ZentFlowSyncResult> {
+    const passThrough = engine !== 'legacy';
+    return this.syncZentFlowInternal(passThrough);
+  }
+
   async syncZentFlowForMode(mode: BotRoutingMode): Promise<ZentFlowSyncResult> {
     const passThrough = mode === 'ai';
+    return this.syncZentFlowInternal(passThrough);
+  }
+
+  private async syncZentFlowInternal(passThrough: boolean): Promise<ZentFlowSyncResult> {
     let installed = await this.isZentFlowInstalled();
 
     if (!installed) {
@@ -146,7 +156,7 @@ export class OpenwaPluginService {
           passThrough: true,
           pluginInstalled: false,
           message:
-            'Plugin zent-flow no instalado en OpenWA. En modo IA los mensajes van directo al webhook — no se requiere el plugin.',
+            'Plugin zent-flow no instalado en OpenWA. Los mensajes van directo al webhook.',
         };
       }
       return {
@@ -174,7 +184,7 @@ export class OpenwaPluginService {
         passThrough,
         pluginInstalled: true,
         message: passThrough
-          ? 'zent-flow en modo pass-through (IA activa)'
+          ? 'zent-flow en modo pass-through (mensajes al webhook)'
           : 'zent-flow en modo menu numerico',
       };
     } catch (err: any) {

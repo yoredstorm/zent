@@ -5,8 +5,8 @@ describe('OpenwaBootstrapService', () => {
     validateApiKey?: jest.Mock;
     ensureInfrastructure?: jest.Mock;
     ensureWebhook?: jest.Mock;
-    syncZentFlowForMode?: jest.Mock;
-    getMode?: jest.Mock;
+    syncZentFlowForEngine?: jest.Mock;
+    getConfig?: jest.Mock;
   } = {}) {
     const config = { get: jest.fn((key: string, fallback?: string) => fallback) };
     const openwa = {
@@ -16,11 +16,14 @@ describe('OpenwaBootstrapService', () => {
     };
     const prisma = { systemInstall: { findFirst: jest.fn() } };
     const openwaPlugin = {
-      syncZentFlowForMode:
-        overrides.syncZentFlowForMode ??
+      syncZentFlowForEngine:
+        overrides.syncZentFlowForEngine ??
         jest.fn().mockResolvedValue({ ok: true, passThrough: true }),
     };
-    const botRouting = { getMode: overrides.getMode ?? jest.fn().mockResolvedValue('ai') };
+    const botRouting = { getMode: jest.fn().mockResolvedValue('ai') };
+    const botEngine = {
+      getConfig: overrides.getConfig ?? jest.fn().mockResolvedValue({ engine: 'novita' }),
+    };
 
     return {
       service: new OpenwaBootstrapService(
@@ -29,10 +32,11 @@ describe('OpenwaBootstrapService', () => {
         prisma as any,
         openwaPlugin as any,
         botRouting as any,
+        botEngine as any,
       ),
       openwa,
       openwaPlugin,
-      botRouting,
+      botEngine,
     };
   }
 
@@ -53,6 +57,6 @@ describe('OpenwaBootstrapService', () => {
     expect(openwa.validateApiKey).toHaveBeenCalled();
     expect(openwa.ensureInfrastructure).toHaveBeenCalled();
     expect(openwa.ensureWebhook).toHaveBeenCalled();
-    expect(openwaPlugin.syncZentFlowForMode).toHaveBeenCalledWith('ai');
+    expect(openwaPlugin.syncZentFlowForEngine).toHaveBeenCalledWith('novita');
   });
 });

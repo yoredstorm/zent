@@ -7,6 +7,7 @@ import { WaMessageService } from '../whatsapp-inbox/wa-message.service';
 import { BotTurnLogService } from './bot-turn-log.service';
 import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { BotRoutingService } from './bot-routing.service';
+import { BotEngineService } from './bot-engine.service';
 import { N8nChatBridgeService } from '../workflows/n8n-chat-bridge.service';
 
 interface WebhookJob {
@@ -35,6 +36,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     private turnLog: BotTurnLogService,
     private vendorNotify: VendorNotifyService,
     private botRouting: BotRoutingService,
+    private botEngine: BotEngineService,
     private n8nChatBridge: N8nChatBridgeService,
   ) {}
 
@@ -82,20 +84,35 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const mode = await this.botRouting.getMode();
-      this.logger.log(`Bot routing mode=${mode} chatId=${chatId}`);
-      if (this.n8nChatBridge.shouldHandle(senderPhone ?? from)) {
-        await this.n8nChatBridge.handleMessage({
-          chatId,
-          waSessionId,
-          contactPhone: senderPhone ?? from,
-          message: body,
-          messageType: 'text',
-          context: { from, routingMode: mode },
-        });
+      const cfg = await this.botEngine.getConfig();
+      const phone = senderPhone ?? from;
+      this.logger.log(`Bot engine=${cfg.engine} chatId=${chatId} phone=${phone?.slice(0, 12) ?? 'n/a'}`);
+
+      if (this.botEngine.shouldRouteToN8n(phone, cfg)) {
+        await this.n8nChatBridge.handleMessage(
+          {
+            chatId,
+            waSessionId,
+            contactPhone: phone,
+            message: body,
+            messageType: 'text',
+            context: { from, engine: cfg.engine },
+          },
+          {
+            chatWebhookUrl: cfg.n8nChatWebhookUrl,
+            webhookSecret: cfg.webhookSecret,
+          },
+        );
         this.markProcessed(idempotencyKey);
         return;
       }
+
+      if (cfg.engine === 'novita' && (await this.botRouting.shouldUseAiBot())) {
+        await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
+        this.markProcessed(idempotencyKey);
+        return;
+      }
+
       await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
       this.markProcessed(idempotencyKey);
     } catch (error: any) {

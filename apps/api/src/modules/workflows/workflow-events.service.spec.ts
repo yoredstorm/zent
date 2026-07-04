@@ -1,25 +1,32 @@
 import { OPTIONAL_DEPS_METADATA } from '@nestjs/common/constants';
 import { WorkflowEventsService } from './workflow-events.service';
 
+function mockBotEngine(overrides: Record<string, unknown> = {}) {
+  return {
+    getConfig: jest.fn().mockResolvedValue({
+      n8nWorkflowsEnabled: true,
+      n8nWebhookBaseUrl: 'https://n8n.example.com/webhook/zent',
+      n8nSalesMode: 'core',
+      engine: 'n8n',
+      ...overrides,
+    }),
+  };
+}
+
 describe('WorkflowEventsService', () => {
   it('marks the injectable fetch override as optional for Nest DI', () => {
     const optionalDeps = Reflect.getMetadata(OPTIONAL_DEPS_METADATA, WorkflowEventsService) ?? [];
-    expect(optionalDeps).toContain(1);
+    expect(optionalDeps).toContain(2);
   });
 
   it('signs payloads with HMAC SHA256', async () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
     const config = {
       get: (key: string, fallback?: string) =>
-        ({
-          N8N_WORKFLOWS_ENABLED: 'true',
-          N8N_WEBHOOK_BASE_URL: 'https://n8n.example.com/webhook/zent',
-          N8N_WEBHOOK_SECRET: 'secret-123',
-          N8N_SALES_MODE: 'core',
-        })[key] ?? fallback,
+        key === 'N8N_WEBHOOK_SECRET' ? 'secret-123' : fallback,
     } as any;
 
-    const service = new WorkflowEventsService(config, fetchMock as any);
+    const service = new WorkflowEventsService(config, mockBotEngine() as any, fetchMock as any);
     await service.emit('order.created', { orderId: 'ord_1' });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -36,11 +43,12 @@ describe('WorkflowEventsService', () => {
 
   it('skips emit when workflows are disabled', async () => {
     const fetchMock = jest.fn();
-    const config = {
-      get: (key: string, fallback?: string) =>
-        key === 'N8N_WORKFLOWS_ENABLED' ? 'false' : fallback,
-    } as any;
-    const service = new WorkflowEventsService(config, fetchMock as any);
+    const config = { get: jest.fn() } as any;
+    const service = new WorkflowEventsService(
+      config,
+      mockBotEngine({ n8nWorkflowsEnabled: false }) as any,
+      fetchMock as any,
+    );
     await service.emit('order.created', { orderId: 'ord_1' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -49,14 +57,16 @@ describe('WorkflowEventsService', () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' });
     const config = {
       get: (key: string, fallback?: string) =>
-        ({
-          N8N_WORKFLOWS_ENABLED: 'true',
-          N8N_WEBHOOK_BASE_URL: 'http://n8n:5678/webhook/zent',
-          N8N_WEBHOOK_SECRET: 'secret-123',
-          N8N_SALES_MODE: 'sandbox',
-        })[key] ?? fallback,
+        key === 'N8N_WEBHOOK_SECRET' ? 'secret-123' : fallback,
     } as any;
-    const service = new WorkflowEventsService(config, fetchMock as any);
+    const service = new WorkflowEventsService(
+      config,
+      mockBotEngine({
+        n8nWebhookBaseUrl: 'http://n8n:5678/webhook/zent',
+        n8nSalesMode: 'sandbox',
+      }) as any,
+      fetchMock as any,
+    );
 
     const result = await service.runSalesSandbox();
 

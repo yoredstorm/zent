@@ -1,11 +1,22 @@
 import { WhatsappBotWorker } from './whatsapp-bot.worker';
 
 describe('WhatsappBotWorker n8n routing', () => {
-  it('routes messages to n8n chat bridge when enabled for the contact', async () => {
+  const n8nCfg = {
+    engine: 'n8n' as const,
+    n8nChatWebhookUrl: 'http://n8n:5678/webhook/zent-chat',
+    webhookSecret: 'secret',
+    n8nChatScope: 'sandbox' as const,
+    n8nChatSandboxPhones: '51999999999',
+  };
+
+  it('routes messages to n8n chat bridge when engine is n8n', async () => {
     const bot = { handleMessage: jest.fn() };
     const bridge = {
-      shouldHandle: jest.fn().mockReturnValue(true),
       handleMessage: jest.fn().mockResolvedValue({ ok: true, replied: true }),
+    };
+    const botEngine = {
+      getConfig: jest.fn().mockResolvedValue(n8nCfg),
+      shouldRouteToN8n: jest.fn().mockReturnValue(true),
     };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,
@@ -14,7 +25,8 @@ describe('WhatsappBotWorker n8n routing', () => {
       {} as any,
       {} as any,
       {} as any,
-      { getMode: jest.fn().mockResolvedValue('ai') } as any,
+      { shouldUseAiBot: jest.fn() } as any,
+      botEngine as any,
       bridge as any,
     );
 
@@ -29,18 +41,25 @@ describe('WhatsappBotWorker n8n routing', () => {
       },
     });
 
-    expect(bridge.handleMessage).toHaveBeenCalledWith({
-      chatId: '51999999999@c.us',
-      waSessionId: 'session_1',
-      contactPhone: '51999999999',
-      message: 'hola',
-      messageType: 'text',
-      context: { from: '51999999999@c.us', routingMode: 'ai' },
-    });
+    expect(bridge.handleMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: '51999999999@c.us',
+        contactPhone: '51999999999',
+        message: 'hola',
+      }),
+      expect.objectContaining({
+        chatWebhookUrl: n8nCfg.n8nChatWebhookUrl,
+        webhookSecret: n8nCfg.webhookSecret,
+      }),
+    );
     expect(bot.handleMessage).not.toHaveBeenCalled();
   });
 
   it('cleans the idempotency cache after n8n-routed messages', async () => {
+    const botEngine = {
+      getConfig: jest.fn().mockResolvedValue(n8nCfg),
+      shouldRouteToN8n: jest.fn().mockReturnValue(true),
+    };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,
       { handleMessage: jest.fn() } as any,
@@ -48,9 +67,9 @@ describe('WhatsappBotWorker n8n routing', () => {
       {} as any,
       {} as any,
       {} as any,
-      { getMode: jest.fn().mockResolvedValue('ai') } as any,
+      {} as any,
+      botEngine as any,
       {
-        shouldHandle: jest.fn().mockReturnValue(true),
         handleMessage: jest.fn().mockResolvedValue({ ok: true, replied: true }),
       } as any,
     );
@@ -69,10 +88,7 @@ describe('WhatsappBotWorker n8n routing', () => {
     expect((worker as any).processedKeys.size).toBeLessThan(10000);
   });
 });
-/**
- * Idempotency: processed key is only recorded after successful handleMessage.
- * Failed jobs must not mark the key so BullMQ can retry.
- */
+
 describe('WhatsappBotWorker idempotency contract', () => {
   it('marks key processed only on success', () => {
     const processedKeys = new Set<string>();

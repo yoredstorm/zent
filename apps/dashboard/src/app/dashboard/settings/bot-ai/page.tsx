@@ -9,8 +9,31 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/lib/api';
 import { useRequireAdmin } from '@/lib/useRequireAdmin';
+import { BotEnginePicker } from '@/components/settings/BotEnginePicker';
+
+type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n';
+
+type EngineStatus = {
+  engine: WhatsappBotEngine;
+  source: string;
+  blockers: string[];
+  blockerMessages: string[];
+  zentFlowPassThrough: boolean;
+  zentFlowInstalled: boolean;
+  zentFlowPassThroughActual: boolean | null;
+  openwaConnected: boolean;
+  openwaSessions: Array<{ id: string; status: string }>;
+};
+
+type IntegrationStatus = EngineStatus & {
+  wouldRouteTestPhone: boolean;
+  testPhone: string | null;
+};
 
 type BotAiSettings = {
+  whatsappBotEngine?: WhatsappBotEngine;
+  engineStatus?: EngineStatus;
+  n8nChatScope?: 'sandbox' | 'core';
   botAiEnabled: boolean;
   botAiBusinessDescription?: string | null;
   botAiPolicies?: string | null;
@@ -140,6 +163,19 @@ export default function BotAiSettingsPage() {
   const [n8nHealth, setN8nHealth] = useState<BotAiSettings['n8nHealth']>(undefined);
   const [runningSandbox, setRunningSandbox] = useState(false);
   const [sandboxResult, setSandboxResult] = useState<N8nSandboxResult | null>(null);
+  const [whatsappBotEngine, setWhatsappBotEngine] = useState<WhatsappBotEngine>('legacy');
+  const [n8nChatScope, setN8nChatScope] = useState<'sandbox' | 'core'>('sandbox');
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
+  const [testingChat, setTestingChat] = useState(false);
+
+  const loadIntegrationStatus = useCallback(async () => {
+    try {
+      const status = await api.get<IntegrationStatus>('/settings/bot-ai/integration-status');
+      setIntegrationStatus(status);
+    } catch {
+      setIntegrationStatus(null);
+    }
+  }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -149,6 +185,7 @@ export default function BotAiSettingsPage() {
         api.get<TemplateVariable[]>('/settings/bot-ai/variables'),
       ]);
       setBotAiEnabled(settings.botAiEnabled);
+      setWhatsappBotEngine(settings.whatsappBotEngine ?? 'legacy');
       setNovitaBotEnabled(settings.novitaBotEnabled);
       setBusinessDescription(settings.botAiBusinessDescription ?? '');
       setPolicies(settings.botAiPolicies ?? '');
@@ -171,17 +208,19 @@ export default function BotAiSettingsPage() {
       setN8nPublicUrl(settings.n8nPublicUrl ?? null);
       setN8nInternalWebhookBaseUrl(settings.n8nInternalWebhookBaseUrl ?? 'http://n8n:5678/webhook/zent');
       setN8nSalesMode(settings.n8nSalesMode ?? 'sandbox');
+      setN8nChatScope(settings.n8nChatScope ?? (settings.n8nChatMode === 'core' ? 'core' : 'sandbox'));
       setN8nChatMode(settings.n8nChatMode ?? 'disabled');
       setN8nChatWebhookUrl(settings.n8nChatWebhookUrl ?? 'http://n8n:5678/webhook/zent-chat');
       setN8nChatSandboxPhones(settings.n8nChatSandboxPhones ?? '');
       setN8nChatTemplates(settings.n8nChatTemplates ?? []);
       setN8nHealth(settings.n8nHealth);
+      await loadIntegrationStatus();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'No se pudo cargar la configuracion del asistente');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadIntegrationStatus]);
 
   useEffect(() => {
     if (ready) loadAll();
@@ -400,15 +439,15 @@ export default function BotAiSettingsPage() {
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {
-        botAiEnabled,
-        novitaBotEnabled,
+        whatsappBotEngine,
+        botAiEnabled: whatsappBotEngine === 'novita' ? true : botAiEnabled,
         botAiBusinessDescription: businessDescription.trim() || null,
         botAiPolicies: policies.trim() || null,
         botAiPlaybook: playbook.trim() || null,
         n8nWorkflowsEnabled,
         n8nWebhookBaseUrl: n8nWebhookBaseUrl.trim(),
         n8nSalesMode,
-        n8nChatMode,
+        n8nChatScope,
         n8nChatWebhookUrl: n8nChatWebhookUrl.trim(),
         n8nChatSandboxPhones: n8nChatSandboxPhones.trim(),
       };
@@ -416,7 +455,12 @@ export default function BotAiSettingsPage() {
       if (n8nWebhookSecret.trim()) payload.n8nWebhookSecret = n8nWebhookSecret.trim();
 
       await api.patch('/settings/bot-ai', payload);
-      toast.success('Asistente IA guardado');
+      const blockers = integrationStatus?.blockers?.length ?? 0;
+      toast.success(
+        blockers > 0
+          ? `Motor ${whatsappBotEngine} guardado. Revisa ${blockers} advertencia(s) en integracion.`
+          : `Motor ${whatsappBotEngine} guardado y aplicado`,
+      );
       setNovitaApiKey('');
       setN8nWebhookSecret('');
       await loadAll();
@@ -433,7 +477,7 @@ export default function BotAiSettingsPage() {
     <div className="max-w-3xl">
       <PageHeader
         title="Asistente IA"
-        subtitle="Configura el bot conversacional de WhatsApp con Novita AI"
+        subtitle="Motor WhatsApp, Novita AI y automatizaciones n8n"
       />
       <SettingsNav />
 
@@ -447,6 +491,120 @@ export default function BotAiSettingsPage() {
         </Card>
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
+          <Card>
+            <BotEnginePicker value={whatsappBotEngine} onChange={setWhatsappBotEngine} />
+          </Card>
+
+          <Card className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-800">Estado de integracion</h2>
+            <p className="text-sm text-slate-500">
+              El motor y su configuracion se guardan en la tienda y aplican al instante. En Dokploy solo
+              necesitas secretos (DB, JWT, N8N_WEBHOOK_SECRET).
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">Motor activo</div>
+                <div className="mt-1 text-sm font-semibold text-slate-800">{whatsappBotEngine}</div>
+                <div className="text-xs text-slate-500">{integrationStatus?.source ?? 'database'}</div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">zent-flow</div>
+                <div
+                  className={`mt-1 text-sm font-semibold ${
+                    integrationStatus?.zentFlowPassThroughActual === false ? 'text-amber-700' : 'text-green-700'
+                  }`}
+                >
+                  {integrationStatus?.zentFlowPassThroughActual === false
+                    ? 'Bloqueando menu'
+                    : integrationStatus?.zentFlowInstalled
+                      ? 'OK'
+                      : 'No instalado'}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">OpenWA</div>
+                <div
+                  className={`mt-1 text-sm font-semibold ${
+                    integrationStatus?.openwaConnected ? 'text-green-700' : 'text-amber-700'
+                  }`}
+                >
+                  {integrationStatus?.openwaConnected ? 'Conectado' : 'Desconectado'}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">Ruteo sandbox</div>
+                <div className="mt-1 text-sm font-semibold text-slate-800">
+                  {integrationStatus?.wouldRouteTestPhone ? 'Telefono OK' : 'Sin ruteo'}
+                </div>
+                {integrationStatus?.testPhone ? (
+                  <div className="text-xs text-slate-500">{integrationStatus.testPhone}</div>
+                ) : null}
+              </div>
+            </div>
+            {integrationStatus?.blockerMessages?.length ? (
+              <ul className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {integrationStatus.blockerMessages.map((msg) => (
+                  <li key={msg}>• {msg}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                Sin bloqueos detectados.
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
+                Aplicar y sincronizar OpenWA
+              </Button>
+              {whatsappBotEngine === 'n8n' ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={testingChat}
+                  onClick={async () => {
+                    setTestingChat(true);
+                    try {
+                      const r = await api.post<{ ok: boolean; status: number | null; error?: string }>(
+                        '/settings/bot-ai/n8n/chat/test',
+                      );
+                      if (r.ok) toast.success('Webhook de chat n8n OK');
+                      else toast.error(r.error || `HTTP ${r.status ?? 'error'}`);
+                      await loadIntegrationStatus();
+                    } catch (err: any) {
+                      toast.error(err?.response?.data?.message || 'Fallo prueba chat n8n');
+                    } finally {
+                      setTestingChat(false);
+                    }
+                  }}
+                >
+                  Probar webhook de chat
+                </Button>
+              ) : null}
+            </div>
+          </Card>
+
+          {whatsappBotEngine === 'legacy' ? (
+            <Card className="space-y-4">
+              <h2 className="text-lg font-semibold text-slate-800">Menu clasico (Legacy)</h2>
+              <p className="text-sm text-slate-600">
+                Los clientes ven opciones 1-2-3-4 via zent-flow en OpenWA. Requiere el plugin instalado.
+              </p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                zent-flow:{' '}
+                {zentFlowInstalled
+                  ? zentFlowPassThrough
+                    ? 'Pass-through (deberia estar en menu)'
+                    : 'Menu numerico activo'
+                  : 'No instalado'}
+              </div>
+              <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
+                Sincronizar OpenWA
+              </Button>
+            </Card>
+          ) : null}
+
+          {whatsappBotEngine === 'novita' ? (
+          <>
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -490,15 +648,6 @@ export default function BotAiSettingsPage() {
                   className="rounded border-slate-300"
                 />
                 Activar asistente en la tienda
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={novitaBotEnabled}
-                  onChange={(e) => setNovitaBotEnabled(e.target.checked)}
-                  className="rounded border-slate-300"
-                />
-                Habilitar en servidor (NOVITA_BOT_ENABLED)
               </label>
             </div>
 
@@ -590,6 +739,71 @@ export default function BotAiSettingsPage() {
           </Card>
 
           <Card className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-800">Contexto del negocio</h2>
+            <Field label="Descripcion del negocio">
+              <textarea
+                className="zent-input min-h-[88px]"
+                value={businessDescription}
+                onChange={(e) => setBusinessDescription(e.target.value)}
+                placeholder="Que vendes, horarios, zonas de delivery..."
+              />
+            </Field>
+            <Field label="Politicas">
+              <textarea
+                className="zent-input min-h-[88px]"
+                value={policies}
+                onChange={(e) => setPolicies(e.target.value)}
+                placeholder="Pagos, envios, cambios..."
+              />
+            </Field>
+          </Card>
+
+          <Card className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold text-slate-800">Playbook (system prompt)</h2>
+              <Button type="button" variant="secondary" loading={previewLoading} onClick={loadPreview}>
+                Vista previa
+              </Button>
+            </div>
+            <div>
+              <p className="mb-2 text-sm text-slate-600">Variables disponibles:</p>
+              <div className="flex flex-wrap gap-2">
+                {variables.map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    title={v.description}
+                    onClick={() => insertVariable(v.key)}
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-brand-50 hover:border-brand-200"
+                  >
+                    {`{{${v.key}}}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Field label="Plantilla" hint="Dejar vacio para usar el playbook predeterminado del sistema.">
+              <textarea
+                className="zent-input min-h-[240px] font-mono text-sm"
+                value={playbook}
+                onChange={(e) => setPlaybook(e.target.value)}
+                placeholder="Personaliza las instrucciones del asistente..."
+              />
+            </Field>
+            {preview ? (
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-700">Vista previa compilada</p>
+                <pre className="max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs whitespace-pre-wrap text-slate-700">
+                  {preview}
+                </pre>
+              </div>
+            ) : null}
+          </Card>
+          </>
+          ) : null}
+
+          {whatsappBotEngine === 'n8n' ? (
+          <>
+          <Card className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800">Automatizaciones n8n</h2>
@@ -677,18 +891,17 @@ export default function BotAiSettingsPage() {
                   </p>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-brand-700">
-                  {n8nChatMode === 'core' ? 'Core activo' : n8nChatMode === 'sandbox' ? 'Sandbox' : 'Desactivado'}
+                  {n8nChatScope === 'core' ? 'Core activo' : 'Sandbox'}
                 </span>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field label="Modo chat n8n" hint="Disabled mantiene el bot actual; Sandbox solo enruta telefonos configurados; Core enruta todos los chats.">
+                <Field label="Alcance chat" hint="Sandbox solo enruta telefonos configurados; Core enruta todos los chats.">
                   <select
                     className="zent-input bg-white"
-                    value={n8nChatMode}
-                    onChange={(e) => setN8nChatMode(e.target.value as 'disabled' | 'sandbox' | 'core')}
+                    value={n8nChatScope}
+                    onChange={(e) => setN8nChatScope(e.target.value as 'sandbox' | 'core')}
                   >
-                    <option value="disabled">Desactivado</option>
                     <option value="sandbox">Sandbox</option>
                     <option value="core">Core</option>
                   </select>
@@ -838,77 +1051,12 @@ export default function BotAiSettingsPage() {
               </div>
             ) : null}
           </Card>
-
-          <Card className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-800">Contexto del negocio</h2>
-            <Field label="Descripcion del negocio">
-              <textarea
-                className="zent-input min-h-[88px]"
-                value={businessDescription}
-                onChange={(e) => setBusinessDescription(e.target.value)}
-                placeholder="Que vendes, horarios, zonas de delivery..."
-              />
-            </Field>
-            <Field label="Politicas">
-              <textarea
-                className="zent-input min-h-[88px]"
-                value={policies}
-                onChange={(e) => setPolicies(e.target.value)}
-                placeholder="Pagos, envios, cambios..."
-              />
-            </Field>
-          </Card>
-
-          <Card className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-800">Playbook (system prompt)</h2>
-              <Button type="button" variant="secondary" loading={previewLoading} onClick={loadPreview}>
-                Vista previa
-              </Button>
-            </div>
-
-            <div>
-              <p className="mb-2 text-sm text-slate-600">Variables disponibles:</p>
-              <div className="flex flex-wrap gap-2">
-                {variables.map((v) => (
-                  <button
-                    key={v.key}
-                    type="button"
-                    title={v.description}
-                    onClick={() => insertVariable(v.key)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-brand-50 hover:border-brand-200"
-                  >
-                    {`{{${v.key}}}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <Field label="Plantilla" hint="Dejar vacio para usar el playbook predeterminado del sistema.">
-              <textarea
-                className="zent-input min-h-[240px] font-mono text-sm"
-                value={playbook}
-                onChange={(e) => setPlaybook(e.target.value)}
-                placeholder="Personaliza las instrucciones del asistente..."
-              />
-            </Field>
-
-            {preview ? (
-              <div>
-                <p className="mb-2 text-sm font-medium text-slate-700">Vista previa compilada</p>
-                <pre className="max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs whitespace-pre-wrap text-slate-700">
-                  {preview}
-                </pre>
-              </div>
-            ) : null}
-          </Card>
+          </>
+          ) : null}
 
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
-              Sincronizar OpenWA
-            </Button>
             <Button type="submit" loading={saving}>
-              Guardar cambios
+              Guardar y aplicar
             </Button>
           </div>
         </form>

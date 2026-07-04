@@ -259,6 +259,13 @@ model StoreSettings {
   botAiBusinessDescription String?  @db.Text
   botAiPolicies            String?  @db.Text
   botAiPlaybook            String?  @db.Text
+  whatsappBotEngine        String   @default("legacy")
+  n8nWorkflowsEnabled      Boolean  @default(false)
+  n8nWebhookBaseUrl        String?
+  n8nSalesMode             String   @default("sandbox")
+  n8nChatScope             String   @default("sandbox")
+  n8nChatWebhookUrl        String?
+  n8nChatSandboxPhones     String?
   updatedAt                DateTime @updatedAt
 
   @@map("store_settings")

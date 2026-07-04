@@ -29,6 +29,19 @@ curl -s http://localhost:3001/api/setup/status
 
 Plantilla de variables: [`infra/dokploy.env.example`](dokploy.env.example).
 
+### Motor WhatsApp (dashboard vs Dokploy)
+
+| Que | Donde |
+|-----|-------|
+| Motor activo (`legacy` / `novita` / `n8n`) | Dashboard → Asistente IA → **Guardar y aplicar** |
+| Telefonos sandbox n8n, URLs webhook chat | Dashboard |
+| API key Novita, playbook | Dashboard |
+| Eventos de ventas n8n (sandbox/core) | Dashboard |
+| `N8N_WEBHOOK_SECRET`, DB, JWT | Dokploy Environment (secretos) |
+| `ADMIN_FORCE_RESET` | Dokploy — solo `false` en produccion |
+
+Tras cambiar el motor en el dashboard, pulsa **Aplicar y sincronizar OpenWA** para que zent-flow deje de mostrar menu numerico cuando uses Novita o n8n.
+
 ---
 
 ## Instalacion limpia en Dokploy (antes del primer deploy)

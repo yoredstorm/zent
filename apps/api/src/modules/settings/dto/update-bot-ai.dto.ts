@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateBotAiDto {
@@ -57,7 +57,17 @@ export class UpdateBotAiDto {
   @IsBoolean()
   n8nRestoreDefaults?: boolean;
 
-  @ApiPropertyOptional({ description: 'Modo chat n8n: disabled, sandbox o core' })
+  @ApiPropertyOptional({ description: 'Motor WhatsApp: legacy, novita o n8n' })
+  @IsOptional()
+  @IsIn(['legacy', 'novita', 'n8n'])
+  whatsappBotEngine?: string;
+
+  @ApiPropertyOptional({ description: 'Alcance chat n8n: sandbox o core' })
+  @IsOptional()
+  @IsIn(['sandbox', 'core'])
+  n8nChatScope?: string;
+
+  @ApiPropertyOptional({ description: 'Modo chat n8n legacy: disabled, sandbox o core' })
   @IsOptional()
   @IsString()
   n8nChatMode?: string;
