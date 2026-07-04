@@ -8,7 +8,7 @@ import { OrdersModule } from '../orders/orders.module';
 import { BotEngineModule } from '../whatsapp-bot/bot-engine.module';
 
 @Module({
-  imports: [forwardRef(() => OrdersModule), BotEngineModule],
+  imports: [forwardRef(() => OrdersModule), forwardRef(() => BotEngineModule)],
   controllers: [WorkflowCallbackController, N8nCommerceToolsController],
   providers: [WorkflowEventsService, N8nToolAuthGuard, N8nChatBridgeService],
   exports: [WorkflowEventsService, N8nChatBridgeService],

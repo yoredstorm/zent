@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BotAiOrchestratorService } from './bot-ai-orchestrator.service';
 import { BotAiPromptService } from './bot-ai-prompt.service';
 import { BotCatalogContextService } from './bot-catalog-context.service';
@@ -10,7 +10,7 @@ import { OrdersModule } from '../orders/orders.module';
 import { WorkflowsModule } from '../workflows/workflows.module';
 
 @Module({
-  imports: [InventoryModule, CustomersModule, OrdersModule, WorkflowsModule],
+  imports: [InventoryModule, CustomersModule, OrdersModule, forwardRef(() => WorkflowsModule)],
   providers: [
     NovitaBalanceService,
     BotCatalogContextService,

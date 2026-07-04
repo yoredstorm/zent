@@ -8,7 +8,7 @@ import { BotEngineModule } from '../whatsapp-bot/bot-engine.module';
 
 @Global()
 @Module({
-  imports: [forwardRef(() => WhatsappInboxModule), BotEngineModule],
+  imports: [forwardRef(() => WhatsappInboxModule), forwardRef(() => BotEngineModule)],
   controllers: [OpenwaController],
   providers: [OpenwaService, OpenwaBootstrapService, OpenwaPluginService],
   exports: [OpenwaService, OpenwaBootstrapService, OpenwaPluginService],
