@@ -57,6 +57,16 @@ function Merge-MissingEnvDefaults([string]$Content, [string]$TargetHost) {
     OPENWA_PUBLIC_URL = "https://${TargetHost}:2786"
     CART_HOLD_TTL_MINUTES = "30"
     CART_HOLD_WARN_MINUTES = "5"
+    N8N_WORKFLOWS_ENABLED = "true"
+    N8N_WEBHOOK_BASE_URL = "http://n8n:5678/webhook/zent"
+    N8N_WEBHOOK_SECRET = (New-Secret 24)
+    N8N_SALES_MODE = "sandbox"
+    N8N_PUBLIC_URL = "http://${TargetHost}:5678"
+    N8N_ENCRYPTION_KEY = (New-Secret 32)
+    N8N_BASIC_AUTH_USER = "admin"
+    N8N_BASIC_AUTH_PASSWORD = (New-Secret 18)
+    N8N_SECURE_COOKIE = "false"
+    GENERIC_TIMEZONE = "America/Lima"
     ADMIN_FORCE_RESET = "false"
     GF_SECURITY_ADMIN_USER = "admin"
   }
@@ -131,6 +141,9 @@ if (-not (Test-Path $EnvFile)) {
   $OpenwaKey = "owa_k1_" + (New-Secret 32)
   $WebhookSecret = New-Secret 24
   $GrafanaPass = New-Secret 12
+  $N8nWebhookSecret = New-Secret 24
+  $N8nEncryptionKey = New-Secret 32
+  $N8nBasicAuthPassword = New-Secret 18
   $DatabaseUrl = "postgresql://${PgUser}:${PgPass}@postgres:5432/${PgDb}"
 
   $content = @"
@@ -170,6 +183,17 @@ PUBLIC_API_URL=http://${HostName}:3001/api
 
 GF_SECURITY_ADMIN_USER=admin
 GF_SECURITY_ADMIN_PASSWORD=$GrafanaPass
+
+N8N_WORKFLOWS_ENABLED=true
+N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook/zent
+N8N_WEBHOOK_SECRET=$N8nWebhookSecret
+N8N_SALES_MODE=sandbox
+N8N_PUBLIC_URL=http://${HostName}:5678
+N8N_ENCRYPTION_KEY=$N8nEncryptionKey
+N8N_BASIC_AUTH_USER=admin
+N8N_BASIC_AUTH_PASSWORD=$N8nBasicAuthPassword
+N8N_SECURE_COOKIE=false
+GENERIC_TIMEZONE=America/Lima
 "@
 
   Set-Content -Path $EnvFile -Value $content -Encoding UTF8

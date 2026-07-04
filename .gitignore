@@ -11,3 +11,4 @@ opencode/
 infra/.env
 credenciales-zent.txt
 docs/*
+infra/dokploy.env.example

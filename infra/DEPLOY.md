@@ -574,12 +574,19 @@ Si OpenWA muestra mensajes pero el dashboard no muestra conversaciones:
    - `Webhook esperado`: `http://backend-api:3000/api/webhooks/openwa`.
 4. Usar **Sincronizar recientes** para intentar importar ultimos chats desde OpenWA.
 
+Nota importante:
+
+- `OPENWA_PUBLIC_URL` es para abrir el panel/QR de OpenWA desde tu navegador, por ejemplo `https://77.93.154.87:2786`.
+- `OPENWA_WEBHOOK_URL=http://backend-api:3000/api/webhooks/openwa` es correcto dentro de Docker; OpenWA llama al backend por la red interna del compose.
+- Si `Ultimo webhook` aparece como `ninguno`, usa **Reparar webhook OpenWA** en la bandeja y luego envia un mensaje nuevo por WhatsApp.
+
 Endpoints utiles:
 
 | Endpoint | Uso |
 |----------|-----|
 | `GET /whatsapp/diagnostics` | Ultimo webhook, razon ignorada, contadores DB |
 | `POST /whatsapp/sync/recent` | Importacion best-effort de chats recientes OpenWA |
+| `POST /openwa/repair-webhook` | Revalida API key, infraestructura, webhook y zent-flow |
 | `GET /settings/bot-ai/balance?force=1` | Saldo Novita y estado de alerta |
 
 ### Plugin zent-flow no encontrado (404)
@@ -663,19 +670,37 @@ Zent mantiene el backend como fuente de verdad para catalogo, stock, carrito, pa
 
 ```env
 N8N_WORKFLOWS_ENABLED=true
-N8N_WEBHOOK_BASE_URL=https://n8n.example.com/webhook/zent
+N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook/zent
 N8N_WEBHOOK_SECRET=strong-secret
+N8N_SALES_MODE=sandbox
+N8N_PUBLIC_URL=http://77.93.154.87:5678
+N8N_ENCRYPTION_KEY=strong-32-plus-char-secret
+N8N_BASIC_AUTH_USER=admin
+N8N_BASIC_AUTH_PASSWORD=strong-password
+N8N_SECURE_COOKIE=false
+GENERIC_TIMEZONE=America/Lima
 BOT_AI_PAYMENT_METHODS=Transferencia, Yape/Plin o pago contra entrega
 BOT_AI_ORDER_STATUSES=NUEVO: recibido; EN_GESTION: en revisión; CONFIRMADO: confirmado; EN_DELIVERY: en reparto; COMPLETADO: entregado; CANCELADO: cancelado.
 BOT_AI_WORKFLOW_POLICIES=Si el cliente envía referencia de pago, registra la referencia y espera validación del vendedor o automatización.
 ```
 
+Con el compose de produccion, n8n queda embebido como servicio `n8n` y el backend le envia eventos por la red interna Docker. Abre el editor en `N8N_PUBLIC_URL` y usa `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD`.
+
 ### Dashboard
 
 1. Abrir **Configuracion → Asistente IA → Automatizaciones n8n**.
-2. Activar n8n, configurar `Webhook base URL` y `Secreto HMAC`.
-3. Guardar cambios.
-4. Usar **Probar n8n**: envia `test.ping` a `${N8N_WEBHOOK_BASE_URL}/test.ping`.
+2. Si usas n8n embebido, pulsa **Restaurar configuracion automatica**.
+3. Importa `infra/n8n/examples/zent-sales-sandbox.workflow.json` en n8n y activalo.
+4. Usa **Ejecutar sandbox de ventas**; debe enviar `test.ping`, `order.created`, `payment.reference_submitted` y `order.status_changed` con `sandbox=true`.
+5. Cuando el sandbox este OK, cambia `Modo de ventas n8n` a `Core` para habilitar eventos reales.
+
+### Plantillas incluidas
+
+| Archivo | Uso |
+|---------|-----|
+| `infra/n8n/examples/zent-sales-sandbox.workflow.json` | Recibe cualquier evento `/webhook/zent/:event` y responde OK para pruebas |
+| `infra/n8n/examples/zent-payment-reference.workflow.json` | Punto de partida para validar referencias de pago |
+| `infra/n8n/examples/zent-order-status.workflow.json` | Punto de partida para notificaciones por cambio de estado |
 
 ### Eventos enviados
 

@@ -68,6 +68,16 @@ merge_missing_env_defaults() {
   upsert_if_missing OPENWA_PUBLIC_URL "https://${host}:2786"
   upsert_if_missing CART_HOLD_TTL_MINUTES 30
   upsert_if_missing CART_HOLD_WARN_MINUTES 5
+  upsert_if_missing N8N_WORKFLOWS_ENABLED true
+  upsert_if_missing N8N_WEBHOOK_BASE_URL 'http://n8n:5678/webhook/zent'
+  upsert_if_missing N8N_WEBHOOK_SECRET "$(gen 24)"
+  upsert_if_missing N8N_SALES_MODE sandbox
+  upsert_if_missing N8N_PUBLIC_URL "http://${host}:5678"
+  upsert_if_missing N8N_ENCRYPTION_KEY "$(gen 32)"
+  upsert_if_missing N8N_BASIC_AUTH_USER admin
+  upsert_if_missing N8N_BASIC_AUTH_PASSWORD "$(gen 18)"
+  upsert_if_missing N8N_SECURE_COOKIE false
+  upsert_if_missing GENERIC_TIMEZONE America/Lima
   upsert_if_missing ADMIN_FORCE_RESET false
   upsert_if_missing GF_SECURITY_ADMIN_USER admin
   mv "$tmp" "$ENV_FILE"
@@ -144,6 +154,9 @@ if [ ! -f "$ENV_FILE" ]; then
   OPENWA_API_KEY="owa_k1_$(gen 32)"
   OPENWA_WEBHOOK_SECRET="$(gen 24)"
   GF_SECURITY_ADMIN_PASSWORD="$(gen 12)"
+  N8N_WEBHOOK_SECRET="$(gen 24)"
+  N8N_ENCRYPTION_KEY="$(gen 32)"
+  N8N_BASIC_AUTH_PASSWORD="$(gen 18)"
   DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 
   cat > "$ENV_FILE" <<EOF
@@ -183,6 +196,17 @@ PUBLIC_API_URL=http://${HOST}:3001/api
 
 GF_SECURITY_ADMIN_USER=admin
 GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+
+N8N_WORKFLOWS_ENABLED=true
+N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook/zent
+N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET}
+N8N_SALES_MODE=sandbox
+N8N_PUBLIC_URL=http://${HOST}:5678
+N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+N8N_BASIC_AUTH_USER=admin
+N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+N8N_SECURE_COOKIE=false
+GENERIC_TIMEZONE=America/Lima
 EOF
 
   chmod 600 "$ENV_FILE"

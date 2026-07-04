@@ -14,6 +14,8 @@ const SECRET_KEYS = [
   'GF_SECURITY_ADMIN_PASSWORD',
   'NOVITA_API_KEY',
   'N8N_WEBHOOK_SECRET',
+  'N8N_ENCRYPTION_KEY',
+  'N8N_BASIC_AUTH_PASSWORD',
 ] as const;
 
 /** Variables de configuracion no secreta incluidas en credenciales-zent.txt. */
@@ -47,6 +49,11 @@ const CONFIG_KEYS = [
   'NOVITA_MIN_BALANCE_USD',
   'N8N_WORKFLOWS_ENABLED',
   'N8N_WEBHOOK_BASE_URL',
+  'N8N_SALES_MODE',
+  'N8N_PUBLIC_URL',
+  'N8N_BASIC_AUTH_USER',
+  'N8N_SECURE_COOKIE',
+  'GENERIC_TIMEZONE',
   'BOT_AI_PAYMENT_METHODS',
   'BOT_AI_ORDER_STATUSES',
   'BOT_AI_WORKFLOW_POLICIES',
@@ -239,6 +246,17 @@ export class SecretsService {
     if (!summary['ADMIN_FORCE_RESET']) summary['ADMIN_FORCE_RESET'] = 'false';
     if (!summary['SETUP_FORCE_RESET']) summary['SETUP_FORCE_RESET'] = 'false';
     if (!summary['GF_SECURITY_ADMIN_USER']) summary['GF_SECURITY_ADMIN_USER'] = 'admin';
+    if (!summary['N8N_WORKFLOWS_ENABLED']) summary['N8N_WORKFLOWS_ENABLED'] = 'true';
+    if (!summary['N8N_WEBHOOK_BASE_URL']) {
+      summary['N8N_WEBHOOK_BASE_URL'] = 'http://n8n:5678/webhook/zent';
+    }
+    if (!summary['N8N_SALES_MODE']) summary['N8N_SALES_MODE'] = 'sandbox';
+    if (!summary['N8N_PUBLIC_URL']) {
+      summary['N8N_PUBLIC_URL'] = `http://${summary['PUBLIC_HOST'] ?? 'localhost'}:5678`;
+    }
+    if (!summary['N8N_BASIC_AUTH_USER']) summary['N8N_BASIC_AUTH_USER'] = 'admin';
+    if (!summary['N8N_SECURE_COOKIE']) summary['N8N_SECURE_COOKIE'] = 'false';
+    if (!summary['GENERIC_TIMEZONE']) summary['GENERIC_TIMEZONE'] = 'America/Lima';
 
     if (!summary['DATABASE_URL'] && summary['POSTGRES_PASSWORD']) {
       summary['DATABASE_URL'] =

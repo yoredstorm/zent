@@ -19,6 +19,11 @@ export class SettingsService {
     pluginInstalled: boolean;
     at: number;
   } | null = null;
+  private lastN8nTestResult: {
+    ok: boolean;
+    at: number;
+    message?: string;
+  } | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -112,6 +117,13 @@ export class SettingsService {
       n8nWebhookBaseUrl: this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
       n8nWebhookBaseUrlConfigured: !!this.config.get<string>('N8N_WEBHOOK_BASE_URL', '').trim(),
       n8nWebhookSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
+      n8nEmbedded: this.isEmbeddedN8nConfigured(),
+      n8nPublicUrl: this.config.get<string>('N8N_PUBLIC_URL', '').trim() || null,
+      n8nInternalWebhookBaseUrl: this.defaultN8nWebhookBaseUrl(),
+      n8nSalesMode: this.n8nSalesMode(),
+      n8nHealth: await this.getN8nHealth(),
+      n8nSecretConfigured: !!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim(),
+      lastN8nTestResult: this.lastN8nTestResult,
     };
   }
 
@@ -125,6 +137,8 @@ export class SettingsService {
       n8nWorkflowsEnabled,
       n8nWebhookBaseUrl,
       n8nWebhookSecret,
+      n8nSalesMode,
+      n8nRestoreDefaults,
       ...storeFields
     } = dto;
 
@@ -146,12 +160,26 @@ export class SettingsService {
       this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', n8nWorkflowsEnabled ? 'true' : 'false');
     }
 
-    if (n8nWebhookBaseUrl !== undefined) {
+    if (n8nRestoreDefaults) {
+      this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl());
+      this.secrets.upsertEnvConfig('N8N_WORKFLOWS_ENABLED', 'true');
+      this.secrets.upsertEnvConfig('N8N_SALES_MODE', 'sandbox');
+      if (!this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim()) {
+        this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', this.secrets.generateSecret(24));
+      }
+    } else if (n8nWebhookBaseUrl !== undefined) {
       this.secrets.upsertEnvConfig('N8N_WEBHOOK_BASE_URL', n8nWebhookBaseUrl.trim());
     }
 
     if (n8nWebhookSecret?.trim()) {
       this.secrets.upsertEnvSecret('N8N_WEBHOOK_SECRET', n8nWebhookSecret.trim());
+    }
+
+    if (n8nSalesMode !== undefined) {
+      const mode = ['disabled', 'sandbox', 'core'].includes(n8nSalesMode)
+        ? n8nSalesMode
+        : 'sandbox';
+      this.secrets.upsertEnvConfig('N8N_SALES_MODE', mode);
     }
 
     await this.syncZentFlowPlugin();
@@ -176,16 +204,57 @@ export class SettingsService {
   }
 
   async testN8n() {
-    await this.workflowEvents.emit('test.ping', {
-      source: 'dashboard',
-      at: new Date().toISOString(),
-    });
-    return {
+    await this.workflowEvents.emit('test.ping', { source: 'dashboard', at: new Date().toISOString() });
+    const result = {
       ok: true,
       enabled: this.workflowEvents.enabled(),
       baseUrlConfigured: !!this.workflowEvents.baseUrl(),
       secretConfigured: !!this.workflowEvents.secret(),
     };
+    this.lastN8nTestResult = {
+      ok: result.enabled && result.baseUrlConfigured,
+      at: Date.now(),
+      message: result.enabled ? 'test.ping emitted' : 'n8n workflows disabled',
+    };
+    return result;
+  }
+
+  async runN8nSalesSandbox() {
+    const result = await this.workflowEvents.runSalesSandbox();
+    this.lastN8nTestResult = {
+      ok: result.ok,
+      at: Date.now(),
+      message: result.ok ? 'sales sandbox completed' : 'sales sandbox failed',
+    };
+    return result;
+  }
+
+  private defaultN8nWebhookBaseUrl(): string {
+    return 'http://n8n:5678/webhook/zent';
+  }
+
+  private n8nSalesMode(): 'disabled' | 'sandbox' | 'core' {
+    const mode = this.config.get<string>('N8N_SALES_MODE', 'sandbox').trim();
+    return mode === 'disabled' || mode === 'core' ? mode : 'sandbox';
+  }
+
+  private isEmbeddedN8nConfigured(): boolean {
+    return this.config
+      .get<string>('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl())
+      .includes('://n8n:5678/');
+  }
+
+  private async getN8nHealth(): Promise<{ ok: boolean; status: number | null; url: string; error?: string }> {
+    const baseUrl = this.config
+      .get<string>('N8N_WEBHOOK_BASE_URL', this.defaultN8nWebhookBaseUrl())
+      .replace(/\/webhook\/zent\/?$/, '');
+    const url = `${baseUrl}/healthz`;
+    try {
+      const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(3000) });
+      return { ok: res.status < 500, status: res.status, url };
+    } catch (err: any) {
+      return { ok: false, status: null, url, error: err?.message || String(err) };
+    }
   }
 
   async getBotAiPreview() {

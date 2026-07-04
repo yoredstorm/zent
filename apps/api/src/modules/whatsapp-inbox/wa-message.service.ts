@@ -84,12 +84,22 @@ export class WaMessageService {
       this.prisma.chatSession.count(),
     ]);
     let openwaSessionId: string | null = null;
+    let openwaSessions: Array<{ id: string; status: string }> = [];
     try {
       openwaSessionId = await this.openwa.resolveSessionId();
+      openwaSessions = (await this.openwa.getSessions()).map((session) => ({
+        id: session.id,
+        status: session.status,
+      }));
     } catch {
       openwaSessionId = null;
     }
 
+    const configuredWebhookUrl = this.config.get<string>(
+      'OPENWA_WEBHOOK_URL',
+      'http://backend-api:3000/api/webhooks/openwa',
+    );
+    const resolvedWebhookUrl = this.openwa.getResolvedWebhookUrl();
     return {
       lastWebhookAt: this.lastWebhookDiagnostic?.at ?? null,
       lastWebhookStatus: this.lastWebhookDiagnostic?.status ?? null,
@@ -97,10 +107,11 @@ export class WaMessageService {
       waMessageCount,
       chatSessionCount,
       openwaSessionId,
-      openwaWebhookUrlExpected: this.config.get<string>(
-        'OPENWA_WEBHOOK_URL',
-        'http://backend-api:3000/api/webhooks/openwa',
-      ),
+      openwaSessions,
+      openwaPublicUrl: this.config.get<string>('OPENWA_PUBLIC_URL', '').trim() || null,
+      openwaWebhookUrlConfigured: configuredWebhookUrl,
+      openwaWebhookUrlExpected: resolvedWebhookUrl,
+      openwaWebhookRepairRecommended: !this.lastWebhookDiagnostic?.at,
     };
   }
 

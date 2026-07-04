@@ -1,7 +1,8 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { OpenwaService } from './openwa.service';
+import { OpenwaBootstrapService } from './openwa-bootstrap.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('openwa')
@@ -10,6 +11,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class OpenwaController {
   constructor(
     private openwa: OpenwaService,
+    private openwaBootstrap: OpenwaBootstrapService,
     private config: ConfigService,
   ) {}
 
@@ -49,6 +51,12 @@ export class OpenwaController {
     } catch {
       return [];
     }
+  }
+
+  @Post('repair-webhook')
+  @ApiOperation({ summary: 'Repair OpenWA webhook and zent-flow configuration' })
+  repairWebhook() {
+    return this.openwaBootstrap.repairWebhook();
   }
 
   @Get('qr')

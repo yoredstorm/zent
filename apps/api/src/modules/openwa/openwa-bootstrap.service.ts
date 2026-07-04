@@ -150,6 +150,48 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     }
   }
 
+  async repairWebhook(): Promise<{
+    ok: boolean;
+    apiKeyValid: boolean;
+    infrastructureOk: boolean;
+    webhookOk: boolean;
+    zentFlowOk: boolean;
+    mode: 'ai' | 'legacy' | null;
+    error?: string;
+  }> {
+    const result = {
+      ok: false,
+      apiKeyValid: false,
+      infrastructureOk: false,
+      webhookOk: false,
+      zentFlowOk: false,
+      mode: null as 'ai' | 'legacy' | null,
+      error: undefined as string | undefined,
+    };
+
+    try {
+      await this.openwa.validateApiKey();
+      result.apiKeyValid = true;
+
+      await this.openwa.ensureInfrastructure();
+      result.infrastructureOk = true;
+
+      await this.openwa.ensureWebhook();
+      result.webhookOk = true;
+
+      result.mode = await this.botRouting.getMode();
+      const zentFlow = await this.openwaPlugin.syncZentFlowForMode(result.mode);
+      result.zentFlowOk = zentFlow.ok;
+      result.ok = result.apiKeyValid && result.infrastructureOk && result.webhookOk && result.zentFlowOk;
+      if (!zentFlow.ok) result.error = zentFlow.error ?? 'zent-flow sync failed';
+    } catch (err: any) {
+      result.error = err?.message || String(err);
+      this.logger.warn(`OpenWA webhook repair failed: ${result.error}`);
+    }
+
+    return result;
+  }
+
   private async syncZentFlowPlugin(): Promise<void> {
     try {
       const mode = await this.botRouting.getMode();

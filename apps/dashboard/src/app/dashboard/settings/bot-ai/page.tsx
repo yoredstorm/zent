@@ -34,6 +34,13 @@ type BotAiSettings = {
   n8nWebhookBaseUrl?: string;
   n8nWebhookBaseUrlConfigured?: boolean;
   n8nWebhookSecretConfigured?: boolean;
+  n8nEmbedded?: boolean;
+  n8nPublicUrl?: string | null;
+  n8nInternalWebhookBaseUrl?: string;
+  n8nSalesMode?: 'disabled' | 'sandbox' | 'core';
+  n8nHealth?: { ok: boolean; status: number | null; url: string; error?: string };
+  n8nSecretConfigured?: boolean;
+  lastN8nTestResult?: { ok: boolean; at: number; message?: string } | null;
 };
 
 type BalanceStatus = {
@@ -49,6 +56,20 @@ type TemplateVariable = {
   key: string;
   label: string;
   description: string;
+};
+
+type N8nSandboxResult = {
+  ok: boolean;
+  sandboxId: string;
+  events: Array<{
+    event: string;
+    ok: boolean;
+    skipped: boolean;
+    status: number | null;
+    url: string | null;
+    error?: string;
+    responseText?: string;
+  }>;
 };
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -104,6 +125,13 @@ export default function BotAiSettingsPage() {
   const [n8nWebhookBaseUrl, setN8nWebhookBaseUrl] = useState('');
   const [n8nWebhookSecret, setN8nWebhookSecret] = useState('');
   const [n8nWebhookSecretConfigured, setN8nWebhookSecretConfigured] = useState(false);
+  const [n8nEmbedded, setN8nEmbedded] = useState(false);
+  const [n8nPublicUrl, setN8nPublicUrl] = useState<string | null>(null);
+  const [n8nInternalWebhookBaseUrl, setN8nInternalWebhookBaseUrl] = useState('');
+  const [n8nSalesMode, setN8nSalesMode] = useState<'disabled' | 'sandbox' | 'core'>('sandbox');
+  const [n8nHealth, setN8nHealth] = useState<BotAiSettings['n8nHealth']>(undefined);
+  const [runningSandbox, setRunningSandbox] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<N8nSandboxResult | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -131,6 +159,11 @@ export default function BotAiSettingsPage() {
       setN8nWorkflowsEnabled(settings.n8nWorkflowsEnabled ?? false);
       setN8nWebhookBaseUrl(settings.n8nWebhookBaseUrl ?? '');
       setN8nWebhookSecretConfigured(settings.n8nWebhookSecretConfigured ?? false);
+      setN8nEmbedded(settings.n8nEmbedded ?? false);
+      setN8nPublicUrl(settings.n8nPublicUrl ?? null);
+      setN8nInternalWebhookBaseUrl(settings.n8nInternalWebhookBaseUrl ?? 'http://n8n:5678/webhook/zent');
+      setN8nSalesMode(settings.n8nSalesMode ?? 'sandbox');
+      setN8nHealth(settings.n8nHealth);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'No se pudo cargar la configuracion del asistente');
     } finally {
@@ -289,6 +322,58 @@ export default function BotAiSettingsPage() {
     }
   };
 
+  const restoreN8nDefaults = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/settings/bot-ai', { n8nRestoreDefaults: true });
+      toast.success('Configuracion n8n restaurada al modo embebido');
+      await loadAll();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo restaurar n8n');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runN8nSandbox = async () => {
+    setRunningSandbox(true);
+    try {
+      const result = await api.post<N8nSandboxResult>('/settings/bot-ai/n8n/sandbox/run');
+      setSandboxResult(result);
+      if (result.ok) {
+        toast.success('Sandbox n8n completado');
+      } else {
+        toast.error('Sandbox n8n con errores; revisa los eventos');
+      }
+      await loadAll();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo ejecutar sandbox n8n');
+    } finally {
+      setRunningSandbox(false);
+    }
+  };
+
+  const activateN8nCore = async () => {
+    if (!n8nHealth?.ok || !sandboxResult?.ok) {
+      toast.error('Primero valida health n8n y ejecuta sandbox correctamente');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.patch('/settings/bot-ai', {
+        n8nWorkflowsEnabled: true,
+        n8nSalesMode: 'core',
+      });
+      setN8nSalesMode('core');
+      toast.success('n8n activado como flujo core de ventas');
+      await loadAll();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo activar core n8n');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -301,6 +386,7 @@ export default function BotAiSettingsPage() {
         botAiPlaybook: playbook.trim() || null,
         n8nWorkflowsEnabled,
         n8nWebhookBaseUrl: n8nWebhookBaseUrl.trim(),
+        n8nSalesMode,
       };
       if (novitaApiKey.trim()) payload.novitaApiKey = novitaApiKey.trim();
       if (n8nWebhookSecret.trim()) payload.n8nWebhookSecret = n8nWebhookSecret.trim();
@@ -502,9 +588,40 @@ export default function BotAiSettingsPage() {
               Activar automatizaciones n8n
             </label>
 
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">Modo</div>
+                <div className="mt-1 text-sm font-semibold text-slate-800">
+                  {n8nEmbedded ? 'n8n embebido' : 'n8n externo'}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">Health interno</div>
+                <div className={n8nHealth?.ok ? 'mt-1 text-sm font-semibold text-green-700' : 'mt-1 text-sm font-semibold text-amber-700'}>
+                  {n8nHealth?.ok ? 'Disponible' : 'Sin respuesta'}
+                </div>
+                {n8nHealth?.status ? <div className="mt-1 text-xs text-slate-500">HTTP {n8nHealth.status}</div> : null}
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs text-slate-500">Editor n8n</div>
+                {n8nPublicUrl ? (
+                  <a
+                    href={n8nPublicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block break-all text-sm font-semibold text-brand-700 hover:underline"
+                  >
+                    Abrir n8n
+                  </a>
+                ) : (
+                  <div className="mt-1 text-sm font-semibold text-slate-700">No configurado</div>
+                )}
+              </div>
+            </div>
+
             <Field
               label="Webhook base URL"
-              hint="Ejemplo: https://n8n.tu-dominio.com/webhook/zent. Los eventos se enviaran como /order.created, /payment.reference_submitted, etc."
+              hint={`Automatico embebido: ${n8nInternalWebhookBaseUrl || 'http://n8n:5678/webhook/zent'}. Los eventos se enviaran como /order.created, /payment.reference_submitted, etc.`}
             >
               <input
                 className="zent-input"
@@ -513,6 +630,18 @@ export default function BotAiSettingsPage() {
                 placeholder="https://n8n.tu-dominio.com/webhook/zent"
                 autoComplete="off"
               />
+            </Field>
+
+            <Field label="Modo de ventas n8n" hint="Sandbox permite probar eventos ficticios; Core habilita eventos reales de pedidos.">
+              <select
+                className="zent-input"
+                value={n8nSalesMode}
+                onChange={(e) => setN8nSalesMode(e.target.value as 'disabled' | 'sandbox' | 'core')}
+              >
+                <option value="disabled">Desactivado</option>
+                <option value="sandbox">Sandbox</option>
+                <option value="core">Core</option>
+              </select>
             </Field>
 
             <Field
@@ -532,6 +661,54 @@ export default function BotAiSettingsPage() {
                 autoComplete="off"
               />
             </Field>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" loading={saving} onClick={restoreN8nDefaults}>
+                Restaurar configuracion automatica
+              </Button>
+              <Button type="button" variant="secondary" loading={runningSandbox} onClick={runN8nSandbox}>
+                Ejecutar sandbox de ventas
+              </Button>
+              <Button
+                type="button"
+                loading={saving}
+                disabled={!n8nHealth?.ok || !sandboxResult?.ok}
+                onClick={activateN8nCore}
+              >
+                Activar como agente core
+              </Button>
+            </div>
+
+            {sandboxResult ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Resultado sandbox</div>
+                    <div className="text-xs text-slate-500">ID: {sandboxResult.sandboxId}</div>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      sandboxResult.ok ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {sandboxResult.ok ? 'OK' : 'Revisar'}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {sandboxResult.events.map((event) => (
+                    <div key={event.event} className="rounded-lg bg-white p-2 text-xs text-slate-600">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">{event.event}</span>
+                        <span className={event.ok ? 'text-green-700' : 'text-amber-700'}>
+                          {event.skipped ? 'omitido' : event.ok ? `HTTP ${event.status}` : event.error || `HTTP ${event.status ?? 'n/a'}`}
+                        </span>
+                      </div>
+                      {event.url ? <div className="mt-1 break-all text-slate-500">{event.url}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </Card>
 
           <Card className="space-y-4">

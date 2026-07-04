@@ -1,0 +1,44 @@
+{
+  "name": "Zent Order Status Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "zent/order.status_changed",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook",
+      "name": "Order Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, workflow: 'zent-order-status', orderId: $json.payload?.orderId, status: $json.payload?.status } }}"
+      },
+      "id": "respond",
+      "name": "Respond Status OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [280, 0]
+    }
+  ],
+  "connections": {
+    "Order Status Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond Status OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

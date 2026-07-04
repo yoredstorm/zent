@@ -83,4 +83,11 @@ export class BotAiSettingsController {
   testN8n() {
     return this.settings.testN8n();
   }
+
+  @Post('n8n/sandbox/run')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Run a safe n8n sales sandbox event sequence' })
+  runN8nSandbox() {
+    return this.settings.runN8nSalesSandbox();
+  }
 }

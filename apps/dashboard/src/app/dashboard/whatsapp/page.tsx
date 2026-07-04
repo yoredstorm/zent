@@ -66,7 +66,11 @@ interface WhatsAppDiagnostics {
   waMessageCount: number;
   chatSessionCount: number;
   openwaSessionId: string | null;
+  openwaSessions?: Array<{ id: string; status: string }>;
+  openwaPublicUrl?: string | null;
+  openwaWebhookUrlConfigured?: string;
   openwaWebhookUrlExpected: string;
+  openwaWebhookRepairRecommended?: boolean;
 }
 
 const QUICK_EMOJIS = ['😀', '😂', '👍', '❤️', '🙏', '✅', '🎉', '😊', '👋', '🔥'];
@@ -189,6 +193,7 @@ export default function WhatsAppPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncingRecent, setSyncingRecent] = useState(false);
+  const [repairingWebhook, setRepairingWebhook] = useState(false);
   const [diagnostics, setDiagnostics] = useState<WhatsAppDiagnostics | null>(null);
   const [status, setStatus] = useState<any>(null);
   const [qr, setQr] = useState('');
@@ -322,6 +327,31 @@ export default function WhatsAppPage() {
       toast.error(err?.response?.data?.message || 'No se pudo sincronizar recientes');
     } finally {
       setSyncingRecent(false);
+    }
+  };
+
+  const handleRepairWebhook = async () => {
+    setRepairingWebhook(true);
+    try {
+      const result = await api.post<{
+        ok: boolean;
+        apiKeyValid: boolean;
+        infrastructureOk: boolean;
+        webhookOk: boolean;
+        zentFlowOk: boolean;
+        error?: string;
+      }>('/openwa/repair-webhook');
+      if (result.ok) {
+        toast.success('Webhook OpenWA reparado. Envía un mensaje nuevo para verificar recepción.');
+      } else {
+        toast.error(result.error || 'No se pudo reparar completamente OpenWA');
+      }
+      loadDiagnostics();
+      loadConversations();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'No se pudo reparar webhook OpenWA');
+    } finally {
+      setRepairingWebhook(false);
     }
   };
 
@@ -469,12 +499,29 @@ export default function WhatsAppPage() {
                     <div>Mensajes DB: {diagnostics?.waMessageCount ?? 0}</div>
                     <div>Sesiones chat DB: {diagnostics?.chatSessionCount ?? 0}</div>
                     <div>OpenWA session: {diagnostics?.openwaSessionId ?? 'no disponible'}</div>
+                    {diagnostics?.openwaSessions && diagnostics.openwaSessions.length > 0 ? (
+                      <div>
+                        Sesiones detectadas:{' '}
+                        {diagnostics.openwaSessions.map((session) => `${session.id} (${session.status})`).join(', ')}
+                      </div>
+                    ) : null}
+                    {diagnostics?.openwaPublicUrl ? (
+                      <div className="mt-2 break-all">
+                        Panel OpenWA público: {diagnostics.openwaPublicUrl}
+                      </div>
+                    ) : null}
+                    {diagnostics?.openwaWebhookUrlConfigured ? (
+                      <div className="mt-2 break-all">
+                        Webhook configurado en env: {diagnostics.openwaWebhookUrlConfigured}
+                      </div>
+                    ) : null}
                     <div className="mt-2 break-all">
-                      Webhook esperado: {diagnostics?.openwaWebhookUrlExpected ?? 'no configurado'}
+                      Webhook efectivo para OpenWA: {diagnostics?.openwaWebhookUrlExpected ?? 'no configurado'}
                     </div>
                     {!diagnostics?.lastWebhookAt && (
                       <div className="mt-2 rounded-lg bg-amber-50 p-2 text-amber-800">
-                        Revisa `OPENWA_WEBHOOK_URL` y logs de `backend-api`.
+                        No han llegado webhooks. La URL interna `backend-api` es normal dentro de Docker; usa
+                        reparar webhook y luego envía un mensaje nuevo de WhatsApp.
                       </div>
                     )}
                     {diagnostics?.waMessageCount && diagnostics.waMessageCount > 0 ? (
@@ -490,6 +537,11 @@ export default function WhatsAppPage() {
                     <Button type="button" variant="secondary" loading={syncingRecent} onClick={handleSyncRecent}>
                       Sincronizar recientes
                     </Button>
+                    {!diagnostics?.lastWebhookAt || diagnostics?.openwaWebhookRepairRecommended ? (
+                      <Button type="button" loading={repairingWebhook} onClick={handleRepairWebhook}>
+                        Reparar webhook OpenWA
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ) : (

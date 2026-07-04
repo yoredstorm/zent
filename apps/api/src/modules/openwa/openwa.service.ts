@@ -655,6 +655,10 @@ export class OpenwaService {
     return internal;
   }
 
+  getResolvedWebhookUrl(): string {
+    return this.resolveWebhookUrl();
+  }
+
   async ensureWebhook(): Promise<void> {
     const sessions = await this.getSessions();
     if (sessions.length === 0) {

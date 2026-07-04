@@ -46,4 +46,14 @@ export class UpdateBotAiDto {
   @IsOptional()
   @IsString()
   n8nWebhookSecret?: string;
+
+  @ApiPropertyOptional({ description: 'Modo de ventas n8n: disabled, sandbox o core' })
+  @IsOptional()
+  @IsString()
+  n8nSalesMode?: string;
+
+  @ApiPropertyOptional({ description: 'Restaura N8N_WEBHOOK_BASE_URL al valor interno automatico' })
+  @IsOptional()
+  @IsBoolean()
+  n8nRestoreDefaults?: boolean;
 }
