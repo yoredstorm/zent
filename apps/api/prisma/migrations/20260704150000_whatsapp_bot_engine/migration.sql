@@ -1,13 +1,13 @@
 -- AlterTable
-ALTER TABLE "store_settings" ADD COLUMN "whatsapp_bot_engine" TEXT NOT NULL DEFAULT 'legacy';
-ALTER TABLE "store_settings" ADD COLUMN "n8n_workflows_enabled" BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE "store_settings" ADD COLUMN "n8n_webhook_base_url" TEXT;
-ALTER TABLE "store_settings" ADD COLUMN "n8n_sales_mode" TEXT NOT NULL DEFAULT 'sandbox';
-ALTER TABLE "store_settings" ADD COLUMN "n8n_chat_scope" TEXT NOT NULL DEFAULT 'sandbox';
-ALTER TABLE "store_settings" ADD COLUMN "n8n_chat_webhook_url" TEXT;
-ALTER TABLE "store_settings" ADD COLUMN "n8n_chat_sandbox_phones" TEXT;
+ALTER TABLE "store_settings" ADD COLUMN "whatsappBotEngine" TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE "store_settings" ADD COLUMN "n8nWorkflowsEnabled" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "store_settings" ADD COLUMN "n8nWebhookBaseUrl" TEXT;
+ALTER TABLE "store_settings" ADD COLUMN "n8nSalesMode" TEXT NOT NULL DEFAULT 'sandbox';
+ALTER TABLE "store_settings" ADD COLUMN "n8nChatScope" TEXT NOT NULL DEFAULT 'sandbox';
+ALTER TABLE "store_settings" ADD COLUMN "n8nChatWebhookUrl" TEXT;
+ALTER TABLE "store_settings" ADD COLUMN "n8nChatSandboxPhones" TEXT;
 
 -- Migrate existing installs: bot AI enabled -> novita engine
 UPDATE "store_settings"
-SET "whatsapp_bot_engine" = 'novita'
-WHERE "bot_ai_enabled" = true AND "whatsapp_bot_engine" = 'legacy';
+SET "whatsappBotEngine" = 'novita'
+WHERE "botAiEnabled" = true AND "whatsappBotEngine" = 'legacy';
