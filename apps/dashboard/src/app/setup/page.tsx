@@ -546,13 +546,19 @@ export default function SetupWizard() {
                       }>('/api/setup/novita/test', {
                         novitaApiKey: novitaApiKey.trim(),
                       });
+                      if (res.status === 500 || res.status === 502 || res.status === 503) {
+                        setNovitaTestMsg(
+                          'El servidor API no responde. En Dokploy revisa que backend-api este corriendo (docker logs).',
+                        );
+                        return;
+                      }
                       if (res.ok && res.data?.ok) {
                         const aiAvailable = res.data.hasSufficientBalance ?? res.data.aiAvailable ?? false;
                         setNovitaTestMsg(
                           `Saldo: $${res.data.balanceUsd?.toFixed(2) ?? '?'} — ${aiAvailable ? 'IA disponible' : 'Saldo insuficiente'}`,
                         );
                       } else {
-                        setNovitaTestMsg(res.data?.message || 'Error al probar la clave');
+                        setNovitaTestMsg(res.data?.message || `Error al probar la clave (HTTP ${res.status})`);
                       }
                     }}
                   >
