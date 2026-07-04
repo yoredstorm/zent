@@ -537,12 +537,19 @@ export default function SetupWizard() {
                     type="button"
                     className="btn-secondary text-sm"
                     onClick={async () => {
-                      const res = await apiPost('/api/setup/novita/test', {
+                      const res = await apiPost<{
+                        ok: boolean;
+                        balanceUsd?: number;
+                        hasSufficientBalance?: boolean;
+                        aiAvailable?: boolean;
+                        message?: string;
+                      }>('/api/setup/novita/test', {
                         novitaApiKey: novitaApiKey.trim(),
                       });
                       if (res.ok && res.data?.ok) {
+                        const aiAvailable = res.data.hasSufficientBalance ?? res.data.aiAvailable ?? false;
                         setNovitaTestMsg(
-                          `Saldo: $${res.data.balanceUsd?.toFixed(2) ?? '?'} — ${res.data.aiAvailable ? 'IA disponible' : 'Saldo insuficiente'}`,
+                          `Saldo: $${res.data.balanceUsd?.toFixed(2) ?? '?'} — ${aiAvailable ? 'IA disponible' : 'Saldo insuficiente'}`,
                         );
                       } else {
                         setNovitaTestMsg(res.data?.message || 'Error al probar la clave');

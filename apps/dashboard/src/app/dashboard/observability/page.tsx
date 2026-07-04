@@ -4,10 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { buildMonitoringLinks } from '@/lib/monitoring';
 
-const links = buildMonitoringLinks({
-  grafanaUrl: process.env.NEXT_PUBLIC_GRAFANA_URL,
-  prometheusUrl: process.env.NEXT_PUBLIC_PROMETHEUS_URL,
-});
+export const dynamic = 'force-dynamic';
 
 const quickChecks = [
   {
@@ -31,6 +28,10 @@ function externalLinkClass(enabled: boolean) {
 }
 
 export default function ObservabilityPage() {
+  const links = buildMonitoringLinks({
+    grafanaUrl: process.env.NEXT_PUBLIC_GRAFANA_URL,
+    prometheusUrl: process.env.NEXT_PUBLIC_PROMETHEUS_URL,
+  });
   const grafanaConfigured = Boolean(links.grafana);
   const prometheusConfigured = Boolean(links.prometheus);
 

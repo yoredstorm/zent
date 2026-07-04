@@ -86,10 +86,24 @@ export class SetupService {
     if (!key) return { ok: false, message: 'No hay API key configurada' };
     try {
       const detail = await fetchNovitaBalance(key);
-      return { ok: true, balanceUsd: parseNovitaBalanceUsd(detail), detail };
+      const balanceUsd = parseNovitaBalanceUsd(detail);
+      const hasSufficientBalance = balanceUsd >= this.minNovitaBalanceUsd();
+      return {
+        ok: true,
+        balanceUsd,
+        hasSufficientBalance,
+        aiAvailable: hasSufficientBalance,
+        detail,
+      };
     } catch (err: any) {
       return { ok: false, message: err?.message || 'Error al conectar con Novita' };
     }
+  }
+
+  private minNovitaBalanceUsd(): number {
+    const raw = process.env.NOVITA_MIN_BALANCE_USD ?? '0.01';
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : 0.01;
   }
 
   /** Arranca la instalacion (idempotente) y devuelve de inmediato; el progreso va por SSE. */

@@ -133,14 +133,22 @@ export default function BotAiSettingsPage() {
     setTesting(true);
     try {
       const payload = novitaApiKey.trim() ? { novitaApiKey: novitaApiKey.trim() } : {};
-      const data = await api.post<{ ok: boolean; balanceUsd?: number; message?: string }>(
+      const data = await api.post<{
+        ok: boolean;
+        balanceUsd?: number;
+        hasSufficientBalance?: boolean;
+        aiAvailable?: boolean;
+        message?: string;
+      }>(
         '/setup/novita/test',
         payload,
       );
       if (data.ok) {
         toast.success(`Conexion OK — saldo: $${(data.balanceUsd ?? 0).toFixed(4)} USD`);
         setBalanceUsd(data.balanceUsd ?? null);
-        setHasBalance((data.balanceUsd ?? 0) >= 0.01);
+        setHasBalance(
+          data.hasSufficientBalance ?? data.aiAvailable ?? ((data.balanceUsd ?? 0) >= 0.01),
+        );
       } else {
         toast.error(data.message || 'Error al probar la API key');
       }
