@@ -168,21 +168,23 @@ export class OpenwaPluginService {
     }
 
     if (!installed) {
+      const zipPath = this.pluginZipPath();
+      const detail = zipPath
+        ? 'No se pudo instalar zent-flow.zip en OpenWA (revisa OPENWA_API_KEY y logs backend-api).'
+        : 'zent-flow.zip no encontrado en la imagen backend-api (/app/plugins/zent-flow.zip).';
       if (passThrough) {
         return {
           ok: true,
           passThrough: true,
           pluginInstalled: false,
-          message:
-            'Plugin zent-flow no instalado en OpenWA. Los mensajes van directo al webhook.',
+          message: `Plugin zent-flow no instalado. ${detail}`,
         };
       }
       return {
         ok: false,
         passThrough: false,
         pluginInstalled: false,
-        error:
-          'Plugin zent-flow no encontrado en OpenWA. Ejecuta infra/scripts/setup-zent-flow-plugin.sh en el servidor o redeploy con zent-flow.zip incluido.',
+        error: detail,
       };
     }
 

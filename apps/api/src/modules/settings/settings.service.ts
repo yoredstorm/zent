@@ -19,6 +19,8 @@ export class SettingsService {
     passThrough: boolean;
     pluginInstalled: boolean;
     at: number;
+    error?: string;
+    message?: string;
   } | null = null;
   private lastN8nTestResult: {
     ok: boolean;
@@ -71,7 +73,9 @@ export class SettingsService {
     const keyConfigured = engineStatus.novitaKeyConfigured;
 
     let zentFlowSyncWarning: string | null = null;
-    if (engineStatus.blockerMessages.length > 0) {
+    if (this.lastZentFlowSync?.error) {
+      zentFlowSyncWarning = this.lastZentFlowSync.error;
+    } else if (engineStatus.blockerMessages.length > 0) {
       zentFlowSyncWarning = engineStatus.blockerMessages[0];
     }
 
@@ -277,6 +281,8 @@ export class SettingsService {
       passThrough: result.passThrough,
       pluginInstalled: result.pluginInstalled,
       at: Date.now(),
+      error: result.error,
+      message: result.message,
     };
     return result;
   }

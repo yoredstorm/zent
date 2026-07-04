@@ -130,14 +130,24 @@ export class OpenwaService {
       throw new Error(`Plugin zip not found: ${zipPath}`);
     }
     const buffer = fs.readFileSync(zipPath);
-    const form = new FormData();
-    form.append('file', new Blob([buffer]), path.basename(zipPath));
+    const filename = path.basename(zipPath);
+    const boundary = `----zent${crypto.randomBytes(16).toString('hex')}`;
+    const prefix = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/zip\r\n\r\n`,
+      'utf8',
+    );
+    const suffix = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+    const body = Buffer.concat([prefix, buffer, suffix]);
 
     const url = `${this.baseUrl}/api/plugins/install`;
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'X-API-Key': this.apiKey },
-      body: form,
+      headers: {
+        'X-API-Key': this.apiKey,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': String(body.length),
+      },
+      body,
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
