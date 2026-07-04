@@ -5,6 +5,7 @@ import { OpenwaService } from './openwa.service';
 import { OpenwaPluginService } from './openwa-plugin.service';
 import { BotRoutingService } from '../whatsapp-bot/bot-routing.service';
 import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
+import { ZentFlowSyncResult } from './openwa-plugin.service';
 
 @Injectable()
 export class OpenwaBootstrapService implements OnApplicationBootstrap {
@@ -196,20 +197,28 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     return result;
   }
 
-  private async syncZentFlowPlugin(): Promise<void> {
+  /** Instala/sincroniza zent-flow segun motor activo (respeta ZENT_FLOW_PLUGIN_ENABLED). */
+  async ensureZentFlowPlugin(): Promise<ZentFlowSyncResult> {
     try {
       const cfg = await this.botEngine.getConfig();
       const result = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
       if (result.ok) {
         this.logger.log(
-          `zent-flow synced on bootstrap (engine=${cfg.engine}, passThrough=${result.passThrough})`,
+          `zent-flow synced (engine=${cfg.engine}, passThrough=${result.passThrough}, installed=${result.pluginInstalled})`,
         );
       } else {
-        this.logger.warn(`zent-flow sync on bootstrap failed: ${result.error}`);
+        this.logger.warn(`zent-flow sync failed: ${result.error ?? result.message}`);
       }
+      return result;
     } catch (err: any) {
-      this.logger.warn(`zent-flow sync on bootstrap failed: ${err?.message || err}`);
+      const message = err?.message || String(err);
+      this.logger.warn(`zent-flow sync failed: ${message}`);
+      return { ok: false, passThrough: false, pluginInstalled: false, error: message };
     }
+  }
+
+  private async syncZentFlowPlugin(): Promise<void> {
+    await this.ensureZentFlowPlugin();
   }
 
   async resumeDisconnectedSessions(): Promise<{ resumed: string[]; skipped: string[] }> {

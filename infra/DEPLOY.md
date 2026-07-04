@@ -645,7 +645,7 @@ Cuando el asistente IA (Novita) esta activo, el bot debe responder de forma **co
 | `NOVITA_MIN_BALANCE_USD` | Saldo minimo operativo (default `0.01`) |
 | `NOVITA_LOW_BALANCE_ALERT_USD` | Umbral para alerta al vendedor (default `3`) |
 | `NOVITA_LOW_BALANCE_ALERT_COOLDOWN_MINUTES` | Minutos para no duplicar alertas de saldo bajo |
-| `ZENT_FLOW_PLUGIN_ENABLED` | Plugin instalado en OpenWA (prod default `true`) |
+| `ZENT_FLOW_PLUGIN_ENABLED` | `true` = instalar/sincronizar zent-flow al completar `/setup`, vincular WhatsApp y en bootstrap |
 
 ### Diagnostico de inbox y webhook
 

@@ -41,6 +41,11 @@ export class OpenwaPluginService {
     return null;
   }
 
+  private zentFlowPluginEnabled(): boolean {
+    const raw = this.config.get<string>('ZENT_FLOW_PLUGIN_ENABLED', 'true').trim().toLowerCase();
+    return raw !== 'false' && raw !== '0' && raw !== 'no';
+  }
+
   private buildDefaultConfig(passThrough: boolean): Record<string, unknown> {
     const secret =
       this.config.get<string>('BOT_PLUGIN_SECRET') ||
@@ -101,6 +106,10 @@ export class OpenwaPluginService {
   }
 
   private async installZentFlowIfPossible(): Promise<boolean> {
+    if (!this.zentFlowPluginEnabled()) {
+      this.logger.log('ZENT_FLOW_PLUGIN_ENABLED=false — omitiendo instalacion de zent-flow');
+      return false;
+    }
     const zipPath = this.pluginZipPath();
     if (!zipPath) {
       this.logger.warn('zent-flow.zip not bundled — cannot auto-install');
@@ -143,6 +152,15 @@ export class OpenwaPluginService {
   }
 
   private async syncZentFlowInternal(passThrough: boolean): Promise<ZentFlowSyncResult> {
+    if (!this.zentFlowPluginEnabled()) {
+      return {
+        ok: true,
+        passThrough: true,
+        pluginInstalled: false,
+        message: 'zent-flow deshabilitado (ZENT_FLOW_PLUGIN_ENABLED=false).',
+      };
+    }
+
     let installed = await this.isZentFlowInstalled();
 
     if (!installed) {

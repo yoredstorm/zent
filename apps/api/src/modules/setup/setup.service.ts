@@ -213,6 +213,11 @@ export class SetupService {
       await this.markInstalled();
       this.emit({ step: 6, total, label: 'Finalizando instalacion', status: 'ok' });
 
+      // Instalar zent-flow en cuanto termina el wizard (no esperar 45s)
+      void this.openwaBootstrap.ensureZentFlowPlugin().catch((err: any) => {
+        this.logger.warn(`zent-flow post-install: ${err?.message || err}`);
+      });
+
       this.emit({ step: total, total, label: 'Instalacion completada', status: 'done' });
       this.activeInstall?.complete();
 
@@ -401,6 +406,9 @@ export class SetupService {
   private onWhatsappConnected(): void {
     void this.openwaBootstrap.configureOpenWaWithRetries(3).catch((err: any) => {
       this.logger.warn(`OpenWA post-connect setup: ${err?.message || err}`);
+    });
+    void this.openwaBootstrap.ensureZentFlowPlugin().catch((err: any) => {
+      this.logger.warn(`zent-flow post-connect: ${err?.message || err}`);
     });
   }
 }
