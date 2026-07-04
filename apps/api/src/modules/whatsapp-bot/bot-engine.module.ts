@@ -1,9 +1,10 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { BotEngineService } from './bot-engine.service';
-import { BotAiModule } from '../bot-ai/bot-ai.module';
+import { NovitaBalanceModule } from '../bot-ai/novita-balance.module';
 
+@Global()
 @Module({
-  imports: [forwardRef(() => BotAiModule)],
+  imports: [NovitaBalanceModule],
   providers: [BotEngineService],
   exports: [BotEngineService],
 })

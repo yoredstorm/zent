@@ -72,6 +72,42 @@ docker compose exec backend-api npx prisma migrate resolve --applied 20260701120
 
 Luego reiniciar `backend-api`; a partir de ahí solo `prisma migrate deploy` al arrancar.
 
+### Migracion fallida P3009 (`whatsapp_bot_engine`)
+
+Si `backend-api` reinicia en bucle con:
+
+```
+Error: P3009
+The `20260704150000_whatsapp_bot_engine` migration ... failed
+```
+
+La migracion quedo marcada como fallida en `_prisma_migrations` (suele pasar si se desplego la version con columnas snake_case).
+
+**En el VPS / terminal Dokploy:**
+
+```bash
+cd infra
+docker compose -f docker-compose.prod.yml exec backend-api npx prisma migrate resolve --rolled-back 20260704150000_whatsapp_bot_engine
+docker compose -f docker-compose.prod.yml exec backend-api npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml restart backend-api bot-worker
+```
+
+Script alternativo (desde el repo en el servidor): `infra/scripts/fix-failed-bot-engine-migration.sh`
+
+Si quedaron columnas **snake_case** de un intento anterior (`whatsapp_bot_engine`, etc.), eliminalas antes del `migrate deploy`:
+
+```sql
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "whatsapp_bot_engine";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_workflows_enabled";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_webhook_base_url";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_sales_mode";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_chat_scope";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_chat_webhook_url";
+ALTER TABLE "store_settings" DROP COLUMN IF EXISTS "n8n_chat_sandbox_phones";
+```
+
+Las columnas correctas usan **camelCase** (`whatsappBotEngine`, `n8nChatScope`, ...).
+
 ---
 
 ## Desinstalación completa
