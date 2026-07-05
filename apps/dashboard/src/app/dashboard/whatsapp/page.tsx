@@ -203,6 +203,9 @@ export default function WhatsAppPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showEmojis, setShowEmojis] = useState(false);
   const [handoffLoading, setHandoffLoading] = useState(false);
+  const [cartEditing, setCartEditing] = useState(false);
+  const [cartDraft, setCartDraft] = useState<Record<string, number>>({});
+  const [cartActionLoading, setCartActionLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadConversations = useCallback(() => {
@@ -237,8 +240,16 @@ export default function WhatsAppPage() {
   const loadMeta = useCallback((chatId: string) => {
     api
       .get(`/whatsapp/conversations/${encodeChatId(chatId)}/meta`)
-      .then(setMeta)
-      .catch(() => setMeta(null));
+      .then((m) => {
+        setMeta(m);
+        setCartEditing(false);
+        setCartDraft({});
+      })
+      .catch(() => {
+        setMeta(null);
+        setCartEditing(false);
+        setCartDraft({});
+      });
   }, []);
 
   const loadActivity = useCallback((chatId: string) => {
@@ -342,6 +353,63 @@ export default function WhatsAppPage() {
       toast.error('No se pudo reactivar el bot');
     } finally {
       setHandoffLoading(false);
+    }
+  };
+
+  const startCartEdit = () => {
+    if (!meta?.activeCart?.items) return;
+    const draft: Record<string, number> = {};
+    for (const item of meta.activeCart.items) {
+      draft[item.productId] = item.quantity;
+    }
+    setCartDraft(draft);
+    setCartEditing(true);
+  };
+
+  const handleReleaseCart = async () => {
+    if (!selected || cartActionLoading) return;
+    if (!window.confirm('¿Liberar el carrito? Se devolverá el stock y se notificará al cliente por WhatsApp.')) {
+      return;
+    }
+    setCartActionLoading(true);
+    try {
+      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/cart/release`, {
+        notify: true,
+      });
+      toast.success('Carrito liberado — el cliente fue notificado');
+      loadMeta(selected.chatId);
+      loadConversations();
+    } catch {
+      toast.error('No se pudo liberar el carrito');
+    } finally {
+      setCartActionLoading(false);
+    }
+  };
+
+  const handleSaveCart = async () => {
+    if (!selected || !meta?.activeCart || cartActionLoading) return;
+    const items = meta.activeCart.items.map((item: { productId: string }) => ({
+      productId: item.productId,
+      quantity: cartDraft[item.productId] ?? 0,
+    }));
+    setCartActionLoading(true);
+    try {
+      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/cart/update`, {
+        items,
+        notify: true,
+      });
+      toast.success('Carrito actualizado — el cliente fue notificado');
+      setCartEditing(false);
+      loadMeta(selected.chatId);
+      loadConversations();
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+          ? err.message
+          : 'No se pudo actualizar el carrito';
+      toast.error(msg);
+    } finally {
+      setCartActionLoading(false);
     }
   };
 
@@ -716,18 +784,92 @@ export default function WhatsAppPage() {
                     </div>
                     {meta.activeCart && (
                       <div className="rounded-xl border border-brand-200 bg-brand-50 p-2 text-brand-900">
-                        <div className="mb-1 font-medium">
-                          🛒 Carrito incompleto — S/ {Number(meta.activeCart.total).toFixed(2)}
-                          {meta.activeCart.minutesLeft != null && (
-                            <span className="ml-2 font-normal text-brand-700">
-                              (expira en {meta.activeCart.minutesLeft} min)
-                            </span>
-                          )}
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="font-medium">
+                            🛒 Carrito incompleto — S/ {Number(meta.activeCart.total).toFixed(2)}
+                            {meta.activeCart.minutesLeft != null && (
+                              <span className="ml-2 font-normal text-brand-700">
+                                (expira en {meta.activeCart.minutesLeft} min)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {selected.needsHandoff && !cartEditing && (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="!min-h-0 !px-2 !py-1 text-[10px]"
+                                onClick={startCartEdit}
+                              >
+                                Editar cantidades
+                              </Button>
+                            )}
+                            {cartEditing && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className="!min-h-0 !px-2 !py-1 text-[10px]"
+                                  onClick={() => setCartEditing(false)}
+                                  disabled={cartActionLoading}
+                                >
+                                  Cancelar
+                                </Button>
+                                <Button
+                                  type="button"
+                                  className="!min-h-0 !px-2 !py-1 text-[10px]"
+                                  onClick={handleSaveCart}
+                                  loading={cartActionLoading}
+                                >
+                                  Guardar y notificar
+                                </Button>
+                              </>
+                            )}
+                            {!cartEditing && (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="!min-h-0 !px-2 !py-1 text-[10px] text-amber-800"
+                                onClick={handleReleaseCart}
+                                loading={cartActionLoading}
+                              >
+                                Liberar carrito
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                        <ul className="space-y-0.5">
+                        {!selected.needsHandoff && !cartEditing && (
+                          <p className="mb-2 text-[10px] text-brand-700">
+                            Para editar cantidades, primero toma la conversación.
+                          </p>
+                        )}
+                        <ul className="space-y-1">
                           {meta.activeCart.items.map((item: { productId: string; nombre: string; quantity: number; unitPrice: number }) => (
-                            <li key={item.productId}>
-                              {item.quantity}x {item.nombre} — S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                            <li key={item.productId} className="flex flex-wrap items-center gap-2">
+                              {cartEditing ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    className="w-14 rounded border border-brand-200 bg-white px-1 py-0.5 text-xs"
+                                    value={cartDraft[item.productId] ?? item.quantity}
+                                    onChange={(e) =>
+                                      setCartDraft((prev) => ({
+                                        ...prev,
+                                        [item.productId]: Math.max(0, parseInt(e.target.value, 10) || 0),
+                                      }))
+                                    }
+                                  />
+                                  <span>
+                                    x {item.nombre} — S/{' '}
+                                    {((cartDraft[item.productId] ?? item.quantity) * item.unitPrice).toFixed(2)}
+                                  </span>
+                                </>
+                              ) : (
+                                <span>
+                                  {item.quantity}x {item.nombre} — S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                                </span>
+                              )}
                             </li>
                           ))}
                         </ul>

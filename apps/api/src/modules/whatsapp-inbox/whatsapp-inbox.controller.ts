@@ -8,6 +8,8 @@ import { N8nSessionToolsService } from '../workflows/n8n-session-tools.service';
 import { parseWaConversationId } from './wa-conversation.util';
 import { SendWaMessageDto } from './dto/send-message.dto';
 import { SendWaMediaDto } from './dto/send-media.dto';
+import { ReleaseWaCartDto, UpdateWaCartDto } from './dto/wa-cart.dto';
+import { WaCartAgentService } from './wa-cart-agent.service';
 
 @ApiTags('whatsapp')
 @Controller('whatsapp')
@@ -20,6 +22,7 @@ export class WhatsappInboxController {
     private openwa: OpenwaService,
     private turnLog: BotTurnLogService,
     private sessionTools: N8nSessionToolsService,
+    private cartAgent: WaCartAgentService,
   ) {}
 
   @Get('conversations')
@@ -137,5 +140,19 @@ export class WhatsappInboxController {
   async botResume(@Param('chatId') chatId: string) {
     const convId = decodeURIComponent(chatId);
     return this.sessionTools.resumeBot(convId);
+  }
+
+  @Post('conversations/:chatId/cart/release')
+  @ApiOperation({ summary: 'Release active cart and optionally notify customer' })
+  async releaseCart(@Param('chatId') chatId: string, @Body() dto: ReleaseWaCartDto) {
+    const convId = decodeURIComponent(chatId);
+    return this.cartAgent.releaseCart(convId, { notify: dto.notify, note: dto.note });
+  }
+
+  @Post('conversations/:chatId/cart/update')
+  @ApiOperation({ summary: 'Update cart quantities as agent and notify customer' })
+  async updateCart(@Param('chatId') chatId: string, @Body() dto: UpdateWaCartDto) {
+    const convId = decodeURIComponent(chatId);
+    return this.cartAgent.updateCart(convId, dto.items, { notify: dto.notify });
   }
 }
