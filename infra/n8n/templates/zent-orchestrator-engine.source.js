@@ -19,7 +19,7 @@ function normalizeInput(message) {
 
 function detectGlobalIntent(msg) {
   if (/^(menu|inicio|empezar de nuevo|volver al inicio)/.test(msg)) return 'reset';
-  if (/^(hola|buenas|buenos|hey|hi|hello)/.test(msg) || msg.length < 3) return 'greeting';
+  if (/^(hola|buenas|buenos|hey|hi|hello)\b/.test(msg) || msg.length < 3) return 'greeting';
   if (/asesor|humano|persona|agente|hablar con/.test(msg)) return 'handoff';
   if (/pedido|estado|seguimiento|donde esta|donde está|mi compra/.test(msg)) return 'order_status';
   if (/catalogo|catálogo|productos|comprar|venta|ver productos|^1$/.test(msg)) return 'catalog';
@@ -117,18 +117,47 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     return r?.text || '';
   }
 
-  if (intent === 'reset') {
-    flow.phase = 'greeting';
-    patch = { phase: 'greeting', lastCopyKeys: keys };
+  function buildWelcomeReply() {
     const gr = customer.found
       ? customer.isReturning
         ? COPY.greetingReturning(customer.name, store, customer.totalOrders)
         : COPY.greetingNamed(customer.name, store, tg)
       : COPY.greetingAnonymous(store, tg);
-    reply = mergeKeys(gr) + '\n\n' + mergeKeys(COPY.mainMenu());
+    return mergeKeys(gr) + '\n\n' + mergeKeys(COPY.mainMenu());
+  }
+
+  const checkoutPhases = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
+
+  if (intent === 'reset') {
+    flow.phase = 'greeting';
+    patch = { phase: 'greeting', lastCopyKeys: keys };
+    reply = buildWelcomeReply();
     flow.phase = 'main_menu';
-    patch.phase = 'main_menu';
-    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch: { ...patch, lastCopyKeys: keys } };
+    patch = {
+      phase: 'main_menu',
+      checkout: {},
+      categoryId: undefined,
+      categoryName: undefined,
+      lastProductList: undefined,
+      productPage: undefined,
+      lastCopyKeys: keys,
+    };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
+  }
+
+  // "hola" / "buenas" reinicia desde cualquier fase (excepto checkout en curso)
+  if (intent === 'greeting' && !checkoutPhases.includes(flow.phase)) {
+    reply = buildWelcomeReply();
+    patch = {
+      phase: 'main_menu',
+      checkout: {},
+      categoryId: undefined,
+      categoryName: undefined,
+      lastProductList: undefined,
+      productPage: undefined,
+      lastCopyKeys: keys,
+    };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
   }
 
   if (intent === 'handoff' || flow.phase === 'handoff') {
