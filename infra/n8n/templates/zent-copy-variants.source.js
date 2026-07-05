@@ -62,9 +62,28 @@ function buildCopy(lastKeys = {}) {
       pickAvoidRepeat(
         'mainMenu',
         [
-          '¿En qué te ayudo?\n• *Catálogo* — ver productos\n• *Mi pedido* — estado de tu compra\n• *Asesor* — hablar con una persona',
-          'Puedes decirme *catálogo*, *mi pedido* o *asesor*, o simplemente cuéntame qué necesitas.',
-          '¿Qué te gustaría hacer?\n1️⃣ Ver *catálogo*\n2️⃣ Consultar *mi pedido*\n3️⃣ Hablar con un *asesor*',
+          '¿En qué te ayudo?\n• *Catálogo PDF* — catálogo completo\n• *Catálogo* — productos por categoría\n• *Mi pedido* — estado de tu compra\n• *Asesor* — hablar con una persona',
+          'Puedes decirme *catálogo PDF*, *catálogo*, *mi pedido* o *asesor*, o cuéntame qué necesitas.',
+          '¿Qué te gustaría hacer?\n1️⃣ Ver *catálogo* por categoría\n2️⃣ Consultar *mi pedido*\n3️⃣ Hablar con un *asesor*\nTambién puedes pedir el *catálogo PDF*.',
+        ],
+        lastKeys,
+      ),
+    catalogPdfSent: () =>
+      pickAvoidRepeat(
+        'catalogPdfSent',
+        [
+          'Aquí tienes nuestro catálogo completo en PDF 📋\n\n¿Quieres ver productos por categoría? Escribe *catálogo*.',
+          'Te envío el PDF con todo el catálogo 📋\n\nSi prefieres comprar por aquí, escribe *catálogo*.',
+          'Listo — catálogo completo adjunto 📋\n\nPara armar un pedido, dime *catálogo* o el producto que buscas.',
+        ],
+        lastKeys,
+      ),
+    catalogPdfUnavailable: () =>
+      pickAvoidRepeat(
+        'catalogPdfUnavailable',
+        [
+          'Por ahora no tenemos el PDF del catálogo disponible.\n\nPuedes ver productos escribiendo *catálogo*.',
+          'El catálogo PDF no está activo en este momento.\n\nEscribe *catálogo* para ver productos por categoría.',
         ],
         lastKeys,
       ),

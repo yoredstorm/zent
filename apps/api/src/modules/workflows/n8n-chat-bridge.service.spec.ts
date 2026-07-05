@@ -11,7 +11,11 @@ describe('N8nChatBridgeService', () => {
           N8N_CHAT_TIMEOUT_MS: '2500',
         })[key] ?? fallback,
     } as any;
-    const openwa = { sendText: jest.fn().mockResolvedValue(undefined) };
+    const openwa = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+      sendImage: jest.fn().mockResolvedValue(undefined),
+      sendDocument: jest.fn().mockResolvedValue(undefined),
+    };
     const turnLog = {
       startTurn: jest.fn().mockResolvedValue('log_1'),
       completeTurn: jest.fn().mockResolvedValue(undefined),
@@ -125,6 +129,41 @@ describe('N8nChatBridgeService', () => {
       'session_1::51999999999@c.us',
       expect.objectContaining({ contactPhone: '51999999999' }),
     );
+  });
+
+  it('sends media attachments returned by n8n before the text reply', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        reply: 'Producto agregado.',
+        media: [
+          { type: 'image', url: 'https://cdn.test/product.png', caption: 'Papel grueso' },
+        ],
+      }),
+      text: async () => '',
+    });
+    const { service, openwa } = createService(fetchMock);
+
+    await service.handleMessage({
+      chatId: '51987752653@lid',
+      waSessionId: 'session_1',
+      contactPhone: '51987752653',
+      message: 'agrega 5 papel',
+    });
+
+    expect(openwa.sendImage).toHaveBeenCalledWith({
+      chatId: '51987752653@lid',
+      sessionId: 'session_1',
+      image: { url: 'https://cdn.test/product.png' },
+      caption: 'Papel grueso',
+      source: 'bot',
+    });
+    expect(openwa.sendText).toHaveBeenCalledWith({
+      chatId: '51987752653@lid',
+      sessionId: 'session_1',
+      text: 'Producto agregado.',
+    });
   });
 
   it('does not handle messages when chat mode is enabled without a signing secret', () => {

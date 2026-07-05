@@ -8,6 +8,7 @@ import { StockReservationService } from '../inventory/stock-reservation.service'
 import { RealtimeService } from '../realtime/realtime.service';
 import { VendorNotifyService } from './vendor-notify.service';
 import { buildStatusNotifyMessage } from './order-notify.util';
+import { resolveOrderWaTarget } from './order-wa-target.util';
 import { WorkflowEventsService } from '../workflows/workflow-events.service';
 
 @Injectable()
@@ -346,11 +347,24 @@ export class OrdersService {
     return order;
   }
 
-  private resolveChatId(order: { chatId?: string | null; customerPhone: string }): string | null {
-    if (order.chatId?.trim()) return order.chatId.trim();
-    const digits = order.customerPhone.replace(/\D/g, '');
-    if (digits.length >= 9) return `${digits}@c.us`;
-    return null;
+  private async resolveNotifyTarget(order: {
+    chatId?: string | null;
+    customerPhone: string;
+  }): Promise<{ chatId: string; waSessionId?: string } | null> {
+    const parsed = resolveOrderWaTarget(order);
+    if (!parsed) return null;
+
+    if (parsed.chatId.includes('@lid') || parsed.waSessionId) {
+      return parsed;
+    }
+
+    const resolved = await this.openwa.resolveChatIdForPhone(
+      order.customerPhone,
+      parsed.waSessionId,
+    );
+    return resolved
+      ? { chatId: resolved, waSessionId: parsed.waSessionId }
+      : parsed;
   }
 
   private async notifyCustomerStatusChange(
@@ -372,14 +386,19 @@ export class OrdersService {
     },
     status: OrderStatus,
   ) {
-    const chatId = this.resolveChatId(order);
-    if (!chatId) return;
+    const target = await this.resolveNotifyTarget(order);
+    if (!target) return;
 
     const text = buildStatusNotifyMessage(status, order);
     if (!text) return;
 
     try {
-      await this.openwa.sendText({ chatId, text });
+      await this.openwa.sendText({
+        chatId: target.chatId,
+        sessionId: target.waSessionId,
+        text,
+        source: 'bot',
+      });
     } catch (err) {
       this.logger.warn(`WhatsApp notify failed for order ${order.id} (${status}): ${err}`);
     }

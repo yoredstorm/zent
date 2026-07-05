@@ -75,7 +75,7 @@ if (result.patch && Object.keys(result.patch).length > 0) {
   } catch (e) {}
 }
 
-return [{ json: { reply: result.reply, handoff: result.handoff, metadata: { phase: result.nextPhase } } }];
+return [{ json: { reply: result.reply, handoff: result.handoff, metadata: { phase: result.nextPhase }, media: result.media || [] } }];
 `;
 
 const workflow = {

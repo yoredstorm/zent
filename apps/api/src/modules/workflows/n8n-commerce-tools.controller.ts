@@ -10,6 +10,7 @@ import { CartHoldService } from '../inventory/cart-hold.service';
 import { N8nToolAuthGuard } from './n8n-tool-auth.guard';
 import { N8nSessionToolsService } from './n8n-session-tools.service';
 import type { N8nFlowContext } from './n8n-flow.types';
+import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 
 type ChatOrderItem = { productId: string; quantity: number };
 
@@ -246,6 +247,7 @@ export class N8nCommerceToolsController {
     @Body()
     body: {
       chatId: string;
+      waSessionId?: string;
       customerName: string;
       customerPhone: string;
       address?: string;
@@ -284,7 +286,7 @@ export class N8nCommerceToolsController {
       reference: body.reference,
       customerId: customer.id,
       notes: body.notes,
-      chatId: body.chatId,
+      chatId: this.orderChatIdFromBody(body),
       source: 'WHATSAPP',
       items,
     });
@@ -354,6 +356,16 @@ export class N8nCommerceToolsController {
   async sendText(@Body() body: { chatId: string; text: string; sessionId?: string }) {
     await this.openwa.sendText({ chatId: body.chatId, text: body.text, sessionId: body.sessionId });
     return { ok: true };
+  }
+
+  private normalizeWaChatId(chatId: string): string {
+    return parseWaConversationId(chatId.trim()).waChatId;
+  }
+
+  private orderChatIdFromBody(body: { chatId: string; waSessionId?: string }): string {
+    const waChatId = this.normalizeWaChatId(body.chatId);
+    const sessionId = body.waSessionId?.trim();
+    return sessionId ? `${sessionId}::${waChatId}` : waChatId;
   }
 
   private productForChat(row: {

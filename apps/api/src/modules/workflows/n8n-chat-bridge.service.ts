@@ -122,8 +122,41 @@ export class N8nChatBridgeService {
         reply?: string;
         handoff?: boolean;
         metadata?: Record<string, unknown>;
+        media?: Array<{
+          type: 'image' | 'document';
+          url: string;
+          caption?: string;
+          mimetype?: string;
+        }>;
       };
       const reply = data.reply?.trim();
+
+      if (data.media?.length) {
+        for (const item of data.media) {
+          if (!item.url?.trim()) continue;
+          if (item.type === 'image') {
+            await this.openwa.sendImage({
+              chatId: input.chatId,
+              sessionId: input.waSessionId,
+              image: { url: item.url.trim() },
+              caption: item.caption,
+              source: 'bot',
+            });
+          } else if (item.type === 'document') {
+            await this.openwa.sendDocument({
+              chatId: input.chatId,
+              sessionId: input.waSessionId,
+              document: {
+                url: item.url.trim(),
+                mimetype: item.mimetype || 'application/pdf',
+              },
+              caption: item.caption,
+              source: 'bot',
+            });
+          }
+        }
+      }
+
       if (!reply) {
         await this.turnLog.completeTurn(logId, '', Date.now() - startedAt);
         return { ok: true, replied: false, handoff: data.handoff, metadata: data.metadata };

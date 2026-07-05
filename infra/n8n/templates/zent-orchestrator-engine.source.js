@@ -32,6 +32,9 @@ function detectGlobalIntent(msg) {
   if (isGreetingLike(msg) || msg.length < 3) return 'greeting';
   if (/asesor|humano|persona|agente|hablar con/.test(msg)) return 'handoff';
   if (/pedido|estado|seguimiento|donde esta|donde está|mi compra/.test(msg)) return 'order_status';
+  if (/pdf|catalogo completo|catálogo completo|catalogo pdf|catálogo pdf|ver pdf/.test(msg)) {
+    return 'catalog_pdf';
+  }
   if (/catalogo|catálogo|productos|comprar|venta|ver productos|^1$/.test(msg)) return 'catalog';
   if (/carrito|ver carrito|mi carrito/.test(msg)) return 'cart';
   if (/confirmar|confirmo|finalizar|checkout|^si$|^sí$|^ok$|^dale$/.test(msg)) return 'confirm';
@@ -117,8 +120,20 @@ function looksLikeOrderId(msg) {
   return /^[a-f0-9-]{6,}$/i.test(msg.trim()) || /^#?[a-f0-9]{6,8}$/i.test(msg.trim());
 }
 
+function productImageMedia(product, caption) {
+  if (!product?.imageUrl) return [];
+  return [
+    {
+      type: 'image',
+      url: product.imageUrl,
+      caption:
+        caption || `*${product.name}* — S/ ${Number(product.price).toFixed(2)}`,
+    },
+  ];
+}
+
 /**
- * Main orchestrator — returns { reply, nextPhase, handoff, toolCalls, patch, lastCopyKeys }
+ * Main orchestrator — returns { reply, nextPhase, handoff, toolCalls, patch, media }
  * toolCalls: [{ name, body }] executed externally when http helper provided
  */
 function runOrchestrator(input, copyLib, toolResults = {}) {
@@ -138,6 +153,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   let reply = '';
   let handoff = false;
   let patch = {};
+  let media = [];
 
   function mergeKeys(r) {
     if (r?.lastCopyKeys) keys = { ...keys, ...r.lastCopyKeys };
@@ -170,7 +186,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   if (intent === 'reset') {
     reply = buildWelcomeReply();
     patch = buildWelcomePatch();
-    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
   }
 
   // Saludo o mensaje corto amigable → siempre bienvenida + menú (excepto checkout)
@@ -180,7 +196,29 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   ) {
     reply = buildWelcomeReply();
     patch = buildWelcomePatch();
-    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
+  }
+
+  if (intent === 'catalog_pdf' && !checkoutPhases.includes(flow.phase)) {
+    toolCalls.push({ name: 'catalog_pdf.active', body: {} });
+    if (toolResults['catalog_pdf.active']?.available) {
+      const pdf = toolResults['catalog_pdf.active'];
+      reply = mergeKeys(COPY.catalogPdfSent());
+      media = [
+        {
+          type: 'document',
+          url: pdf.url,
+          mimetype: 'application/pdf',
+          caption: '📋 Catálogo completo',
+        },
+      ];
+    } else if (toolResults['catalog_pdf.active']) {
+      reply = mergeKeys(COPY.catalogPdfUnavailable());
+    } else {
+      reply = mergeKeys(COPY.lookupFiller());
+    }
+    patch = { phase: 'main_menu', lastCopyKeys: keys };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
   }
 
   if (intent === 'handoff' || flow.phase === 'handoff') {
@@ -204,6 +242,27 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       if (intent === 'cart') {
         flow.phase = 'cart';
         break;
+      }
+      if (intent === 'catalog_pdf') {
+        toolCalls.push({ name: 'catalog_pdf.active', body: {} });
+        if (toolResults['catalog_pdf.active']?.available) {
+          const pdf = toolResults['catalog_pdf.active'];
+          reply = mergeKeys(COPY.catalogPdfSent());
+          media = [
+            {
+              type: 'document',
+              url: pdf.url,
+              mimetype: 'application/pdf',
+              caption: '📋 Catálogo completo',
+            },
+          ];
+        } else if (toolResults['catalog_pdf.active']) {
+          reply = mergeKeys(COPY.catalogPdfUnavailable());
+        } else {
+          reply = mergeKeys(COPY.lookupFiller());
+        }
+        patch = { phase: 'main_menu', lastCopyKeys: keys };
+        return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
       }
       // Saludo cálido primero — "hola" NO debe saltar directo al catálogo
       if (intent === 'greeting' || flow.phase === 'greeting') {
@@ -292,6 +351,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
           name: p.name,
           price: p.price,
           lowStock: p.lowStock,
+          imageUrl: p.imageUrl,
         }));
         flow.productPage = 0;
         const fmt = formatProductList(products, 0);
@@ -327,8 +387,9 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
           '\n' +
           formatCartSummary(c) +
           '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
+        media = productImageMedia(match.product);
         patch = { phase: 'cart', lastCopyKeys: keys };
-        return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch };
+        return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch, media };
       }
       if (match) {
         toolCalls.push({
@@ -352,11 +413,12 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
             '\n' +
             formatCartSummary(c) +
             '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
+          media = productImageMedia(match.product);
         } else {
           reply = mergeKeys(COPY.lookupFiller());
         }
         patch = { phase: 'cart', lastCopyKeys: keys };
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch, media };
       }
       reply = mergeKeys(COPY.productNotFound());
       return { reply, nextPhase: flow.phase, handoff, toolCalls, patch: { lastCopyKeys: keys } };
@@ -473,7 +535,8 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
         toolCalls.push({
           name: 'orders.create_from_chat',
           body: {
-            chatId: stateKey || chatId,
+            chatId,
+            waSessionId,
             customerName: custName,
             customerPhone: contactPhone,
             address,
