@@ -54,7 +54,7 @@ function fuzzyMatchCategory(name, categories) {
 
 function fuzzyMatchProduct(text, lastProductList) {
   if (!lastProductList?.length) return null;
-  const msg = normalizeInput(text);
+  let msg = normalizeInput(text).replace(/^(agrega(r)?|anade|anadir|pon(me)?|quiero)\s+/, '');
   const qtyMatch = msg.match(/(\d+)\s*(.+)?/);
   let qty = 1;
   let rest = msg;
@@ -62,16 +62,28 @@ function fuzzyMatchProduct(text, lastProductList) {
     qty = parseInt(qtyMatch[1], 10) || 1;
     rest = (qtyMatch[2] || '').trim();
   }
-  const byNum = parseInt(rest || msg, 10);
-  if (!isNaN(byNum) && byNum >= 1 && byNum <= lastProductList.length && !rest.match(/[a-z]/)) {
+  if (/^\d+$/.test(msg) && lastProductList.length === 1) {
+    return { product: lastProductList[0], quantity: parseInt(msg, 10) || 1 };
+  }
+  const byNum = parseInt(rest || '', 10);
+  if (rest && !isNaN(byNum) && byNum >= 1 && byNum <= lastProductList.length && !rest.match(/[a-z]/)) {
     return { product: lastProductList[byNum - 1], quantity: qty };
+  }
+  if (/^\d+$/.test(rest) && lastProductList.length === 1) {
+    return { product: lastProductList[0], quantity: byNum };
   }
   if (/primero|1ro/.test(msg)) return { product: lastProductList[0], quantity: qty };
   if (/segundo|2do/.test(msg)) return { product: lastProductList[1], quantity: qty };
-  const found = lastProductList.find(
-    (p) => normalizeInput(p.name).includes(rest) || rest.includes(normalizeInput(p.name)),
-  );
-  return found ? { product: found, quantity: qty } : null;
+  if (!rest && lastProductList.length === 1) {
+    return { product: lastProductList[0], quantity: qty };
+  }
+  if (rest) {
+    const found = lastProductList.find(
+      (p) => normalizeInput(p.name).includes(rest) || rest.includes(normalizeInput(p.name)),
+    );
+    if (found) return { product: found, quantity: qty };
+  }
+  return null;
 }
 
 function formatKeycap(n) {
@@ -117,7 +129,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   let keys = { ...lastKeys };
   const COPY = copyLib.buildCopy(keys);
   const store = session?.storeName || 'Zent';
-  const tg = copyLib.timeGreeting();
+  const tg = copyLib.timeGreeting(session?.localHour);
   const customer = session?.customer || { found: false };
   const flow = { ...(session?.flow || { phase: 'greeting' }) };
   const cart = session?.cart || { items: [], total: 0 };
@@ -216,7 +228,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
             '\n\n' +
             mergeKeys(COPY.categoriesIntro()) +
             '\n\n' +
-            cats.map((c, i) => `${formatKeycap(i + 1)} ${c.name} (${c.productCount})`).join('\n');
+            cats.map((c, i) => `${formatKeycap(i + 1)} ${c.name}`).join('\n');
         } else {
           reply = mergeKeys(COPY.lookupFiller());
         }
@@ -306,6 +318,18 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
 
     case 'browse_products': {
       const match = fuzzyMatchProduct(message, flow.lastProductList);
+      if (match && toolResults['cart.add_item']) {
+        const c = toolResults['cart.add_item'].cart;
+        reply =
+          mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
+          '\n\n' +
+          mergeKeys(COPY.cartSummary()) +
+          '\n' +
+          formatCartSummary(c) +
+          '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
+        patch = { phase: 'cart', lastCopyKeys: keys };
+        return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch };
+      }
       if (match) {
         toolCalls.push({
           name: 'cart.add_item',

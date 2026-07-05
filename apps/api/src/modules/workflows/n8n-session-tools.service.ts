@@ -70,6 +70,8 @@ export class N8nSessionToolsService {
       flow,
       cart: cartData,
       cartTtlMinutes,
+      localHour: this.getLocalHour(),
+      storeTimezone: this.getStoreTimezone(),
       storeName,
       botPaused: session?.state === ChatState.HANDOFF_HUMANO,
     };
@@ -116,6 +118,21 @@ export class N8nSessionToolsService {
     await this.chatSession.updateState(chatId, ChatState.MENU_PRINCIPAL);
     await this.patchFlow(chatId, { phase: 'greeting' as N8nFlowPhase });
     return { ok: true, botPaused: false };
+  }
+
+  private getStoreTimezone(): string {
+    return this.config.get<string>('STORE_TIMEZONE', 'America/Lima').trim() || 'America/Lima';
+  }
+
+  private getLocalHour(): number {
+    const tz = this.getStoreTimezone();
+    const hourPart = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: tz,
+    }).formatToParts(new Date()).find((p) => p.type === 'hour');
+    const hour = Number(hourPart?.value);
+    return Number.isFinite(hour) ? hour : new Date().getHours();
   }
 
   async lookupCustomer(phone: string) {

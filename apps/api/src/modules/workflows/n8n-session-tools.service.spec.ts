@@ -78,6 +78,7 @@ describe('N8nSessionToolsService', () => {
     expect(res.botPaused).toBe(false);
     expect(res.storeName).toBe('Mi Tienda');
     expect(res.cartTtlMinutes).toBe(30);
+    expect(typeof res.localHour).toBe('number');
   });
 
   it('patch merges n8nFlow phase', async () => {

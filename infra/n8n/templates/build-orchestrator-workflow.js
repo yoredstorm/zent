@@ -47,12 +47,16 @@ function isLookupFiller(text) {
 }
 
 let result = runOrchestrator(orchInput(), copyLib, toolResults);
+const executedTools = new Set();
 
 for (let round = 0; round < 6; round++) {
   const calls = result.toolCalls || [];
   if (!calls.length) break;
 
   for (const tc of calls) {
+    const sig = tc.name + ':' + JSON.stringify(tc.body || {});
+    if (executedTools.has(sig)) continue;
+    executedTools.add(sig);
     try {
       toolResults[tc.name] = await callTool.call(this, tc.name, tc.body);
     } catch (e) {

@@ -13,8 +13,8 @@ function pickAvoidRepeat(key, variants, lastKeys = {}) {
   return { text: variants[idx], lastCopyKeys: { ...lastKeys, [key]: idx } };
 }
 
-function timeGreeting() {
-  const h = new Date().getHours();
+function timeGreeting(localHour) {
+  const h = typeof localHour === 'number' ? localHour : new Date().getHours();
   if (h < 12) return pick(['Buenos días', 'Buen día', 'Qué tal tu mañana']);
   if (h < 19) return pick(['Buenas tardes', 'Qué tal la tarde', 'Hola']);
   return pick(['Buenas noches', 'Qué tal la noche', 'Hola']);
