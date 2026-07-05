@@ -22,7 +22,9 @@ export interface N8nFlowContext {
   phase: N8nFlowPhase;
   categoryId?: string;
   categoryName?: string;
-  lastProductList?: { id: string; name: string; price: number }[];
+  categoryList?: { id: string; name: string; productCount: number }[];
+  lastProductList?: { id: string; name: string; price: number; lowStock?: boolean }[];
   checkout?: N8nCheckoutDraft;
   lastCopyKeys?: Record<string, number>;
+  productPage?: number;
 }

@@ -30,35 +30,39 @@ async function callTool(name, body) {
 
 const copyLib = { pick, pickAvoidRepeat, timeGreeting, buildCopy };
 
-let result = runOrchestrator(
-  { message, session, contactPhone, chatId, stateKey, waSessionId: input.waSessionId },
-  copyLib,
-  {},
-);
-
 const toolResults = {};
-for (const tc of result.toolCalls || []) {
-  try {
-    toolResults[tc.name] = await callTool.call(this, tc.name, tc.body);
-  } catch (e) {
-    toolResults[tc.name] = null;
-  }
+let mergedSession = { ...session };
+const orchInput = () => ({
+  message,
+  session: mergedSession,
+  contactPhone,
+  chatId,
+  stateKey,
+  waSessionId: input.waSessionId,
+  categories: toolResults['categories.list']?.categories,
+});
+
+function isLookupFiller(text) {
+  return /segundito|momentito|Voy a mirarlo/i.test(String(text || ''));
 }
 
-if (Object.keys(toolResults).length > 0) {
-  result = runOrchestrator(
-    {
-      message,
-      session,
-      contactPhone,
-      chatId,
-      stateKey,
-      waSessionId: input.waSessionId,
-      categories: toolResults['categories.list']?.categories,
-    },
-    copyLib,
-    toolResults,
-  );
+let result = runOrchestrator(orchInput(), copyLib, toolResults);
+
+for (let round = 0; round < 6; round++) {
+  const calls = result.toolCalls || [];
+  if (!calls.length) break;
+
+  for (const tc of calls) {
+    try {
+      toolResults[tc.name] = await callTool.call(this, tc.name, tc.body);
+    } catch (e) {
+      toolResults[tc.name] = null;
+    }
+  }
+
+  const next = runOrchestrator(orchInput(), copyLib, toolResults);
+  result = next;
+  if (!(next.toolCalls || []).length && !isLookupFiller(next.reply)) break;
 }
 
 if (result.patch && Object.keys(result.patch).length > 0) {

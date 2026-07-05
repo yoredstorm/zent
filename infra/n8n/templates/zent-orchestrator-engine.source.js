@@ -74,12 +74,17 @@ function fuzzyMatchProduct(text, lastProductList) {
   return found ? { product: found, quantity: qty } : null;
 }
 
+function formatKeycap(n) {
+  const caps = { 1: '1️⃣', 2: '2️⃣', 3: '3️⃣', 4: '4️⃣', 5: '5️⃣', 6: '6️⃣', 7: '7️⃣', 8: '8️⃣', 9: '9️⃣', 10: '🔟' };
+  return caps[n] ?? `${n}.`;
+}
+
 function formatProductList(products, page = 0, pageSize = 8) {
   const slice = products.slice(page * pageSize, (page + 1) * pageSize);
   const lines = slice.map((p, i) => {
     const idx = page * pageSize + i + 1;
     const name = p.lowStock ? `*${p.name}*` : p.name;
-    return `${idx}. ${name} — S/ ${Number(p.price).toFixed(2)}`;
+    return `${formatKeycap(idx)} ${name} — S/ ${Number(p.price).toFixed(2)}`;
   });
   const hasMore = products.length > (page + 1) * pageSize;
   return { text: lines.join('\n'), hasMore, page };
@@ -211,11 +216,19 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
             '\n\n' +
             mergeKeys(COPY.categoriesIntro()) +
             '\n\n' +
-            cats.map((c, i) => `${i + 1}. ${c.name} (${c.productCount})`).join('\n');
+            cats.map((c, i) => `${formatKeycap(i + 1)} ${c.name} (${c.productCount})`).join('\n');
         } else {
           reply = mergeKeys(COPY.lookupFiller());
         }
-        patch = { phase: 'browse_categories', lastCopyKeys: keys };
+        patch = {
+          phase: 'browse_categories',
+          categoryList: (toolResults['categories.list']?.categories || []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            productCount: c.productCount,
+          })),
+          lastCopyKeys: keys,
+        };
         return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
       if (intent === 'freeform') {
@@ -235,7 +248,8 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     }
 
     case 'browse_categories': {
-      const cats = toolResults['categories.list']?.categories || input.categories || [];
+      const cats =
+        toolResults['categories.list']?.categories || input.categories || flow.categoryList || [];
       if (!cats.length && !toolCalls.length) {
         toolCalls.push({ name: 'categories.list', body: {} });
         reply = mergeKeys(COPY.lookupFiller());
