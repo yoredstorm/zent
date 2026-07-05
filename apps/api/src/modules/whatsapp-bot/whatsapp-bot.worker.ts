@@ -9,6 +9,8 @@ import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { BotRoutingService } from './bot-routing.service';
 import { BotEngineService } from './bot-engine.service';
 import { N8nChatBridgeService } from '../workflows/n8n-chat-bridge.service';
+import { ChatSessionService } from './chat-session.service';
+import { ChatState } from '@prisma/client';
 
 interface WebhookJob {
   chatId: string;
@@ -38,6 +40,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     private botRouting: BotRoutingService,
     private botEngine: BotEngineService,
     private n8nChatBridge: N8nChatBridgeService,
+    private chatSession: ChatSessionService,
   ) {}
 
   onModuleInit() {
@@ -96,6 +99,19 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
       );
 
       if (decision.wouldRouteToN8n) {
+        const session = await this.chatSession.peek(stateKey);
+        if (session?.state === ChatState.HANDOFF_HUMANO) {
+          await this.turnLog.startTurn({
+            stateKey,
+            chatId,
+            waSessionId,
+            mode: 'handoff_silent',
+            userMessage: body.slice(0, 2000),
+          });
+          this.markProcessed(idempotencyKey);
+          return;
+        }
+
         const cfg = await this.botEngine.getConfig();
         await this.n8nChatBridge.handleMessage(
           {

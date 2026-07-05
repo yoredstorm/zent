@@ -815,7 +815,8 @@ El servicio n8n tambien recibe `ZENT_API_URL=http://backend-api:3000/api` y `ZEN
 | `infra/n8n/examples/zent-sales-sandbox.workflow.json` | Recibe cualquier evento `/webhook/zent/:event` y responde OK para pruebas |
 | `infra/n8n/examples/zent-payment-reference.workflow.json` | Punto de partida para validar referencias de pago |
 | `infra/n8n/examples/zent-order-status.workflow.json` | Punto de partida para notificaciones por cambio de estado |
-| `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` | Flujo conversacional WhatsApp: catalogo, PDF, productos, pedido, pago y cierre |
+| `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json` | **Orquestador unificado** WhatsApp: catálogo, carrito, checkout, estado, handoff (reemplaza sales-chat) |
+| `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` | *(legacy)* Flujo conversacional anterior — desactivar al importar orchestrator |
 | `infra/n8n/templates/zent-order-status-chat.workflow.json` | Flujo conversacional para consultar estado de pedidos |
 
 Los exports experimentales del editor n8n deben guardarse en `infra/n8n/local-flows/`; esa carpeta esta ignorada por git.
@@ -920,7 +921,16 @@ Tools firmadas para plantillas n8n:
 - `POST /api/webhooks/n8n/tools/orders.find_by_phone`
 - `POST /api/webhooks/n8n/tools/orders.get_status`
 - `POST /api/webhooks/n8n/tools/orders.update_status`
-- `POST /api/webhooks/n8n/tools/messages.send_text`
+- `POST /api/webhooks/n8n/tools/cart.get`
+- `POST /api/webhooks/n8n/tools/cart.add_item`
+- `POST /api/webhooks/n8n/tools/cart.remove_item`
+- `POST /api/webhooks/n8n/tools/cart.clear`
+- `POST /api/webhooks/n8n/tools/customers.lookup`
+- `POST /api/webhooks/n8n/tools/orders.find_active_by_phone`
+- `POST /api/webhooks/n8n/tools/chat.bootstrap`
+- `POST /api/webhooks/n8n/tools/chat.session.patch`
+- `POST /api/webhooks/n8n/tools/chat.handoff`
+- `POST /api/webhooks/n8n/tools/chat.resume_bot`
 
 Autenticacion para tools:
 
@@ -937,15 +947,29 @@ Reglas de inventario:
 - Cuando pasa a `CANCELADO`, `OrdersService.updateStatus()` restaura stock si ya estaba comprometido.
 - Cuando pasa a `COMPLETADO`, `OrdersService.updateStatus()` envia el mensaje final de cierre al cliente.
 
-Prueba manual recomendada:
+Prueba manual recomendada (orquestador unificado):
 
-1. Importar `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json`.
-2. Activar el workflow y confirmar que el path sea `/webhook/zent-chat`.
-3. Guardar `N8N_CHAT_MODE=sandbox` y tu numero en `N8N_CHAT_SANDBOX_PHONES`.
-4. Enviar "hola", pedir categorias, pedir PDF y buscar un producto.
-5. Confirmar un pedido con payload de prueba en el contexto del workflow o editar la plantilla para capturar datos.
-6. Cambiar el pedido a `CONFIRMADO` y verificar descuento de inventario.
-7. Importar `infra/n8n/templates/zent-order-status-chat.workflow.json` y probar "como va mi pedido #abcd1234".
+1. **Desactivar** el workflow legacy `Zent WhatsApp Sales Chat` en n8n si estaba activo.
+2. Importar `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json`.
+3. Activar el workflow y confirmar path `/webhook/zent-chat`.
+4. Guardar `N8N_CHAT_MODE=sandbox` y tu número en `N8N_CHAT_SANDBOX_PHONES`.
+5. Probar con `POST /api/settings/n8n/chat/test` o enviar mensajes desde WhatsApp:
+
+| Paso | Mensaje | Resultado esperado |
+|------|---------|-------------------|
+| 1 | `hola` | Saludo + menú con opciones |
+| 2 | `catálogo` o `1` | Lista categorías |
+| 3 | elegir categoría | Productos; bajo stock en negrita |
+| 4 | agregar producto | Carrito + aviso 30 min |
+| 5 | `confirmar pedido` | Pide datos o reutiliza dirección |
+| 6 | confirmar | Pedido NUEVO creado |
+| 6b | Dashboard → Clientes | Cliente visible con `totalOrders = 1` |
+| 7 | `pedido` sin código | Estado por teléfono |
+| 8 | `asesor` | Handoff; bot no responde más |
+| 9 | Dashboard "Reactivar bot" | Bot vuelve a saludar |
+
+6. Cambiar pedido a `CONFIRMADO` / `EN_DELIVERY` / `COMPLETADO` en dashboard; cliente recibe WhatsApp (backend existente).
+7. Opcional: importar `infra/n8n/templates/zent-order-status-chat.workflow.json` solo si mantienes flujo separado de estado.
 
 ### Callback desde n8n
 

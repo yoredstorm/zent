@@ -4,6 +4,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WaMessageService } from './wa-message.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { BotTurnLogService } from '../whatsapp-bot/bot-turn-log.service';
+import { N8nSessionToolsService } from '../workflows/n8n-session-tools.service';
+import { parseWaConversationId } from './wa-conversation.util';
 import { SendWaMessageDto } from './dto/send-message.dto';
 import { SendWaMediaDto } from './dto/send-media.dto';
 
@@ -17,6 +19,7 @@ export class WhatsappInboxController {
     private waMessages: WaMessageService,
     private openwa: OpenwaService,
     private turnLog: BotTurnLogService,
+    private sessionTools: N8nSessionToolsService,
   ) {}
 
   @Get('conversations')
@@ -113,5 +116,26 @@ export class WhatsappInboxController {
       });
     }
     return { ok: true };
+  }
+
+  @Post('conversations/:chatId/bot-handoff')
+  @ApiOperation({ summary: 'Pause bot and hand conversation to human agent' })
+  async botHandoff(@Param('chatId') chatId: string) {
+    const convId = decodeURIComponent(chatId);
+    const { waSessionId } = parseWaConversationId(convId);
+    const meta = await this.waMessages.getConversationMeta(convId);
+    await this.sessionTools.handoff(convId, {
+      contactPhone: meta.session?.customerPhone ?? meta.customer?.phone ?? undefined,
+      customerName: meta.session?.customerName ?? meta.customer?.name ?? undefined,
+      waSessionId: waSessionId ?? undefined,
+    });
+    return { ok: true, botPaused: true };
+  }
+
+  @Post('conversations/:chatId/bot-resume')
+  @ApiOperation({ summary: 'Resume bot after human handoff' })
+  async botResume(@Param('chatId') chatId: string) {
+    const convId = decodeURIComponent(chatId);
+    return this.sessionTools.resumeBot(convId);
   }
 }

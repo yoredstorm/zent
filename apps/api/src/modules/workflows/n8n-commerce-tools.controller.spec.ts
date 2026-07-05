@@ -15,13 +15,16 @@ describe('N8nCommerceToolsController', () => {
           salePrice: { toString: () => '12.5' },
           costPrice: { toString: () => '7' },
           stock: 5,
+          minStock: 3,
           category: { id: 'cat_1', nombre: 'Bebidas' },
           images: [{ url: 'https://img.test/cafe.png' }],
         },
       ]),
       findUnique: jest.fn().mockResolvedValue({
         id: 'prod_1',
+        nombre: 'Cafe',
         isActive: true,
+        stock: 10,
         salePrice: { toString: () => '12.5' },
         costPrice: { toString: () => '7' },
       }),
@@ -42,12 +45,55 @@ describe('N8nCommerceToolsController', () => {
       updateStatus: jest.fn().mockResolvedValue({ id: 'ord_1', status: 'CONFIRMADO' }),
     };
     const openwa = { sendText: jest.fn().mockResolvedValue(undefined) };
+    const customers = {
+      upsertFromOrder: jest.fn().mockResolvedValue({ id: 'cust-1', phone: '51999999999', name: 'Ana' }),
+    };
+    const cartService = {
+      getCart: jest.fn().mockResolvedValue({ items: [], subtotal: 0, deliveryCost: 0, total: 0 }),
+      addItem: jest.fn().mockResolvedValue({
+        items: [{ productId: 'p1', nombre: 'Arroz', quantity: 1, unitPrice: 10 }],
+        subtotal: 10,
+        deliveryCost: 5,
+        total: 15,
+      }),
+      removeItem: jest.fn().mockResolvedValue({ items: [], subtotal: 0, deliveryCost: 0, total: 0 }),
+      clearCart: jest.fn().mockResolvedValue(undefined),
+      getTtlSeconds: jest.fn().mockReturnValue(1800),
+    };
+    const cartHold = {
+      syncFromCart: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+      getHeldQuantity: jest.fn().mockResolvedValue(0),
+    };
+    const sessionTools = {
+      bootstrap: jest.fn(),
+      patchFlow: jest.fn(),
+      handoff: jest.fn(),
+      resumeBot: jest.fn(),
+      lookupCustomer: jest.fn(),
+      findActiveOrderByPhone: jest.fn(),
+    };
     const controller = new N8nCommerceToolsController(
       prisma as any,
       orders as any,
       openwa as any,
+      customers as any,
+      cartService as any,
+      cartHold as any,
+      sessionTools as any,
     );
-    return { controller, categories, products, prisma, orders, openwa };
+    return {
+      controller,
+      categories,
+      products,
+      prisma,
+      orders,
+      openwa,
+      customers,
+      cartService,
+      cartHold,
+      sessionTools,
+    };
   }
 
   it('returns chat-ready categories and products', async () => {
@@ -64,11 +110,45 @@ describe('N8nCommerceToolsController', () => {
           description: 'Cafe molido',
           price: 12.5,
           stock: 5,
+          minStock: 3,
+          lowStock: false,
           category: 'Bebidas',
           imageUrl: 'https://img.test/cafe.png',
         },
       ],
     });
+  });
+
+  it('productForChat marks lowStock when stock <= minStock', () => {
+    const { controller } = createController();
+    const result = (controller as any).productForChat({
+      id: 'p1',
+      nombre: 'Arroz',
+      descripcion: '',
+      salePrice: 10,
+      stock: 2,
+      minStock: 5,
+      category: { nombre: 'Granos' },
+      images: [],
+    });
+    expect(result.lowStock).toBe(true);
+    expect(result.stock).toBe(2);
+    expect(result.minStock).toBe(5);
+  });
+
+  it('cart.add_item syncs hold and returns ttl', async () => {
+    const { controller, cartService, cartHold } = createController();
+    const res = await controller.cartAddItem({
+      stateKey: 'sess::chat1',
+      chatId: 'chat1',
+      contactPhone: '51999999999',
+      productId: 'p1',
+      quantity: 1,
+    });
+    expect(res.cart.total).toBe(15);
+    expect(res.reservedMinutes).toBe(30);
+    expect(cartHold.syncFromCart).toHaveBeenCalled();
+    expect(cartService.addItem).toHaveBeenCalled();
   });
 
   it('creates orders through OrdersService so stock rules stay centralized', async () => {
@@ -85,6 +165,7 @@ describe('N8nCommerceToolsController', () => {
       expect.objectContaining({
         source: 'WHATSAPP',
         chatId: '51999999999@c.us',
+        customerId: 'cust-1',
         items: [
           {
             productId: 'prod_1',
@@ -96,6 +177,33 @@ describe('N8nCommerceToolsController', () => {
       }),
     );
     expect(result).toEqual({ orderId: 'ord_1', status: 'NUEVO', total: 25 });
+  });
+
+  it('create_from_chat upserts customer and links customerId', async () => {
+    const { controller, customers, orders } = createController();
+
+    await controller.createOrderFromChat({
+      chatId: 'chat1',
+      customerName: 'Ana',
+      customerPhone: '51999999999',
+      address: 'Av. Larco 123',
+      reference: 'Portón azul',
+      items: [{ productId: 'prod_1', quantity: 2 }],
+    });
+
+    expect(customers.upsertFromOrder).toHaveBeenCalledWith({
+      customerName: 'Ana',
+      customerPhone: '51999999999',
+      address: 'Av. Larco 123',
+      reference: 'Portón azul',
+    });
+    expect(orders.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'cust-1',
+        address: 'Av. Larco 123',
+        reference: 'Portón azul',
+      }),
+    );
   });
 
   it('rejects order items with non-positive quantities', async () => {

@@ -14,6 +14,7 @@ describe('WhatsappBotWorker n8n routing', () => {
     const bridge = {
       handleMessage: jest.fn().mockResolvedValue({ ok: true, replied: true }),
     };
+    const chatSession = { peek: jest.fn().mockResolvedValue({ state: 'MENU_PRINCIPAL' }) };
     const botEngine = {
       getConfig: jest.fn().mockResolvedValue(n8nCfg),
       resolveRoutingDecision: jest.fn().mockResolvedValue({
@@ -34,6 +35,7 @@ describe('WhatsappBotWorker n8n routing', () => {
       { shouldUseAiBot: jest.fn() } as any,
       botEngine as any,
       bridge as any,
+      chatSession as any,
     );
 
     await (worker as any).processJob({
@@ -61,6 +63,51 @@ describe('WhatsappBotWorker n8n routing', () => {
     expect(bot.handleMessage).not.toHaveBeenCalled();
   });
 
+  it('skips n8n when chat is in HANDOFF_HUMANO', async () => {
+    const bot = { handleMessage: jest.fn() };
+    const bridge = { handleMessage: jest.fn() };
+    const chatSession = { peek: jest.fn().mockResolvedValue({ state: 'HANDOFF_HUMANO' }) };
+    const turnLog = { startTurn: jest.fn().mockResolvedValue('log1') };
+    const botEngine = {
+      getConfig: jest.fn(),
+      resolveRoutingDecision: jest.fn().mockResolvedValue({
+        globalEngine: 'n8n',
+        effectiveEngine: 'n8n',
+        wouldRouteToN8n: true,
+        resolvedPhone: '51999999999',
+        reason: 'sandbox_match',
+      }),
+    };
+    const worker = new WhatsappBotWorker(
+      { get: jest.fn() } as any,
+      bot as any,
+      {} as any,
+      {} as any,
+      turnLog as any,
+      {} as any,
+      { shouldUseAiBot: jest.fn() } as any,
+      botEngine as any,
+      bridge as any,
+      chatSession as any,
+    );
+
+    await (worker as any).processJob({
+      data: {
+        chatId: '51999999999@c.us',
+        body: 'hola',
+        from: '51999999999@c.us',
+        senderPhone: '51999999999',
+        waSessionId: 'session_1',
+        idempotencyKey: 'msg_handoff',
+      },
+    });
+
+    expect(bridge.handleMessage).not.toHaveBeenCalled();
+    expect(turnLog.startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'handoff_silent' }),
+    );
+  });
+
   it('does not call legacy bot when engine is n8n but phone is outside sandbox', async () => {
     const bot = { handleMessage: jest.fn() };
     const botEngine = {
@@ -74,6 +121,7 @@ describe('WhatsappBotWorker n8n routing', () => {
       }),
     };
     const turnLog = { startTurn: jest.fn().mockResolvedValue('log1'), completeTurn: jest.fn() };
+    const chatSession = { peek: jest.fn() };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,
       bot as any,
@@ -84,6 +132,7 @@ describe('WhatsappBotWorker n8n routing', () => {
       { shouldUseAiBot: jest.fn() } as any,
       botEngine as any,
       { handleMessage: jest.fn() } as any,
+      chatSession as any,
     );
 
     await (worker as any).processJob({
@@ -113,6 +162,7 @@ describe('WhatsappBotWorker n8n routing', () => {
         reason: 'sandbox_match',
       }),
     };
+    const chatSession = { peek: jest.fn().mockResolvedValue({ state: 'MENU_PRINCIPAL' }) };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,
       { handleMessage: jest.fn() } as any,
@@ -125,6 +175,7 @@ describe('WhatsappBotWorker n8n routing', () => {
       {
         handleMessage: jest.fn().mockResolvedValue({ ok: true, replied: true }),
       } as any,
+      chatSession as any,
     );
     (worker as any).processedKeys = new Set(Array.from({ length: 10001 }, (_, i) => `old_${i}`));
 

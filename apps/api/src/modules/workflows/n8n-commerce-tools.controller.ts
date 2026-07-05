@@ -4,7 +4,12 @@ import { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { OrdersService } from '../orders/orders.service';
+import { CustomersService } from '../customers/customers.service';
+import { CartService } from '../whatsapp-bot/cart.service';
+import { CartHoldService } from '../inventory/cart-hold.service';
 import { N8nToolAuthGuard } from './n8n-tool-auth.guard';
+import { N8nSessionToolsService } from './n8n-session-tools.service';
+import type { N8nFlowContext } from './n8n-flow.types';
 
 type ChatOrderItem = { productId: string; quantity: number };
 
@@ -16,6 +21,10 @@ export class N8nCommerceToolsController {
     private prisma: PrismaService,
     private orders: OrdersService,
     private openwa: OpenwaService,
+    private customers: CustomersService,
+    private cart: CartService,
+    private cartHold: CartHoldService,
+    private sessionTools: N8nSessionToolsService,
   ) {}
 
   @Post('categories.list')
@@ -78,6 +87,159 @@ export class N8nCommerceToolsController {
     return pdf ? { available: true, id: pdf.id, url: pdf.url } : { available: false };
   }
 
+  @Post('cart.get')
+  @ApiOperation({ summary: 'n8n tool: get cart for a chat session' })
+  async cartGet(@Body() body: { stateKey: string }) {
+    if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
+    const cart = await this.cart.getCart(body.stateKey);
+    return {
+      cart,
+      reservedMinutes: Math.round(this.cart.getTtlSeconds() / 60),
+    };
+  }
+
+  @Post('cart.add_item')
+  @ApiOperation({ summary: 'n8n tool: add item to cart with hold sync' })
+  async cartAddItem(
+    @Body()
+    body: {
+      stateKey: string;
+      chatId: string;
+      contactPhone?: string;
+      customerName?: string;
+      productId: string;
+      quantity: number;
+    },
+  ) {
+    if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
+    if (!body.productId?.trim()) throw new BadRequestException('productId is required');
+    if (!Number.isInteger(body.quantity) || body.quantity <= 0) {
+      throw new BadRequestException('quantity must be a positive integer');
+    }
+
+    const product = await this.prisma.product.findUnique({ where: { id: body.productId } });
+    if (!product || !product.isActive) {
+      throw new NotFoundException(`Producto no encontrado: ${body.productId}`);
+    }
+
+    const held = await this.cartHold.getHeldQuantity(body.productId, body.stateKey);
+    const available = product.stock - held;
+    if (body.quantity > available) {
+      throw new BadRequestException(
+        available <= 0 ? 'Producto sin stock disponible' : `Solo hay ${available} unidad(es) disponibles`,
+      );
+    }
+
+    const cart = await this.cart.addItem(body.stateKey, {
+      productId: product.id,
+      nombre: product.nombre,
+      quantity: body.quantity,
+      unitPrice: Number(product.salePrice),
+      costAtSale: Number(product.costPrice),
+    });
+
+    await this.cartHold.syncFromCart(body.stateKey, cart, {
+      chatId: body.chatId,
+      contactPhone: body.contactPhone ?? null,
+      customerName: body.customerName ?? null,
+    });
+
+    return {
+      cart,
+      reservedMinutes: Math.round(this.cart.getTtlSeconds() / 60),
+    };
+  }
+
+  @Post('cart.remove_item')
+  @ApiOperation({ summary: 'n8n tool: remove item from cart' })
+  async cartRemoveItem(
+    @Body()
+    body: {
+      stateKey: string;
+      chatId: string;
+      contactPhone?: string;
+      customerName?: string;
+      productId: string;
+    },
+  ) {
+    if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
+    if (!body.productId?.trim()) throw new BadRequestException('productId is required');
+
+    const cart = await this.cart.removeItem(body.stateKey, body.productId);
+    await this.cartHold.syncFromCart(body.stateKey, cart, {
+      chatId: body.chatId,
+      contactPhone: body.contactPhone ?? null,
+      customerName: body.customerName ?? null,
+    });
+
+    return {
+      cart,
+      reservedMinutes: Math.round(this.cart.getTtlSeconds() / 60),
+    };
+  }
+
+  @Post('cart.clear')
+  @ApiOperation({ summary: 'n8n tool: clear cart and release hold' })
+  async cartClear(@Body() body: { stateKey: string }) {
+    if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
+    await this.cart.clearCart(body.stateKey);
+    await this.cartHold.release(body.stateKey);
+    return { ok: true };
+  }
+
+  @Post('customers.lookup')
+  @ApiOperation({ summary: 'n8n tool: lookup customer by phone' })
+  async customersLookup(@Body() body: { phone: string }) {
+    return this.sessionTools.lookupCustomer(body.phone);
+  }
+
+  @Post('orders.find_active_by_phone')
+  @ApiOperation({ summary: 'n8n tool: find active order by customer phone' })
+  async findActiveOrderByPhone(@Body() body: { customerPhone: string }) {
+    return this.sessionTools.findActiveOrderByPhone(body.customerPhone);
+  }
+
+  @Post('chat.bootstrap')
+  @ApiOperation({ summary: 'n8n tool: bootstrap chat session context' })
+  async chatBootstrap(
+    @Body()
+    body: { chatId: string; stateKey: string; contactPhone?: string | null },
+  ) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
+    return this.sessionTools.bootstrap(body);
+  }
+
+  @Post('chat.session.patch')
+  @ApiOperation({ summary: 'n8n tool: patch n8n flow context' })
+  async chatSessionPatch(@Body() body: { chatId: string; flow: Partial<N8nFlowContext> }) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    const flow = await this.sessionTools.patchFlow(body.chatId, body.flow ?? {});
+    return { flow };
+  }
+
+  @Post('chat.handoff')
+  @ApiOperation({ summary: 'n8n tool: handoff to human agent' })
+  async chatHandoff(
+    @Body()
+    body: {
+      chatId: string;
+      contactPhone?: string | null;
+      customerName?: string | null;
+      waSessionId?: string;
+    },
+  ) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    return this.sessionTools.handoff(body.chatId, body);
+  }
+
+  @Post('chat.resume_bot')
+  @ApiOperation({ summary: 'n8n tool: resume bot after handoff' })
+  async chatResumeBot(@Body() body: { chatId: string }) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    return this.sessionTools.resumeBot(body.chatId);
+  }
+
   @Post('orders.create_from_chat')
   @ApiOperation({ summary: 'n8n tool: create WhatsApp order from chat' })
   async createOrderFromChat(
@@ -108,11 +270,19 @@ export class N8nCommerceToolsController {
       }),
     );
 
+    const customer = await this.customers.upsertFromOrder({
+      customerName: body.customerName,
+      customerPhone: body.customerPhone,
+      address: body.address,
+      reference: body.reference,
+    });
+
     const order = await this.orders.create({
       customerName: body.customerName,
       customerPhone: body.customerPhone,
       address: body.address,
       reference: body.reference,
+      customerId: customer.id,
       notes: body.notes,
       chatId: body.chatId,
       source: 'WHATSAPP',
@@ -186,13 +356,24 @@ export class N8nCommerceToolsController {
     return { ok: true };
   }
 
-  private productForChat(row: any) {
+  private productForChat(row: {
+    id: string;
+    nombre: string;
+    descripcion: string | null;
+    salePrice: unknown;
+    stock: number;
+    minStock: number;
+    category?: { nombre: string } | null;
+    images?: { url: string }[];
+  }) {
     return {
       id: row.id,
       name: row.nombre,
       description: row.descripcion,
       price: Number(row.salePrice),
       stock: row.stock,
+      minStock: row.minStock,
+      lowStock: row.stock <= row.minStock,
       category: row.category?.nombre ?? null,
       imageUrl: row.images?.[0]?.url ?? null,
     };
@@ -240,5 +421,4 @@ export class N8nCommerceToolsController {
       orderBy: { createdAt: 'desc' },
     });
   }
-
 }

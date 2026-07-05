@@ -202,6 +202,7 @@ export default function WhatsAppPage() {
   const [openwaUrl, setOpenwaUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [showEmojis, setShowEmojis] = useState(false);
+  const [handoffLoading, setHandoffLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadConversations = useCallback(() => {
@@ -309,6 +310,38 @@ export default function WhatsAppPage() {
       toast.error('No se pudo sincronizar con OpenWA');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleBotHandoff = async () => {
+    if (!selected || handoffLoading) return;
+    setHandoffLoading(true);
+    try {
+      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/bot-handoff`);
+      toast.success('Bot pausado — la conversación quedó en tus manos');
+      loadConversations();
+      loadMeta(selected.chatId);
+      setSelected((prev) => (prev ? { ...prev, needsHandoff: true, chatState: 'HANDOFF_HUMANO' } : prev));
+    } catch {
+      toast.error('No se pudo tomar la conversación');
+    } finally {
+      setHandoffLoading(false);
+    }
+  };
+
+  const handleBotResume = async () => {
+    if (!selected || handoffLoading) return;
+    setHandoffLoading(true);
+    try {
+      await api.post(`/whatsapp/conversations/${encodeChatId(selected.chatId)}/bot-resume`);
+      toast.success('Bot reactivado — volverá a responder automáticamente');
+      loadConversations();
+      loadMeta(selected.chatId);
+      setSelected((prev) => (prev ? { ...prev, needsHandoff: false, chatState: 'MENU_PRINCIPAL' } : prev));
+    } catch {
+      toast.error('No se pudo reactivar el bot');
+    } finally {
+      setHandoffLoading(false);
     }
   };
 
@@ -608,6 +641,30 @@ export default function WhatsAppPage() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
+                    {selected.needsHandoff ? (
+                      <>
+                        <Badge tone="warning">Bot pausado</Badge>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="!min-h-0 !px-2 !py-1 text-xs"
+                          onClick={handleBotResume}
+                          loading={handoffLoading}
+                        >
+                          Reactivar bot
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="!min-h-0 !px-2 !py-1 text-xs"
+                        onClick={handleBotHandoff}
+                        loading={handoffLoading}
+                      >
+                        Tomar conversación
+                      </Button>
+                    )}
                     {meta?.openOrder && (
                       <Link
                         href="/dashboard/orders"

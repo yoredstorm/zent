@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { OpenwaService } from '../openwa/openwa.service';
 import { BotTurnLogService } from '../whatsapp-bot/bot-turn-log.service';
 import { WORKFLOW_FETCH } from './workflow-events.service';
+import { N8nSessionToolsService } from './n8n-session-tools.service';
 
 export interface N8nChatBridgeInput {
   chatId: string;
@@ -35,6 +36,7 @@ export class N8nChatBridgeService {
     private config: ConfigService,
     private openwa: OpenwaService,
     private turnLog: BotTurnLogService,
+    private sessionTools: N8nSessionToolsService,
     @Optional()
     @Inject(WORKFLOW_FETCH)
     private fetchImpl: typeof fetch = fetch,
@@ -79,6 +81,12 @@ export class N8nChatBridgeService {
     try {
       const secret = runtime?.webhookSecret ?? this.secret();
       const zentApiUrl = this.zentApiUrl();
+      const stateKey = input.waSessionId ? `${input.waSessionId}::${input.chatId}` : input.chatId;
+      const session = await this.sessionTools.bootstrap({
+        chatId: stateKey,
+        stateKey,
+        contactPhone: input.contactPhone,
+      });
       const payload = {
         chatId: input.chatId,
         waSessionId: input.waSessionId,
@@ -89,6 +97,8 @@ export class N8nChatBridgeService {
           ...(input.context ?? {}),
           zentApiUrl,
           zentN8nSecret: secret,
+          session,
+          stateKey,
         },
       };
       const body = JSON.stringify(payload);
@@ -123,6 +133,15 @@ export class N8nChatBridgeService {
         sessionId: input.waSessionId,
         text: reply,
       });
+
+      if (data.handoff === true) {
+        await this.sessionTools.handoff(stateKey, {
+          contactPhone: input.contactPhone,
+          waSessionId: input.waSessionId,
+          customerName: session.customer.found ? session.customer.name : undefined,
+        });
+      }
+
       await this.turnLog.completeTurn(logId, reply, Date.now() - startedAt);
       return { ok: true, replied: true, handoff: data.handoff, metadata: data.metadata };
     } catch (err: any) {

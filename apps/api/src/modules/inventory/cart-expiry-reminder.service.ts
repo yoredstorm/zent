@@ -70,7 +70,7 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
         `${saludo}⏰ *Tu carrito en ${this.storeName} está por vencer*\n\n` +
         `Tienes *${hold.items.reduce((n, i) => n + i.quantity, 0)}* producto(s) reservados por *S/ ${Number(hold.total).toFixed(2)}*.\n` +
         `La reserva expira en unos *${hold.minutesLeft} min*.\n\n` +
-        `Para confirmar tu pedido escribe *menu* → *Ver mi carrito* → *Confirmar pedido*.\n\n` +
+        `Para confirmar, escribe *confirmar pedido* o dime que quieres *finalizar tu compra*.\n\n` +
         `Si no confirmas, liberaremos el stock reservado.`;
 
       try {
@@ -98,7 +98,7 @@ export class CartExpiryReminderService implements OnModuleInit, OnModuleDestroy 
       const text =
         `${saludo}🛒 *Tu carrito en ${this.storeName} expiró*\n\n` +
         `Las *${meta.itemCount}* unidad(es) que tenías reservadas (*S/ ${Number(meta.total).toFixed(2)}*) ya no están apartadas.\n\n` +
-        `Si aún deseas comprar, escribe *menu* para armar un nuevo pedido.`;
+        `Si aún deseas comprar, escríbenos *hola* o *catálogo* para armar un nuevo pedido.`;
 
       try {
         await this.openwa.sendText({
