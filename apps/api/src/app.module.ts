@@ -14,6 +14,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { WhatsappInboxModule } from './modules/whatsapp-inbox/whatsapp-inbox.module';
 import { OpenwaModule } from './modules/openwa/openwa.module';
 import { WhatsappBotModule } from './modules/whatsapp-bot/whatsapp-bot.module';
+import { BotEngineModule } from './modules/whatsapp-bot/bot-engine.module';
 import { CatalogPdfModule } from './modules/catalog-pdf/catalog-pdf.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
@@ -33,12 +34,13 @@ import { SeedService } from './seed.service';
     AuthModule,
     ProductsModule,
     CategoriesModule,
-    OrdersModule,
     InventoryModule,
     RealtimeModule,
-    WhatsappInboxModule,
-    ReportsModule,
     OpenwaModule,
+    BotEngineModule,
+    WhatsappInboxModule,
+    OrdersModule,
+    ReportsModule,
     WhatsappBotModule,
     CatalogPdfModule,
     UploadsModule,

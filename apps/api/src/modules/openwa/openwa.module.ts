@@ -4,11 +4,10 @@ import { OpenwaController } from './openwa.controller';
 import { OpenwaBootstrapService } from './openwa-bootstrap.service';
 import { OpenwaPluginService } from './openwa-plugin.service';
 import { WhatsappInboxModule } from '../whatsapp-inbox/whatsapp-inbox.module';
-import { BotEngineModule } from '../whatsapp-bot/bot-engine.module';
 
 @Global()
 @Module({
-  imports: [forwardRef(() => WhatsappInboxModule), forwardRef(() => BotEngineModule)],
+  imports: [forwardRef(() => WhatsappInboxModule)],
   controllers: [OpenwaController],
   providers: [OpenwaService, OpenwaBootstrapService, OpenwaPluginService],
   exports: [OpenwaService, OpenwaBootstrapService, OpenwaPluginService],

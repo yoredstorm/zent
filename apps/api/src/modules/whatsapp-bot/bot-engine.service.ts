@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
@@ -90,7 +90,9 @@ export class BotEngineService {
     private prisma: PrismaService,
     private config: ConfigService,
     private novitaBalance: NovitaBalanceService,
+    @Inject(forwardRef(() => OpenwaPluginService))
     private openwaPlugin: OpenwaPluginService,
+    @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
     @Optional()
     @Inject(WORKFLOW_FETCH)

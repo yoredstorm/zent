@@ -1,4 +1,4 @@
-import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
+import { Injectable, OnApplicationBootstrap, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OpenwaService } from './openwa.service';
@@ -20,6 +20,7 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
     private prisma: PrismaService,
     private openwaPlugin: OpenwaPluginService,
     private botRouting: BotRoutingService,
+    @Inject(forwardRef(() => BotEngineService))
     private botEngine: BotEngineService,
   ) {}
 

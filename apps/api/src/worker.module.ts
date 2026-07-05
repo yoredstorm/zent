@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { OpenwaModule } from './modules/openwa/openwa.module';
+import { BotEngineModule } from './modules/whatsapp-bot/bot-engine.module';
 import { WhatsappBotModule } from './modules/whatsapp-bot/whatsapp-bot.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { WhatsappInboxModule } from './modules/whatsapp-inbox/whatsapp-inbox.module';
@@ -12,6 +13,7 @@ import { HealthController } from './health.controller';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     OpenwaModule,
+    BotEngineModule,
     RealtimeModule,
     WhatsappInboxModule,
     WhatsappBotModule,

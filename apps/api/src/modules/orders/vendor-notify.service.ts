@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenwaService } from '../openwa/openwa.service';
 
@@ -23,6 +23,7 @@ export class VendorNotifyService {
   private botFailureCounts = new Map<string, { count: number; firstAt: number }>();
 
   constructor(
+    @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
     private config: ConfigService,
   ) {}

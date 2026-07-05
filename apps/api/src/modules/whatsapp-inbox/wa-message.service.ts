@@ -70,6 +70,7 @@ export class WaMessageService {
     private openwa: OpenwaService,
     private cartHold: CartHoldService,
     private config: ConfigService,
+    @Inject(forwardRef(() => BotEngineService))
     private botEngine: BotEngineService,
   ) {}
 
