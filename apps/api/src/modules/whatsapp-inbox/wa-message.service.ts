@@ -1,4 +1,5 @@
 import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -70,9 +71,12 @@ export class WaMessageService {
     private openwa: OpenwaService,
     private cartHold: CartHoldService,
     private config: ConfigService,
-    @Inject(forwardRef(() => BotEngineService))
-    private botEngine: BotEngineService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private botEngine(): BotEngineService {
+    return this.moduleRef.get(BotEngineService, { strict: false });
+  }
 
   recordWebhookDiagnostic(status: WebhookDiagnosticStatus, ignoredReason?: string | null) {
     this.lastWebhookDiagnostic = {
@@ -561,7 +565,7 @@ export class WaMessageService {
 
       let effectiveEngine: string | null = null;
       try {
-        const routing = await this.botEngine.resolveRoutingDecision({
+        const routing = await this.botEngine().resolveRoutingDecision({
           chatId: waChatId,
           from: waChatId,
           senderPhone: phone ?? undefined,
@@ -697,7 +701,7 @@ export class WaMessageService {
         })()
       : {};
 
-    const routing = await this.botEngine.resolveRoutingDecision({
+    const routing = await this.botEngine().resolveRoutingDecision({
       chatId: waChatId,
       from: waChatId,
       senderPhone: phone ?? undefined,

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
@@ -29,6 +29,7 @@ export class WorkflowEventsService {
 
   constructor(
     private config: ConfigService,
+    @Inject(forwardRef(() => BotEngineService))
     private botEngine: BotEngineService,
     @Optional()
     @Inject(WORKFLOW_FETCH)

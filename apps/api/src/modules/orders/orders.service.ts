@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrderSource, OrderStatus } from '@prisma/client';
 import { UpdateOrderStatusDto, CreateOrderDto, UpdateOrderItemsDto } from './dto/order.dto';
@@ -16,6 +16,7 @@ export class OrdersService {
 
   constructor(
     private prisma: PrismaService,
+    @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
     private customers: CustomersService,
     private stock: StockReservationService,

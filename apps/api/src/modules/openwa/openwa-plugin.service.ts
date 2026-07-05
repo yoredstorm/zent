@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import { OpenwaService } from './openwa.service';
@@ -21,6 +21,7 @@ export class OpenwaPluginService {
   private readonly logger = new Logger(OpenwaPluginService.name);
 
   constructor(
+    @Inject(forwardRef(() => OpenwaService))
     private openwa: OpenwaService,
     private config: ConfigService,
   ) {}
