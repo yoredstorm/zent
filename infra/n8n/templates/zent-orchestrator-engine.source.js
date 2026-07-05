@@ -149,30 +149,51 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
         flow.phase = 'order_status';
         break;
       }
-      if (intent === 'catalog' || intent === 'greeting' || intent === 'freeform') {
-        toolCalls.push({ name: 'categories.list', body: {} });
-        flow.phase = 'browse_categories';
-        reply = mergeKeys(COPY.lookupFiller());
-        if (toolResults['categories.list']) {
-          const cats = toolResults['categories.list'].categories || [];
-          reply =
-            mergeKeys(COPY.categoriesIntro()) +
-            '\n\n' +
-            cats.map((c, i) => `${i + 1}. ${c.name} (${c.productCount})`).join('\n');
-        }
-        patch = { phase: 'browse_categories', lastCopyKeys: keys };
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
-      }
       if (intent === 'cart') {
         flow.phase = 'cart';
         break;
       }
-      const gr = customer.found
+      // Saludo cálido primero — "hola" NO debe saltar directo al catálogo
+      if (intent === 'greeting' || flow.phase === 'greeting') {
+        const gr = customer.found
+          ? customer.isReturning
+            ? COPY.greetingReturning(customer.name, store, customer.totalOrders)
+            : COPY.greetingNamed(customer.name, store, tg)
+          : COPY.greetingAnonymous(store, tg);
+        reply = mergeKeys(gr) + '\n\n' + mergeKeys(COPY.mainMenu());
+        flow.phase = 'main_menu';
+        patch = { phase: 'main_menu', lastCopyKeys: keys };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+      }
+      // Catálogo solo cuando lo piden explícitamente (catálogo, comprar, etc.)
+      if (intent === 'catalog') {
+        toolCalls.push({ name: 'categories.list', body: {} });
+        flow.phase = 'browse_categories';
+        if (toolResults['categories.list']) {
+          const cats = toolResults['categories.list'].categories || [];
+          reply =
+            mergeKeys(COPY.catalogWelcome(store)) +
+            '\n\n' +
+            mergeKeys(COPY.categoriesIntro()) +
+            '\n\n' +
+            cats.map((c, i) => `${i + 1}. ${c.name} (${c.productCount})`).join('\n');
+        } else {
+          reply = mergeKeys(COPY.lookupFiller());
+        }
+        patch = { phase: 'browse_categories', lastCopyKeys: keys };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+      }
+      if (intent === 'freeform') {
+        reply = mergeKeys(COPY.didntUnderstand());
+        patch = { phase: 'main_menu', lastCopyKeys: keys };
+        return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
+      }
+      const grFallback = customer.found
         ? customer.isReturning
           ? COPY.greetingReturning(customer.name, store, customer.totalOrders)
           : COPY.greetingNamed(customer.name, store, tg)
         : COPY.greetingAnonymous(store, tg);
-      reply = mergeKeys(gr) + '\n\n' + mergeKeys(COPY.mainMenu());
+      reply = mergeKeys(grFallback) + '\n\n' + mergeKeys(COPY.mainMenu());
       flow.phase = 'main_menu';
       patch = { phase: 'main_menu', lastCopyKeys: keys };
       return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };

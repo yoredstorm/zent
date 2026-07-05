@@ -38,9 +38,9 @@ function buildCopy(lastKeys = {}) {
       const r = pickAvoidRepeat(
         'greetingAnonymous',
         [
-          `${tg}! Bienvenido a *${store}* 😊`,
-          `${tg} — gracias por escribir a *${store}*.`,
-          `¡Hola! Soy el asistente de *${store}*.`,
+          `${tg}! *${store}* te saluda 😊`,
+          `${tg} — gracias por escribir a *${store}*, ¿en qué te ayudamos?`,
+          `¡Hola! Qué gusto tenerte por aquí. Somos *${store}*.`,
         ],
         lastKeys,
       );
@@ -65,6 +65,16 @@ function buildCopy(lastKeys = {}) {
           '¿En qué te ayudo?\n• *Catálogo* — ver productos\n• *Mi pedido* — estado de tu compra\n• *Asesor* — hablar con una persona',
           'Puedes decirme *catálogo*, *mi pedido* o *asesor*, o simplemente cuéntame qué necesitas.',
           '¿Qué te gustaría hacer?\n1️⃣ Ver *catálogo*\n2️⃣ Consultar *mi pedido*\n3️⃣ Hablar con un *asesor*',
+        ],
+        lastKeys,
+      ),
+    catalogWelcome: (store) =>
+      pickAvoidRepeat(
+        'catalogWelcome',
+        [
+          `¡Claro! En *${store}* tenemos esto organizado por categoría:`,
+          `¡Perfecto! Te muestro lo que hay en *${store}*:`,
+          `Con gusto — así está nuestro catálogo en *${store}*:`,
         ],
         lastKeys,
       ),
