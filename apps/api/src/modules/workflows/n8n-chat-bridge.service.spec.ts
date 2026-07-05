@@ -54,6 +54,7 @@ describe('N8nChatBridgeService', () => {
           'Content-Type': 'application/json',
           'X-Zent-Signature': expect.stringMatching(/^sha256=/),
         }),
+        body: expect.stringContaining('"zentApiUrl":"http://backend-api:3000/api"'),
         signal: expect.any(AbortSignal),
       }),
     );

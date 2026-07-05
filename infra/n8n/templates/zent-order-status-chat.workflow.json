@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nconst message = String(input.message ?? '');\nconst orderId = message.match(/[a-f0-9]{8,}/i)?.[0] ?? input.context?.orderId ?? null;\nconst phone = String(input.contactPhone ?? input.senderPhone ?? input.context?.customerPhone ?? '').replace(/\\D/g, '');\nreturn [{ json: { ...input, orderId, customerPhone: phone, apiUrl: $env.ZENT_API_URL || 'http://backend-api:3000/api', secret: $env.ZENT_N8N_SECRET || '' } }];"
+        "jsCode": "const input = $json.body ?? $json;\nconst message = String(input.message ?? '');\nconst context = input.context ?? {};\nconst orderId = message.match(/[a-f0-9]{8,}/i)?.[0] ?? context.orderId ?? null;\nconst phone = String(input.contactPhone ?? input.senderPhone ?? context.customerPhone ?? '').replace(/\\D/g, '');\nconst apiUrl = context.zentApiUrl || 'http://backend-api:3000/api';\nconst secret = context.zentN8nSecret || '';\nreturn [{ json: { ...input, orderId, customerPhone: phone, apiUrl, secret } }];"
       },
       "id": "extract-order",
       "name": "Extract Order",

@@ -77,17 +77,22 @@ export class N8nChatBridgeService {
     });
 
     try {
+      const secret = runtime?.webhookSecret ?? this.secret();
+      const zentApiUrl = this.zentApiUrl();
       const payload = {
         chatId: input.chatId,
         waSessionId: input.waSessionId,
         contactPhone: input.contactPhone,
         message: input.message,
         messageType: input.messageType ?? 'text',
-        context: input.context ?? {},
+        context: {
+          ...(input.context ?? {}),
+          zentApiUrl,
+          zentN8nSecret: secret,
+        },
       };
       const body = JSON.stringify(payload);
       const webhookUrl = runtime?.chatWebhookUrl ?? this.chatWebhookUrl();
-      const secret = runtime?.webhookSecret ?? this.secret();
       const response = await this.fetchImpl(webhookUrl, {
         method: 'POST',
         headers: {
@@ -148,6 +153,13 @@ export class N8nChatBridgeService {
 
   private secret(): string {
     return this.config.get<string>('N8N_WEBHOOK_SECRET', '').trim();
+  }
+
+  private zentApiUrl(): string {
+    return (
+      this.config.get<string>('ZENT_API_URL', 'http://backend-api:3000/api').trim() ||
+      'http://backend-api:3000/api'
+    );
   }
 
   private timeoutMs(): number {

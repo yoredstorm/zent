@@ -820,6 +820,22 @@ El servicio n8n tambien recibe `ZENT_API_URL=http://backend-api:3000/api` y `ZEN
 
 Los exports experimentales del editor n8n deben guardarse en `infra/n8n/local-flows/`; esa carpeta esta ignorada por git.
 
+### Error n8n: `access to env vars denied` en Classify Intent
+
+n8n 2.x bloquea `$env` en nodos Code por defecto. Las plantillas Zent ya reciben credenciales en el payload (`context.zentApiUrl`, `context.zentN8nSecret`) enviadas por `backend-api`.
+
+Si el workflow importado es **anterior** a este fix:
+
+1. **Opcion rapida (sin reimportar):** en n8n, edita el nodo **Classify Intent** y reemplaza las lineas `$env.ZENT_API_URL` / `$env.ZENT_N8N_SECRET` por:
+   ```javascript
+   const apiUrl = context.zentApiUrl || 'http://backend-api:3000/api';
+   const secret = context.zentN8nSecret || '';
+   ```
+2. **Opcion completa:** reimporta `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` y activa el workflow.
+3. En Dokploy, anade `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` al servicio n8n y redeploy (respaldo si algun nodo legacy aun usa `$env`).
+
+Tras el fix, un mensaje de WhatsApp sandbox debe ejecutar **Classify Intent** en verde y llegar a **Respond To Zent**.
+
 ### Eventos enviados
 
 | Evento | Cuando ocurre | Uso sugerido |

@@ -338,7 +338,11 @@ export class BotEngineService {
       message: 'test ping from dashboard',
       contactPhone: '51999999999',
       messageType: 'text',
-      context: { source: 'integration_test' },
+      context: {
+        source: 'integration_test',
+        zentApiUrl: this.envStr('ZENT_API_URL', 'http://backend-api:3000/api'),
+        zentN8nSecret: cfg.webhookSecret,
+      },
     });
     const crypto = await import('crypto');
     const digest = crypto.createHmac('sha256', cfg.webhookSecret).update(body).digest('hex');
