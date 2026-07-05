@@ -88,6 +88,60 @@ export class N8nCommerceToolsController {
     return pdf ? { available: true, id: pdf.id, url: pdf.url } : { available: false };
   }
 
+  @Post('catalog_pdf.send')
+  @ApiOperation({ summary: 'n8n tool: send active catalog PDF via WhatsApp' })
+  async sendCatalogPdf(
+    @Body() body: { chatId: string; waSessionId?: string; caption?: string },
+  ) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    const pdf = await this.prisma.catalogPdf.findFirst({ where: { isActive: true } });
+    if (!pdf) return { available: false, sent: false };
+
+    const waChatId = this.normalizeWaChatId(body.chatId);
+    try {
+      await this.openwa.sendDocument({
+        chatId: waChatId,
+        sessionId: body.waSessionId,
+        document: { url: pdf.url, mimetype: 'application/pdf', filename: 'catalogo.pdf' },
+        caption: body.caption?.trim() || '📋 Catálogo completo',
+        source: 'bot',
+      });
+      return { available: true, sent: true, url: pdf.url };
+    } catch {
+      return { available: true, sent: false, url: pdf.url };
+    }
+  }
+
+  @Post('products.send_image')
+  @ApiOperation({ summary: 'n8n tool: send primary product image via WhatsApp' })
+  async sendProductImage(
+    @Body() body: { chatId: string; waSessionId?: string; productId: string; caption?: string },
+  ) {
+    if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
+    if (!body.productId?.trim()) throw new BadRequestException('productId is required');
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: body.productId },
+      include: { images: { orderBy: { orden: 'asc' }, take: 1 } },
+    });
+    if (!product?.images[0]?.url) return { sent: false, reason: 'no_image' };
+
+    const waChatId = this.normalizeWaChatId(body.chatId);
+    const caption =
+      body.caption?.trim() ||
+      `*${product.nombre}* — S/ ${Number(product.salePrice).toFixed(2)}`;
+
+    await this.openwa.sendImage({
+      chatId: waChatId,
+      sessionId: body.waSessionId,
+      image: { url: product.images[0].url },
+      caption,
+      source: 'bot',
+    });
+
+    return { sent: true, productId: product.id, url: product.images[0].url };
+  }
+
   @Post('cart.get')
   @ApiOperation({ summary: 'n8n tool: get cart for a chat session' })
   async cartGet(@Body() body: { stateKey: string }) {

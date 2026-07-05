@@ -120,18 +120,6 @@ function looksLikeOrderId(msg) {
   return /^[a-f0-9-]{6,}$/i.test(msg.trim()) || /^#?[a-f0-9]{6,8}$/i.test(msg.trim());
 }
 
-function productImageMedia(product, caption) {
-  if (!product?.imageUrl) return [];
-  return [
-    {
-      type: 'image',
-      url: product.imageUrl,
-      caption:
-        caption || `*${product.name}* — S/ ${Number(product.price).toFixed(2)}`,
-    },
-  ];
-}
-
 /**
  * Main orchestrator — returns { reply, nextPhase, handoff, toolCalls, patch, media }
  * toolCalls: [{ name, body }] executed externally when http helper provided
@@ -200,25 +188,16 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   }
 
   if (intent === 'catalog_pdf' && !checkoutPhases.includes(flow.phase)) {
-    toolCalls.push({ name: 'catalog_pdf.active', body: {} });
-    if (toolResults['catalog_pdf.active']?.available) {
-      const pdf = toolResults['catalog_pdf.active'];
+    toolCalls.push({ name: 'catalog_pdf.send', body: { chatId, waSessionId } });
+    if (toolResults['catalog_pdf.send']?.sent) {
       reply = mergeKeys(COPY.catalogPdfSent());
-      media = [
-        {
-          type: 'document',
-          url: pdf.url,
-          mimetype: 'application/pdf',
-          caption: '📋 Catálogo completo',
-        },
-      ];
-    } else if (toolResults['catalog_pdf.active']) {
+    } else if (toolResults['catalog_pdf.send']) {
       reply = mergeKeys(COPY.catalogPdfUnavailable());
     } else {
       reply = mergeKeys(COPY.lookupFiller());
     }
     patch = { phase: 'main_menu', lastCopyKeys: keys };
-    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
+    return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media: [] };
   }
 
   if (intent === 'handoff' || flow.phase === 'handoff') {
@@ -244,25 +223,16 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
         break;
       }
       if (intent === 'catalog_pdf') {
-        toolCalls.push({ name: 'catalog_pdf.active', body: {} });
-        if (toolResults['catalog_pdf.active']?.available) {
-          const pdf = toolResults['catalog_pdf.active'];
+        toolCalls.push({ name: 'catalog_pdf.send', body: { chatId, waSessionId } });
+        if (toolResults['catalog_pdf.send']?.sent) {
           reply = mergeKeys(COPY.catalogPdfSent());
-          media = [
-            {
-              type: 'document',
-              url: pdf.url,
-              mimetype: 'application/pdf',
-              caption: '📋 Catálogo completo',
-            },
-          ];
-        } else if (toolResults['catalog_pdf.active']) {
+        } else if (toolResults['catalog_pdf.send']) {
           reply = mergeKeys(COPY.catalogPdfUnavailable());
         } else {
           reply = mergeKeys(COPY.lookupFiller());
         }
         patch = { phase: 'main_menu', lastCopyKeys: keys };
-        return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media };
+        return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch, media: [] };
       }
       // Saludo cálido primero — "hola" NO debe saltar directo al catálogo
       if (intent === 'greeting' || flow.phase === 'greeting') {
@@ -378,20 +348,12 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
 
     case 'browse_products': {
       const match = fuzzyMatchProduct(message, flow.lastProductList);
-      if (match && toolResults['cart.add_item']) {
-        const c = toolResults['cart.add_item'].cart;
-        reply =
-          mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
-          '\n\n' +
-          mergeKeys(COPY.cartSummary()) +
-          '\n' +
-          formatCartSummary(c) +
-          '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
-        media = productImageMedia(match.product);
-        patch = { phase: 'cart', lastCopyKeys: keys };
-        return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch, media };
+      if (!match) {
+        reply = mergeKeys(COPY.productNotFound());
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch: { lastCopyKeys: keys } };
       }
-      if (match) {
+
+      if (!toolResults['cart.add_item']) {
         toolCalls.push({
           name: 'cart.add_item',
           body: {
@@ -404,24 +366,31 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
           },
         });
         flow.phase = 'cart';
-        if (toolResults['cart.add_item']) {
-          const c = toolResults['cart.add_item'].cart;
-          reply =
-            mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
-            '\n\n' +
-            mergeKeys(COPY.cartSummary()) +
-            '\n' +
-            formatCartSummary(c) +
-            '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
-          media = productImageMedia(match.product);
-        } else {
-          reply = mergeKeys(COPY.lookupFiller());
-        }
+        reply = mergeKeys(COPY.lookupFiller());
         patch = { phase: 'cart', lastCopyKeys: keys };
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch, media };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
-      reply = mergeKeys(COPY.productNotFound());
-      return { reply, nextPhase: flow.phase, handoff, toolCalls, patch: { lastCopyKeys: keys } };
+
+      if (match.product.imageUrl && !toolResults['products.send_image']) {
+        toolCalls.push({
+          name: 'products.send_image',
+          body: { chatId, waSessionId, productId: match.product.id },
+        });
+        reply = mergeKeys(COPY.lookupFiller());
+        patch = { phase: 'cart', lastCopyKeys: keys };
+        return { reply, nextPhase: 'cart', handoff, toolCalls, patch };
+      }
+
+      const c = toolResults['cart.add_item'].cart;
+      reply =
+        mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
+        '\n\n' +
+        mergeKeys(COPY.cartSummary()) +
+        '\n' +
+        formatCartSummary(c) +
+        '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
+      patch = { phase: 'cart', lastCopyKeys: keys };
+      return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch };
     }
 
     case 'cart': {

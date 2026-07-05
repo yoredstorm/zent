@@ -134,25 +134,32 @@ export class N8nChatBridgeService {
       if (data.media?.length) {
         for (const item of data.media) {
           if (!item.url?.trim()) continue;
-          if (item.type === 'image') {
-            await this.openwa.sendImage({
-              chatId: input.chatId,
-              sessionId: input.waSessionId,
-              image: { url: item.url.trim() },
-              caption: item.caption,
-              source: 'bot',
-            });
-          } else if (item.type === 'document') {
-            await this.openwa.sendDocument({
-              chatId: input.chatId,
-              sessionId: input.waSessionId,
-              document: {
-                url: item.url.trim(),
-                mimetype: item.mimetype || 'application/pdf',
-              },
-              caption: item.caption,
-              source: 'bot',
-            });
+          try {
+            if (item.type === 'image') {
+              await this.openwa.sendImage({
+                chatId: input.chatId,
+                sessionId: input.waSessionId,
+                image: { url: item.url.trim() },
+                caption: item.caption,
+                source: 'bot',
+              });
+            } else if (item.type === 'document') {
+              await this.openwa.sendDocument({
+                chatId: input.chatId,
+                sessionId: input.waSessionId,
+                document: {
+                  url: item.url.trim(),
+                  mimetype: item.mimetype || 'application/pdf',
+                  filename: 'catalogo.pdf',
+                },
+                caption: item.caption,
+                source: 'bot',
+              });
+            }
+          } catch (err: any) {
+            this.logger.warn(
+              `n8n media send failed (${item.type} ${item.url}): ${err?.message || err}`,
+            );
           }
         }
       }

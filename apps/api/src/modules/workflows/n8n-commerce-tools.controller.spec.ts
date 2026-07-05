@@ -44,7 +44,11 @@ describe('N8nCommerceToolsController', () => {
       findOne: jest.fn().mockResolvedValue({ id: 'ord_1', status: 'NUEVO', total: { toString: () => '25' } }),
       updateStatus: jest.fn().mockResolvedValue({ id: 'ord_1', status: 'CONFIRMADO' }),
     };
-    const openwa = { sendText: jest.fn().mockResolvedValue(undefined) };
+    const openwa = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+      sendDocument: jest.fn().mockResolvedValue(undefined),
+      sendImage: jest.fn().mockResolvedValue(undefined),
+    };
     const customers = {
       upsertFromOrder: jest.fn().mockResolvedValue({ id: 'cust-1', phone: '51999999999', name: 'Ana' }),
     };
@@ -95,6 +99,53 @@ describe('N8nCommerceToolsController', () => {
       sessionTools,
     };
   }
+
+  it('catalog_pdf.send delivers active PDF through OpenWA', async () => {
+    const { controller, openwa } = createController();
+    const result = await controller.sendCatalogPdf({
+      chatId: '51987752653@lid',
+      waSessionId: 'session_1',
+    });
+    expect(result).toEqual({
+      available: true,
+      sent: true,
+      url: 'https://cdn.test/catalog.pdf',
+    });
+    expect(openwa.sendDocument).toHaveBeenCalledWith({
+      chatId: '51987752653@lid',
+      sessionId: 'session_1',
+      document: {
+        url: 'https://cdn.test/catalog.pdf',
+        mimetype: 'application/pdf',
+        filename: 'catalogo.pdf',
+      },
+      caption: '📋 Catálogo completo',
+      source: 'bot',
+    });
+  });
+
+  it('products.send_image delivers product photo through OpenWA', async () => {
+    const { controller, openwa, products } = createController();
+    products.findUnique.mockResolvedValueOnce({
+      id: 'prod_1',
+      nombre: 'Cafe',
+      salePrice: { toString: () => '12.5' },
+      images: [{ url: 'https://img.test/cafe.png' }],
+    });
+    const result = await controller.sendProductImage({
+      chatId: '51987752653@lid',
+      waSessionId: 'session_1',
+      productId: 'prod_1',
+    });
+    expect(result.sent).toBe(true);
+    expect(openwa.sendImage).toHaveBeenCalledWith({
+      chatId: '51987752653@lid',
+      sessionId: 'session_1',
+      image: { url: 'https://img.test/cafe.png' },
+      caption: '*Cafe* — S/ 12.50',
+      source: 'bot',
+    });
+  });
 
   it('returns chat-ready categories and products', async () => {
     const { controller } = createController();

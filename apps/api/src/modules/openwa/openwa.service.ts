@@ -210,7 +210,7 @@ export class OpenwaService {
 
   /** OpenWA @IsUrl() rejects hostnames without TLD (e.g. backend-api). Read our uploads from disk. */
   private tryLoadLocalUpload(url: string): { base64: string; mimetype: string; filename: string } | null {
-    const match = url.match(/\/uploads\/(pdf|images)\/([^/?#]+)$/i);
+    const match = url.match(/(?:\/api)?\/uploads\/(pdf|images)\/([^/?#]+)$/i);
     if (!match) return null;
 
     const [, folder, filename] = match;
