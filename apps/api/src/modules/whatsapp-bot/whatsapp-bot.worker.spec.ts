@@ -16,7 +16,13 @@ describe('WhatsappBotWorker n8n routing', () => {
     };
     const botEngine = {
       getConfig: jest.fn().mockResolvedValue(n8nCfg),
-      shouldRouteToN8n: jest.fn().mockReturnValue(true),
+      resolveRoutingDecision: jest.fn().mockResolvedValue({
+        globalEngine: 'n8n',
+        effectiveEngine: 'n8n',
+        wouldRouteToN8n: true,
+        resolvedPhone: '51999999999',
+        reason: 'sandbox_match',
+      }),
     };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,
@@ -55,10 +61,57 @@ describe('WhatsappBotWorker n8n routing', () => {
     expect(bot.handleMessage).not.toHaveBeenCalled();
   });
 
+  it('does not call legacy bot when engine is n8n but phone is outside sandbox', async () => {
+    const bot = { handleMessage: jest.fn() };
+    const botEngine = {
+      getConfig: jest.fn(),
+      resolveRoutingDecision: jest.fn().mockResolvedValue({
+        globalEngine: 'n8n',
+        effectiveEngine: 'skipped',
+        wouldRouteToN8n: false,
+        resolvedPhone: '51911111111',
+        reason: 'not_in_sandbox',
+      }),
+    };
+    const turnLog = { startTurn: jest.fn().mockResolvedValue('log1'), completeTurn: jest.fn() };
+    const worker = new WhatsappBotWorker(
+      { get: jest.fn() } as any,
+      bot as any,
+      {} as any,
+      {} as any,
+      turnLog as any,
+      {} as any,
+      { shouldUseAiBot: jest.fn() } as any,
+      botEngine as any,
+      { handleMessage: jest.fn() } as any,
+    );
+
+    await (worker as any).processJob({
+      data: {
+        chatId: '51911111111@c.us',
+        body: 'hola',
+        from: '51911111111@c.us',
+        senderPhone: '51911111111',
+        idempotencyKey: 'k1',
+      },
+    });
+
+    expect(bot.handleMessage).not.toHaveBeenCalled();
+    expect(turnLog.startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'routing_skipped' }),
+    );
+  });
+
   it('cleans the idempotency cache after n8n-routed messages', async () => {
     const botEngine = {
       getConfig: jest.fn().mockResolvedValue(n8nCfg),
-      shouldRouteToN8n: jest.fn().mockReturnValue(true),
+      resolveRoutingDecision: jest.fn().mockResolvedValue({
+        globalEngine: 'n8n',
+        effectiveEngine: 'n8n',
+        wouldRouteToN8n: true,
+        resolvedPhone: '51999999999',
+        reason: 'sandbox_match',
+      }),
     };
     const worker = new WhatsappBotWorker(
       { get: jest.fn() } as any,

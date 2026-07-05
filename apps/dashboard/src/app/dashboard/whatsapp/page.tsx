@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Tabs } from '@/components/ui/Tabs';
+import { EngineBadge, MODE_LABELS } from '@/components/whatsapp/EngineBadge';
 
 type MainTab = 'inbox' | 'session';
 type InboxFilter = '' | 'handoff' | 'orders' | 'carts';
@@ -33,6 +34,7 @@ interface Conversation {
   cartMinutesLeft: number | null;
   unreadHint: boolean;
   lastSource: string;
+  effectiveEngine?: string | null;
 }
 
 interface WaMessage {
@@ -560,6 +562,9 @@ export default function WhatsAppPage() {
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-500">{c.lastMessage}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1">
+                      {c.effectiveEngine && (
+                        <EngineBadge engine={c.effectiveEngine} />
+                      )}
                       {c.needsHandoff && <Badge tone="warning">Handoff</Badge>}
                       {c.hasNewOrder && <Badge tone="brand">Pedido nuevo</Badge>}
                       {c.hasActiveCart && (
@@ -587,6 +592,19 @@ export default function WhatsAppPage() {
                     <div className="font-semibold text-slate-900">{displayName(selected)}</div>
                     {formatPhone(selected.contactPhone) && (
                       <div className="text-xs text-slate-500">{formatPhone(selected.contactPhone)}</div>
+                    )}
+                    {meta?.routing && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <EngineBadge
+                          engine={meta.routing.effectiveEngine}
+                          reason={meta.routing.reason}
+                        />
+                        <span className="text-[10px] text-slate-500">
+                          Motor global: {meta.routing.globalEngine}
+                          {meta.routing.lastTurnMode &&
+                            ` · último turno: ${MODE_LABELS[meta.routing.lastTurnMode] ?? meta.routing.lastTurnMode}`}
+                        </span>
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
@@ -681,7 +699,7 @@ export default function WhatsAppPage() {
                             {activity.map((row) => (
                               <tr key={row.id} className="border-t border-slate-100">
                                 <td className="p-1 whitespace-nowrap">{formatTime(row.createdAt)}</td>
-                                <td className="p-1">{row.mode}</td>
+                                <td className="p-1">{MODE_LABELS[row.mode] ?? row.mode}</td>
                                 <td className="p-1">
                                   {Array.isArray(row.toolsJson) && row.toolsJson.length > 0
                                     ? row.toolsJson.map((t) => t.name).join(', ')

@@ -201,7 +201,14 @@ export class OpenwaBootstrapService implements OnApplicationBootstrap {
   async ensureZentFlowPlugin(): Promise<ZentFlowSyncResult> {
     try {
       const cfg = await this.botEngine.getConfig();
-      const result = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
+      let result = await this.openwaPlugin.syncZentFlowForEngine(cfg.engine);
+
+      const status = await this.botEngine.getStatus();
+      if (status.engine !== 'legacy' && status.zentFlowPassThroughActual === false) {
+        this.logger.warn('zent-flow intercepting while engine!=legacy — forcing resync');
+        result = await this.openwaPlugin.syncZentFlowForEngine(status.engine);
+      }
+
       if (result.ok) {
         this.logger.log(
           `zent-flow synced (engine=${cfg.engine}, passThrough=${result.passThrough}, installed=${result.pluginInstalled})`,

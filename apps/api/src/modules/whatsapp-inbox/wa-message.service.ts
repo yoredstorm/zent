@@ -6,6 +6,7 @@ import { normalizePhone } from '../customers/customers.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { CartHoldService, CartHoldListItem } from '../inventory/cart-hold.service';
 import { extractPhoneFromWaId } from '../whatsapp-bot/wa-contact.util';
+import { BotEngineService } from '../whatsapp-bot/bot-engine.service';
 import { ChatState } from '@prisma/client';
 import {
   buildConversationId,
@@ -41,6 +42,7 @@ export interface WaConversationSummary {
   cartItemCount: number;
   cartTotal: number | null;
   cartMinutesLeft: number | null;
+  effectiveEngine: string | null;
 }
 
 export type WaConversationFilter = 'handoff' | 'orders' | 'carts';
@@ -68,6 +70,7 @@ export class WaMessageService {
     private openwa: OpenwaService,
     private cartHold: CartHoldService,
     private config: ConfigService,
+    private botEngine: BotEngineService,
   ) {}
 
   recordWebhookDiagnostic(status: WebhookDiagnosticStatus, ignoredReason?: string | null) {
@@ -555,6 +558,22 @@ export class WaMessageService {
           ? { waContactName, customerName: null }
           : null;
 
+      let effectiveEngine: string | null = null;
+      try {
+        const routing = await this.botEngine.resolveRoutingDecision({
+          chatId: waChatId,
+          from: waChatId,
+          senderPhone: phone ?? undefined,
+          waSessionId: waSessionId ?? undefined,
+        });
+        effectiveEngine =
+          routing.effectiveEngine === 'skipped'
+            ? routing.globalEngine
+            : routing.effectiveEngine;
+      } catch {
+        /* best-effort */
+      }
+
       summaries.push({
         chatId: convId,
         waChatId,
@@ -577,6 +596,7 @@ export class WaMessageService {
         cartItemCount,
         cartTotal: hold?.total ?? null,
         cartMinutesLeft: hold?.minutesLeft ?? null,
+        effectiveEngine,
       });
     }
 
@@ -676,6 +696,20 @@ export class WaMessageService {
         })()
       : {};
 
+    const routing = await this.botEngine.resolveRoutingDecision({
+      chatId: waChatId,
+      from: waChatId,
+      senderPhone: phone ?? undefined,
+      waSessionId: waSessionId ?? undefined,
+    });
+
+    const lastTurn = await this.prisma.botTurnLog.findFirst({
+      where: {
+        OR: [{ chatId: decoded }, { chatId: waChatId }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     return {
       chatId: decoded,
       waChatId,
@@ -690,6 +724,15 @@ export class WaMessageService {
           : null,
       aiPhase:
         typeof sessionContext.aiPhase === 'string' ? sessionContext.aiPhase : null,
+      routing: {
+        globalEngine: routing.globalEngine,
+        effectiveEngine: routing.effectiveEngine,
+        reason: routing.reason,
+        resolvedPhone: routing.resolvedPhone,
+        lastTurnMode: lastTurn?.mode ?? null,
+        lastTurnAt: lastTurn?.createdAt?.toISOString() ?? null,
+        lastTurnError: lastTurn?.error ?? null,
+      },
     };
   }
 

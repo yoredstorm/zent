@@ -302,6 +302,26 @@ El dashboard debe usar **`POST /api/uploads/document`** (no `/api/uploads/pdf`).
 
 Tras actualizar el frontend, prueba en **Catálogo → Subir PDF**. Límite: 20 MB.
 
+### Motor n8n activo pero WhatsApp responde con menú 1-2-3-4
+
+En **WhatsApp → conversación**, revisa el badge de motor (n8n / Menú clásico / Sin ruteo n8n). En logs de `backend-api` o `bot-worker` busca:
+
+```text
+Routing engine=n8n effective=... reason=...
+```
+
+| `reason` en logs | Significado | Acción |
+|---|---|---|
+| `sandbox_match` | El teléfono coincide con sandbox | Debe ir a n8n; si ves menú, pulsa **Aplicar y sincronizar OpenWA** (zent-flow con `passThrough=false`) |
+| `not_in_sandbox` | Motor n8n pero teléfono no está en la lista | Añade el número en Configuración → Asistente IA → Teléfonos sandbox |
+| `phone_unresolved` | JID `@lid` sin teléfono resuelto | Actualiza backend (resolución OpenWA) y reenvía mensaje |
+| `n8n_secret_missing` | Falta `N8N_WEBHOOK_SECRET` en Dokploy | Configura el secreto HMAC y redeploy |
+| (sin línea Routing) | Worker viejo o mensaje interceptado por zent-flow | Redeploy + **Reparar webhook** en Configuración → WhatsApp |
+
+El panel **Estado de integración** muestra `wouldRoutePhones` por cada teléfono sandbox. "Telefono OK" solo valida el primero de la lista; el inbox muestra el motor efectivo **por conversación**.
+
+Si el chat muestra `Bot: MENU_PRINCIPAL`, la sesión legacy quedó pegada de pruebas anteriores. Con motor n8n y sandbox correcto, los mensajes nuevos deben registrar `mode=n8n_chat` en **Ver actividad del bot**.
+
 ### cAdvisor: `Failed to create existing container`
 
 **No afecta** uploads, WhatsApp, login ni `/setup`. cAdvisor solo alimenta métricas en Grafana/Prometheus.

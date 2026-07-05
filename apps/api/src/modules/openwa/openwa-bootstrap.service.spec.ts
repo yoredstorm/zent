@@ -7,6 +7,7 @@ describe('OpenwaBootstrapService', () => {
     ensureWebhook?: jest.Mock;
     syncZentFlowForEngine?: jest.Mock;
     getConfig?: jest.Mock;
+    getStatus?: jest.Mock;
   } = {}) {
     const config = { get: jest.fn((key: string, fallback?: string) => fallback) };
     const openwa = {
@@ -23,6 +24,12 @@ describe('OpenwaBootstrapService', () => {
     const botRouting = { getMode: jest.fn().mockResolvedValue('ai') };
     const botEngine = {
       getConfig: overrides.getConfig ?? jest.fn().mockResolvedValue({ engine: 'novita' }),
+      getStatus:
+        overrides.getStatus ??
+        jest.fn().mockResolvedValue({
+          engine: 'novita',
+          zentFlowPassThroughActual: true,
+        }),
     };
 
     return {
@@ -58,5 +65,26 @@ describe('OpenwaBootstrapService', () => {
     expect(openwa.ensureInfrastructure).toHaveBeenCalled();
     expect(openwa.ensureWebhook).toHaveBeenCalled();
     expect(openwaPlugin.syncZentFlowForEngine).toHaveBeenCalledWith('novita');
+  });
+
+  it('forces zent-flow resync when intercepting while engine is n8n', async () => {
+    const syncZentFlowForEngine = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, passThrough: false, pluginInstalled: true })
+      .mockResolvedValueOnce({ ok: true, passThrough: true, pluginInstalled: true });
+    const { service, openwaPlugin } = createService({
+      getConfig: jest.fn().mockResolvedValue({ engine: 'n8n' }),
+      getStatus: jest.fn().mockResolvedValue({
+        engine: 'n8n',
+        zentFlowPassThroughActual: false,
+      }),
+      syncZentFlowForEngine,
+    });
+
+    await service.ensureZentFlowPlugin();
+
+    expect(syncZentFlowForEngine).toHaveBeenCalledTimes(2);
+    expect(syncZentFlowForEngine).toHaveBeenNthCalledWith(1, 'n8n');
+    expect(syncZentFlowForEngine).toHaveBeenNthCalledWith(2, 'n8n');
   });
 });

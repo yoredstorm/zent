@@ -144,13 +144,22 @@ export class SettingsService {
 
   async getIntegrationStatus() {
     const status = await this.botEngine.getStatus();
-    const testPhone = status.n8nChatSandboxPhones.split(',')[0]?.trim() || null;
+    const sandboxPhones = status.n8nChatSandboxPhones
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const testPhone = sandboxPhones[0] || null;
     return {
       ...status,
       wouldRouteTestPhone: testPhone
         ? this.botEngine.shouldRouteToN8n(testPhone, status)
         : status.engine === 'n8n' && status.n8nChatScope === 'core',
       testPhone,
+      wouldRoutePhones: sandboxPhones.map((phone) => ({
+        phone,
+        wouldRoute: this.botEngine.shouldRouteToN8n(phone, status),
+      })),
+      zentFlowMayIntercept: status.zentFlowPassThroughActual === false,
     };
   }
 

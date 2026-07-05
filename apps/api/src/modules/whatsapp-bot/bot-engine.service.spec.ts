@@ -10,6 +10,7 @@ describe('BotEngineService', () => {
   };
   const openwa = {
     getSessions: jest.fn().mockResolvedValue([{ id: 's1', status: 'connected' }]),
+    resolveContactPhone: jest.fn().mockResolvedValue(null),
   };
 
   const build = () =>
@@ -63,6 +64,44 @@ describe('BotEngineService', () => {
     const service = build();
     const status = await service.getStatus();
     expect(status.blockers).toContain('novita_api_key_missing');
+  });
+
+  describe('resolveRoutingDecision', () => {
+    it('routes @lid chatId when OpenWA resolves phone to sandbox number', async () => {
+      prisma.storeSettings.findFirst.mockResolvedValue({
+        whatsappBotEngine: 'n8n',
+        n8nChatScope: 'sandbox',
+        n8nChatSandboxPhones: '51987752653',
+      });
+      process.env.N8N_WEBHOOK_SECRET = 'secret';
+      openwa.resolveContactPhone.mockResolvedValue('51987752653');
+      const service = build();
+      const decision = await service.resolveRoutingDecision({
+        chatId: '123456789@lid',
+        from: '123456789@lid',
+        senderPhone: undefined,
+        waSessionId: 'session_1',
+      });
+      expect(decision.effectiveEngine).toBe('n8n');
+      expect(decision.wouldRouteToN8n).toBe(true);
+      expect(decision.reason).toBe('sandbox_match');
+    });
+
+    it('does not route non-sandbox phone when scope is sandbox', async () => {
+      prisma.storeSettings.findFirst.mockResolvedValue({
+        whatsappBotEngine: 'n8n',
+        n8nChatScope: 'sandbox',
+        n8nChatSandboxPhones: '51987752653',
+      });
+      process.env.N8N_WEBHOOK_SECRET = 'secret';
+      const service = build();
+      const decision = await service.resolveRoutingDecision({
+        chatId: '51911111111@c.us',
+        from: '51911111111@c.us',
+      });
+      expect(decision.wouldRouteToN8n).toBe(false);
+      expect(decision.reason).toBe('not_in_sandbox');
+    });
   });
 
   it('flags zent_flow_intercepting when n8n active but passThrough false', async () => {

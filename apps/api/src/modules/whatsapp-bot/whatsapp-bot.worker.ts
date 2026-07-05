@@ -84,19 +84,27 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const cfg = await this.botEngine.getConfig();
-      const phone = senderPhone ?? from;
-      this.logger.log(`Bot engine=${cfg.engine} chatId=${chatId} phone=${phone?.slice(0, 12) ?? 'n/a'}`);
+      const stateKey = this.buildStateKey(chatId, waSessionId);
+      const decision = await this.botEngine.resolveRoutingDecision({
+        chatId,
+        from,
+        senderPhone,
+        waSessionId,
+      });
+      this.logger.log(
+        `Routing engine=${decision.globalEngine} effective=${decision.effectiveEngine} reason=${decision.reason} phone=${decision.resolvedPhone?.slice(0, 12) ?? 'n/a'}`,
+      );
 
-      if (this.botEngine.shouldRouteToN8n(phone, cfg)) {
+      if (decision.wouldRouteToN8n) {
+        const cfg = await this.botEngine.getConfig();
         await this.n8nChatBridge.handleMessage(
           {
             chatId,
             waSessionId,
-            contactPhone: phone,
+            contactPhone: decision.resolvedPhone ?? senderPhone ?? from,
             message: body,
             messageType: 'text',
-            context: { from, engine: cfg.engine },
+            context: { from, engine: cfg.engine, routeReason: decision.reason },
           },
           {
             chatWebhookUrl: cfg.n8nChatWebhookUrl,
@@ -107,7 +115,19 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      if (cfg.engine === 'novita' && (await this.botRouting.shouldUseAiBot())) {
+      if (decision.globalEngine === 'n8n') {
+        await this.turnLog.startTurn({
+          stateKey,
+          chatId,
+          waSessionId,
+          mode: 'routing_skipped',
+          userMessage: `[${decision.reason}] ${body.slice(0, 500)}`,
+        });
+        this.markProcessed(idempotencyKey);
+        return;
+      }
+
+      if (decision.globalEngine === 'novita' && (await this.botRouting.shouldUseAiBot())) {
         await this.bot.handleMessage(chatId, body, from, waSessionId, senderPhone);
         this.markProcessed(idempotencyKey);
         return;

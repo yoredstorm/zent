@@ -2,9 +2,11 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NovitaBalanceService } from '../bot-ai/novita-balance.service';
+import { normalizePhone } from '../customers/customers.service';
 import { OpenwaPluginService } from '../openwa/openwa-plugin.service';
 import { OpenwaService } from '../openwa/openwa.service';
 import { WORKFLOW_FETCH } from '../workflows/workflow-events.service';
+import { resolvePhoneFromIds } from './wa-contact.util';
 
 export type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n';
 export type N8nChatScope = 'sandbox' | 'core';
@@ -47,6 +49,23 @@ export interface BotEngineConfig {
   n8nChatSandboxPhones: string;
   webhookSecret: string;
   botAiEnabled: boolean;
+}
+
+export type RouteReason =
+  | 'global_engine_legacy'
+  | 'global_engine_novita'
+  | 'sandbox_match'
+  | 'core_scope'
+  | 'not_in_sandbox'
+  | 'n8n_secret_missing'
+  | 'phone_unresolved';
+
+export interface RoutingDecision {
+  globalEngine: WhatsappBotEngine;
+  effectiveEngine: WhatsappBotEngine | 'skipped';
+  wouldRouteToN8n: boolean;
+  resolvedPhone: string | null;
+  reason: RouteReason;
 }
 
 export interface BotEngineStatus extends BotEngineConfig {
@@ -160,6 +179,80 @@ export class BotEngineService {
     return candidates.some(
       (candidate) => normalized.endsWith(candidate) || candidate.endsWith(normalized),
     );
+  }
+
+  async resolveRoutingDecision(input: {
+    chatId: string;
+    from: string;
+    senderPhone?: string;
+    waSessionId?: string;
+  }): Promise<RoutingDecision> {
+    const cfg = await this.getConfig();
+    let phone = resolvePhoneFromIds(input.chatId, input.from, input.senderPhone);
+    if (
+      !phone &&
+      input.waSessionId &&
+      (input.chatId.includes('@lid') || input.from.includes('@lid'))
+    ) {
+      const resolved = await this.openwa.resolveContactPhone(
+        input.from || input.chatId,
+        input.waSessionId,
+      );
+      phone = resolved ? normalizePhone(resolved) : null;
+    }
+
+    if (cfg.engine === 'legacy') {
+      return {
+        globalEngine: 'legacy',
+        effectiveEngine: 'legacy',
+        wouldRouteToN8n: false,
+        resolvedPhone: phone,
+        reason: 'global_engine_legacy',
+      };
+    }
+
+    if (cfg.engine === 'novita') {
+      return {
+        globalEngine: 'novita',
+        effectiveEngine: 'novita',
+        wouldRouteToN8n: false,
+        resolvedPhone: phone,
+        reason: 'global_engine_novita',
+      };
+    }
+
+    if (!cfg.webhookSecret) {
+      return {
+        globalEngine: 'n8n',
+        effectiveEngine: 'skipped',
+        wouldRouteToN8n: false,
+        resolvedPhone: phone,
+        reason: 'n8n_secret_missing',
+      };
+    }
+
+    if (!phone) {
+      return {
+        globalEngine: 'n8n',
+        effectiveEngine: 'skipped',
+        wouldRouteToN8n: false,
+        resolvedPhone: null,
+        reason: 'phone_unresolved',
+      };
+    }
+
+    const wouldRoute = this.shouldRouteToN8n(phone, cfg);
+    return {
+      globalEngine: 'n8n',
+      effectiveEngine: wouldRoute ? 'n8n' : 'skipped',
+      wouldRouteToN8n: wouldRoute,
+      resolvedPhone: phone,
+      reason: wouldRoute
+        ? cfg.n8nChatScope === 'core'
+          ? 'core_scope'
+          : 'sandbox_match'
+        : 'not_in_sandbox',
+    };
   }
 
   async getStatus(): Promise<BotEngineStatus> {
