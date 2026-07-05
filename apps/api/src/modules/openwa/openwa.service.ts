@@ -11,6 +11,15 @@ export interface OpenWASession {
   qr?: string;
 }
 
+export interface OpenWaPluginInfo {
+  id: string;
+  name?: string;
+  version?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+
 interface SendTextPayload {
   chatId: string;
   text: string;
@@ -324,6 +333,31 @@ export class OpenwaService {
     if (Array.isArray(data)) return data;
     if (Array.isArray(result)) return result as OpenWASession[];
     return [];
+  }
+
+  /** Metadata de un plugin instalado en OpenWA (incluye enabled). */
+  async getPlugin(pluginId: string): Promise<OpenWaPluginInfo | null> {
+    try {
+      const result = await this.request<unknown>(`/api/plugins/${pluginId}`, 'GET');
+      const data = this.unwrapData<OpenWaPluginInfo>(result);
+      const plugin = (data ?? result) as OpenWaPluginInfo | null;
+      if (plugin?.id) return plugin;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async listPlugins(): Promise<OpenWaPluginInfo[]> {
+    try {
+      const result = await this.request<unknown>('/api/plugins', 'GET');
+      const data = this.unwrapData<OpenWaPluginInfo[]>(result);
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(result)) return result as OpenWaPluginInfo[];
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   /**

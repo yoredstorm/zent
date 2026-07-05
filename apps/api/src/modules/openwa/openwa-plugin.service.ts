@@ -83,18 +83,51 @@ export class OpenwaPluginService {
     return obj;
   }
 
+  private isForbiddenError(err: unknown): boolean {
+    const msg = (err as Error)?.message || String(err);
+    return /403|forbidden|unauthorized|permission/i.test(msg);
+  }
+
   async isZentFlowInstalled(): Promise<boolean> {
+    const plugin = await this.openwa.getPlugin('zent-flow');
+    if (plugin?.id) return true;
+
+    const listed = await this.openwa.listPlugins();
+    if (listed.some((p) => p.id === 'zent-flow')) return true;
+
     try {
       await this.openwa.apiRequest<unknown>('/api/plugins/zent-flow/config', 'GET');
       return true;
     } catch (err) {
       if (this.isNotFoundError(err)) return false;
+      if (this.isForbiddenError(err)) {
+        this.logger.warn(
+          'zent-flow install check: OPENWA_API_KEY sin permisos para /api/plugins (usa API_MASTER_KEY)',
+        );
+        return false;
+      }
       this.logger.warn(`zent-flow install check failed: ${(err as Error)?.message || err}`);
       return false;
     }
   }
 
+  async getZentFlowPluginInfo(): Promise<{ installed: boolean; enabled: boolean }> {
+    const plugin = await this.openwa.getPlugin('zent-flow');
+    if (plugin?.id) {
+      return { installed: true, enabled: plugin.enabled === true };
+    }
+    const listed = await this.openwa.listPlugins().then((items) => items.find((p) => p.id === 'zent-flow'));
+    if (listed) {
+      return { installed: true, enabled: listed.enabled === true };
+    }
+    return { installed: await this.isZentFlowInstalled(), enabled: false };
+  }
+
   async getZentFlowConfig(): Promise<Record<string, unknown>> {
+    const plugin = await this.openwa.getPlugin('zent-flow');
+    if (plugin?.config && typeof plugin.config === 'object') {
+      return plugin.config;
+    }
     try {
       const raw = await this.openwa.apiRequest<unknown>('/api/plugins/zent-flow/config', 'GET');
       return this.unwrapPluginConfig(raw);
