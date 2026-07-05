@@ -86,6 +86,7 @@ export class N8nChatBridgeService {
         chatId: stateKey,
         stateKey,
         contactPhone: input.contactPhone,
+        message: input.message,
       });
       const payload = {
         chatId: input.chatId,

@@ -27,6 +27,9 @@ describe('N8nSessionToolsService', () => {
         ({ STORE_NAME: 'Mi Tienda' })[key] ?? fallback,
     };
     const prisma = {
+      storeSettings: {
+        findFirst: jest.fn().mockResolvedValue({ storeName: 'Mi Tienda' }),
+      },
       order: {
         count: jest.fn().mockResolvedValue(3),
         findFirst: jest.fn().mockResolvedValue({
@@ -51,6 +54,17 @@ describe('N8nSessionToolsService', () => {
 
     return { service, customers, chatSession, cart, prisma, vendorNotify };
   }
+
+  it('bootstrap resets stuck flow to greeting on hola', async () => {
+    const { service } = createService();
+    const res = await service.bootstrap({
+      chatId: 'c1',
+      stateKey: 's::c1',
+      contactPhone: '51999',
+      message: 'hola',
+    });
+    expect(res.flow.phase).toBe('greeting');
+  });
 
   it('bootstrap returns customer, flow phase, cart and botPaused', async () => {
     const { service } = createService();

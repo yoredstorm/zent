@@ -98,6 +98,7 @@ describe('N8nChatBridgeService', () => {
       chatId: 'session_1::51999999999@c.us',
       stateKey: 'session_1::51999999999@c.us',
       contactPhone: '51999999999',
+      message: 'hola',
     });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.context.session).toBeDefined();

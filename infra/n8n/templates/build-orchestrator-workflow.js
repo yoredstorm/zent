@@ -16,7 +16,7 @@ const session = ctx.session ?? {};
 const stateKey = ctx.stateKey || (input.waSessionId ? input.waSessionId + '::' + input.chatId : input.chatId);
 const chatId = input.chatId;
 const contactPhone = input.contactPhone;
-const message = input.message || '';
+const message = String(input.message ?? input.text ?? input.body?.message ?? '').trim();
 
 async function callTool(name, body) {
   return await this.helpers.httpRequest({

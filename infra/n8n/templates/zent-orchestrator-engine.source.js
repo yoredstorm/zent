@@ -11,15 +11,25 @@ const STATUS_ES = {
 
 function normalizeInput(message) {
   return String(message || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[*_~`]/g, '')
     .toLowerCase()
     .trim()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/^[^\w]+|[^\w]+$/g, '');
+}
+
+function isGreetingLike(msg) {
+  if (!msg || msg.length < 2) return true;
+  if (/^(hola|buenas|buenos|hey|hi|hello|saludos|que tal|ola)[\s!.?,]*$/.test(msg)) return true;
+  if (msg.length <= 30 && /\b(hola|buenas|buenos|hey|saludos)\b/.test(msg)) return true;
+  return false;
 }
 
 function detectGlobalIntent(msg) {
   if (/^(menu|inicio|empezar de nuevo|volver al inicio)/.test(msg)) return 'reset';
-  if (/^(hola|buenas|buenos|hey|hi|hello)\b/.test(msg) || msg.length < 3) return 'greeting';
+  if (isGreetingLike(msg) || msg.length < 3) return 'greeting';
   if (/asesor|humano|persona|agente|hablar con/.test(msg)) return 'handoff';
   if (/pedido|estado|seguimiento|donde esta|donde está|mi compra/.test(msg)) return 'order_status';
   if (/catalogo|catálogo|productos|comprar|venta|ver productos|^1$/.test(msg)) return 'catalog';
@@ -126,37 +136,33 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     return mergeKeys(gr) + '\n\n' + mergeKeys(COPY.mainMenu());
   }
 
+  function buildWelcomePatch() {
+    return {
+      phase: 'main_menu',
+      checkout: {},
+      categoryId: undefined,
+      categoryName: undefined,
+      lastProductList: undefined,
+      productPage: undefined,
+      lastCopyKeys: keys,
+    };
+  }
+
   const checkoutPhases = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
 
   if (intent === 'reset') {
-    flow.phase = 'greeting';
-    patch = { phase: 'greeting', lastCopyKeys: keys };
     reply = buildWelcomeReply();
-    flow.phase = 'main_menu';
-    patch = {
-      phase: 'main_menu',
-      checkout: {},
-      categoryId: undefined,
-      categoryName: undefined,
-      lastProductList: undefined,
-      productPage: undefined,
-      lastCopyKeys: keys,
-    };
+    patch = buildWelcomePatch();
     return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
   }
 
-  // "hola" / "buenas" reinicia desde cualquier fase (excepto checkout en curso)
-  if (intent === 'greeting' && !checkoutPhases.includes(flow.phase)) {
+  // Saludo o mensaje corto amigable → siempre bienvenida + menú (excepto checkout)
+  if (
+    (intent === 'greeting' || (flow.phase === 'main_menu' && intent === 'freeform' && msg.length <= 40)) &&
+    !checkoutPhases.includes(flow.phase)
+  ) {
     reply = buildWelcomeReply();
-    patch = {
-      phase: 'main_menu',
-      checkout: {},
-      categoryId: undefined,
-      categoryName: undefined,
-      lastProductList: undefined,
-      productPage: undefined,
-      lastCopyKeys: keys,
-    };
+    patch = buildWelcomePatch();
     return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
   }
 
@@ -213,8 +219,8 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
         return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
       if (intent === 'freeform') {
-        reply = mergeKeys(COPY.didntUnderstand());
-        patch = { phase: 'main_menu', lastCopyKeys: keys };
+        reply = buildWelcomeReply();
+        patch = buildWelcomePatch();
         return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
       }
       const grFallback = customer.found
@@ -237,8 +243,17 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       }
       const cat = fuzzyMatchCategory(msg, cats);
       if (!cat) {
-        reply = mergeKeys(COPY.didntUnderstand());
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch: { lastCopyKeys: keys } };
+        if (isGreetingLike(msg) || intent === 'freeform') {
+          reply = buildWelcomeReply();
+          patch = buildWelcomePatch();
+          return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
+        }
+        reply =
+          mergeKeys(COPY.didntUnderstand()) +
+          '\n\n' +
+          mergeKeys(COPY.mainMenu());
+        patch = { phase: 'main_menu', lastCopyKeys: keys };
+        return { reply, nextPhase: 'main_menu', handoff, toolCalls, patch };
       }
       toolCalls.push({ name: 'products.by_category', body: { categoryId: cat.id } });
       flow.categoryId = cat.id;
@@ -495,6 +510,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
 if (typeof module !== 'undefined') {
   module.exports = {
     normalizeInput,
+    isGreetingLike,
     detectGlobalIntent,
     fuzzyMatchCategory,
     fuzzyMatchProduct,

@@ -8,6 +8,7 @@ import { CustomersService, normalizePhone } from '../customers/customers.service
 import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 import type { N8nFlowContext, N8nFlowPhase } from './n8n-flow.types';
+import { isCheckoutPhase, isGreetingLikeMessage } from './n8n-message-intent.util';
 
 @Injectable()
 export class N8nSessionToolsService {
@@ -20,7 +21,12 @@ export class N8nSessionToolsService {
     private vendorNotify: VendorNotifyService,
   ) {}
 
-  async bootstrap(input: { chatId: string; stateKey: string; contactPhone?: string | null }) {
+  async bootstrap(input: {
+    chatId: string;
+    stateKey: string;
+    contactPhone?: string | null;
+    message?: string;
+  }) {
     const customer = input.contactPhone
       ? await this.customers.findByPhone(input.contactPhone)
       : null;
@@ -34,9 +40,20 @@ export class N8nSessionToolsService {
 
     const ctx = await this.chatSession.getContext(input.chatId);
     const session = await this.chatSession.peek(input.chatId);
-    const flow = (ctx.n8nFlow ?? { phase: 'greeting' }) as N8nFlowContext;
+    let flow = (ctx.n8nFlow ?? { phase: 'greeting' }) as N8nFlowContext;
+
+    // Saludo reinicia flujo atascado (ej. browse_categories de pruebas anteriores)
+    if (input.message && isGreetingLikeMessage(input.message) && !isCheckoutPhase(flow.phase)) {
+      flow = { phase: 'greeting', lastCopyKeys: flow.lastCopyKeys };
+    }
+
     const cartData = await this.cart.getCart(input.stateKey);
     const cartTtlMinutes = Math.round(this.cart.getTtlSeconds() / 60);
+    const storeSettings = await this.prisma.storeSettings.findFirst();
+    const storeName =
+      storeSettings?.storeName?.trim() ||
+      this.config.get<string>('STORE_NAME', 'Zent').trim() ||
+      'Zent';
 
     return {
       customer: customer
@@ -53,7 +70,7 @@ export class N8nSessionToolsService {
       flow,
       cart: cartData,
       cartTtlMinutes,
-      storeName: this.config.get<string>('STORE_NAME', 'Zent').trim() || 'Zent',
+      storeName,
       botPaused: session?.state === ChatState.HANDOFF_HUMANO,
     };
   }
