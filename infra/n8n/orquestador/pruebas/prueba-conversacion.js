@@ -5,6 +5,7 @@
  */
 const { normalizarMensaje, detectarIntencion } = require('../nucleo/intencion.js');
 const { aplicarParche } = require('../nucleo/sesion.js');
+const { enrutarGrupo } = require('../nucleo/enrutador.js');
 const { flujoMenu } = require('../flujos/menu.js');
 const { flujoCatalogo } = require('../flujos/catalogo.js');
 const { flujoCarrito } = require('../flujos/carrito.js');
@@ -99,27 +100,6 @@ const FLUJOS = {
   pedido: flujoPedido,
   asesor: flujoAsesor,
 };
-
-const FASES_CHECKOUT = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
-const GRUPO_POR_FASE = {
-  greeting: 'menu', main_menu: 'menu',
-  browse_categories: 'catalogo', browse_products: 'catalogo', product_detail: 'catalogo',
-  cart: 'carrito',
-  checkout_name: 'checkout', checkout_address: 'checkout', checkout_reference: 'checkout', checkout_confirm: 'checkout',
-  order_status: 'pedido', handoff: 'asesor',
-};
-
-function enrutarGrupo(fase, intencion, msj) {
-  const enCheckout = FASES_CHECKOUT.includes(fase);
-  if (intencion === 'asesor' || fase === 'handoff') return 'asesor';
-  if (!enCheckout && (intencion === 'reinicio' || intencion === 'saludo')) return 'menu';
-  if (!enCheckout && intencion === 'catalogo_pdf') return 'menu';
-  if (!enCheckout && intencion === 'catalogo') return 'catalogo';
-  if (!enCheckout && intencion === 'estado_pedido') return 'pedido';
-  if (!enCheckout && intencion === 'carrito') return 'carrito';
-  if (!enCheckout && /confirmar|finalizar|checkout/.test(msj)) return 'carrito';
-  return GRUPO_POR_FASE[fase] || 'menu';
-}
 
 let sesion = {
   storeName: 'ohana',

@@ -4,6 +4,13 @@
  *   Entrada WhatsApp → Preparar Contexto → Enrutador de Fase (Switch)
  *     → Flujo Menú / Catálogo / Carrito / Checkout / Pedido / Asesor
  *     → Guardar Sesión y Responder → Responder a Zent
+ *
+ * Nota de diseño (KISS): los nodos Code de n8n son entornos aislados — no pueden
+ * compartir funciones entre sí ni hacer require de archivos externos. Por eso cada
+ * nodo lleva embebida la librería compartida (copys + nucleo), pero:
+ *   - La lógica editable de cada nodo son 2-3 líneas al inicio.
+ *   - La librería va al final, marcada como GENERADA (se regenera con este script).
+ *   - La única fuente de verdad son los archivos de nucleo/ y flujos/.
  */
 const fs = require('fs');
 const path = require('path');
@@ -18,121 +25,56 @@ function limpiarExports(codigo) {
   return codigo.replace(/^if \(typeof module !== 'undefined'\) \{[\s\S]*?\n\}/gm, '');
 }
 
-const copys = limpiarExports(leer('../templates/zent-copy-variants.source.js'));
-const nucleo = ['nucleo/intencion.js', 'nucleo/productos.js', 'nucleo/copys.js', 'nucleo/sesion.js']
+const SEPARADOR = `
+// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  LIBRERÍA COMPARTIDA (GENERADA — NO EDITAR AQUÍ)                      ║
+// ║  Fuente: infra/n8n/orquestador/{nucleo,flujos}/*.js                   ║
+// ║  Regenerar con: node infra/n8n/orquestador/construir-workflow.js      ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+`;
+
+const libreriaComun = [
+  '../templates/zent-copy-variants.source.js',
+  'nucleo/intencion.js',
+  'nucleo/productos.js',
+  'nucleo/copys.js',
+  'nucleo/sesion.js',
+  'nucleo/ejecutor.js',
+]
   .map((f) => limpiarExports(leer(f)))
   .join('\n');
 
 // ---------------------------------------------------------------------------
-// Código del nodo "Preparar Contexto"
+// Nodo "Preparar Contexto" — solo enrutador + intención (no necesita copys)
 // ---------------------------------------------------------------------------
-const codigoPrepararContexto = `${limpiarExports(leer('nucleo/intencion.js'))}
-
-const entrada = $json.body ?? $json;
-const contexto = entrada.context ?? {};
-const sesion = contexto.session ?? {};
-const mensaje = String(entrada.message ?? entrada.text ?? '').trim();
-const msj = normalizarMensaje(mensaje);
-const intencion = detectarIntencion(msj);
-const fase = sesion.flow?.phase || 'greeting';
-
-const FASES_CHECKOUT = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
-const GRUPO_POR_FASE = {
-  greeting: 'menu', main_menu: 'menu',
-  browse_categories: 'catalogo', browse_products: 'catalogo', product_detail: 'catalogo',
-  cart: 'carrito',
-  checkout_name: 'checkout', checkout_address: 'checkout', checkout_reference: 'checkout', checkout_confirm: 'checkout',
-  order_status: 'pedido', handoff: 'asesor',
-};
-
-const enCheckout = FASES_CHECKOUT.includes(fase);
-let grupo;
-if (intencion === 'asesor' || fase === 'handoff') grupo = 'asesor';
-else if (!enCheckout && (intencion === 'reinicio' || intencion === 'saludo')) grupo = 'menu';
-else if (!enCheckout && intencion === 'catalogo_pdf') grupo = 'menu';
-else if (!enCheckout && intencion === 'catalogo') grupo = 'catalogo';
-else if (!enCheckout && intencion === 'estado_pedido') grupo = 'pedido';
-else if (!enCheckout && intencion === 'carrito') grupo = 'carrito';
-else if (!enCheckout && /confirmar|finalizar|checkout/.test(msj)) grupo = 'carrito';
-else grupo = GRUPO_POR_FASE[fase] || 'menu';
-
-const claveEstado = contexto.stateKey || (entrada.waSessionId ? entrada.waSessionId + '::' + entrada.chatId : entrada.chatId);
-
-return [{ json: {
-  grupo, fase, mensaje, msj, intencion, sesion,
-  entrada: { chatId: entrada.chatId, waSessionId: entrada.waSessionId, contactPhone: entrada.contactPhone },
-  claveEstado,
-  apiUrl: contexto.zentApiUrl || 'http://backend-api:3000/api',
-  secreto: contexto.zentN8nSecret || '',
-} }];
-`;
+const codigoPrepararContexto = `// Normaliza el mensaje, detecta la intención y decide el grupo de flujo.
+return [{ json: prepararContexto($json.body ?? $json) }];
+${SEPARADOR}
+${limpiarExports(leer('nucleo/intencion.js'))}
+${limpiarExports(leer('nucleo/enrutador.js'))}`;
 
 // ---------------------------------------------------------------------------
-// Pegamento común de cada nodo de flujo
+// Nodos de flujo — 3 líneas editables + flujo propio + librería común
 // ---------------------------------------------------------------------------
 function codigoNodoFlujo(archivoFlujo, nombreFuncion) {
-  return `${copys}
-${nucleo}
+  return `// Ejecuta ${nombreFuncion} con las herramientas del backend (await directo, sin fillers).
+const ejecutor = crearEjecutor({ datos: $json, helpers: this.helpers, copys: copysZent() });
+return [{ json: await ejecutor.ejecutar(${nombreFuncion}) }];
+
+// ─── Lógica de este flujo ───
 ${limpiarExports(leer(archivoFlujo))}
-
-const d = $json;
-const copysLib = { pick, pickAvoidRepeat, timeGreeting, buildCopy };
-const self = this;
-async function llamarHerramienta(nombre, cuerpo) {
-  try {
-    return await self.helpers.httpRequest({
-      method: 'POST',
-      url: d.apiUrl + '/webhooks/n8n/tools/' + nombre,
-      headers: { Authorization: 'Bearer ' + d.secreto, 'Content-Type': 'application/json' },
-      body: cuerpo,
-      json: true,
-    });
-  } catch (e) {
-    console.log('AVISO herramienta ' + nombre + ' fallo: ' + (e.message || e));
-    return null;
-  }
-}
-
-const resultado = await ${nombreFuncion}({
-  mensaje: d.mensaje,
-  msj: d.msj,
-  intencion: d.intencion,
-  sesion: d.sesion,
-  entrada: d.entrada,
-  claveEstado: d.claveEstado,
-  copys: copysLib,
-  llamarHerramienta,
-});
-
-return [{ json: { ...d, ...resultado } }];
-`;
+${SEPARADOR}
+${libreriaComun}`;
 }
 
 // ---------------------------------------------------------------------------
-// Código del nodo "Guardar Sesión y Responder"
+// Nodo "Guardar Sesión y Responder"
 // ---------------------------------------------------------------------------
-const codigoGuardarResponder = `const d = $json;
-const self = this;
-if (d.parche && Object.keys(d.parche).length) {
-  try {
-    await self.helpers.httpRequest({
-      method: 'POST',
-      url: d.apiUrl + '/webhooks/n8n/tools/chat.session.patch',
-      headers: { Authorization: 'Bearer ' + d.secreto, 'Content-Type': 'application/json' },
-      body: { chatId: d.claveEstado, flow: d.parche },
-      json: true,
-    });
-  } catch (e) {
-    console.log('AVISO: chat.session.patch fallo: ' + (e.message || e));
-  }
-}
-return [{ json: {
-  reply: d.respuesta || '',
-  handoff: Boolean(d.traspaso),
-  metadata: { phase: (d.parche && d.parche.phase) || d.fase },
-  media: d.media || [],
-} }];
-`;
+const codigoGuardarResponder = `// Persiste el parche de sesión (chat.session.patch) y arma la respuesta al bridge.
+const ejecutor = crearEjecutor({ datos: $json, helpers: this.helpers, copys: null });
+return [{ json: await ejecutor.guardarYResponder() }];
+${SEPARADOR}
+${limpiarExports(leer('nucleo/ejecutor.js'))}`;
 
 // ---------------------------------------------------------------------------
 // Nodos y conexiones
@@ -250,8 +192,8 @@ const workflow = {
 const json = JSON.stringify(workflow, null, 2);
 JSON.parse(json);
 for (const nodo of nodos) {
-  if (nodo.parameters.jsCode && /module\.exports/.test(nodo.parameters.jsCode)) {
-    console.error(`ERROR: el nodo "${nodo.name}" contiene module.exports sin limpiar`);
+  if (nodo.parameters.jsCode && /module\.exports|require\(/.test(nodo.parameters.jsCode)) {
+    console.error(`ERROR: el nodo "${nodo.name}" contiene module.exports o require sin limpiar`);
     process.exit(1);
   }
 }

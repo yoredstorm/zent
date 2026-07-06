@@ -962,6 +962,8 @@ El motor conversacional vive en `infra/n8n/orquestador/` como módulos en españ
 | `flujos/*.js` | Un flujo async por grupo de fases; llaman tools con `await` directo (sin fillers) |
 | `construir-workflow.js` | Genera `zent-orquestador.workflow.json` |
 
+Estructura de cada nodo Code (KISS): las primeras 2-3 líneas son la lógica editable (`crearEjecutor` + `ejecutar(flujoX)`), luego viene la función del flujo, y al final la **librería compartida generada** detrás de un banner "NO EDITAR AQUÍ". Los nodos Code de n8n 2.x son entornos aislados (sin `require` de archivos externos ni funciones compartidas entre nodos), así que la librería se embebe en cada nodo — pero la única fuente de verdad son los archivos de `nucleo/` y `flujos/`; cualquier cambio se hace ahí y se regenera el JSON.
+
 Reglas clave:
 
 - Cada flujo llama las tools del backend con `await` — no existe loop interno ni respuestas "Un momentito".
