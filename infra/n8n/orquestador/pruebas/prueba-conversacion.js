@@ -12,7 +12,7 @@ const { flujoCarrito } = require('../flujos/carrito.js');
 const { flujoCheckout } = require('../flujos/checkout.js');
 const { flujoPedido } = require('../flujos/pedido.js');
 const { flujoAsesor } = require('../flujos/asesor.js');
-const copySrc = require('../../templates/zent-copy-variants.source.js');
+const copySrc = require('../textos.js');
 
 const copys = {
   pick: copySrc.pick,

@@ -34,7 +34,7 @@ const SEPARADOR = `
 `;
 
 const libreriaComun = [
-  '../templates/zent-copy-variants.source.js',
+  'textos.js',
   'nucleo/intencion.js',
   'nucleo/productos.js',
   'nucleo/copys.js',

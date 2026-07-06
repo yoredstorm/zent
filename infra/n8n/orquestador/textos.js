@@ -1,4 +1,4 @@
-/** Human copy variants for Zent WhatsApp orchestrator — versioned source for n8n Code node. */
+/** Textos del bot Zent — variantes anti-repetición por clave. */
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];

@@ -133,8 +133,7 @@ export class SettingsService {
       n8nChatWebhookUrl: cfg.n8nChatWebhookUrl,
       n8nChatSandboxPhones: cfg.n8nChatSandboxPhones,
       n8nChatTemplates: [
-        'infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json',
-        'infra/n8n/templates/zent-order-status-chat.workflow.json',
+        'infra/n8n/orquestador/zent-orquestador.workflow.json',
       ],
       n8nHealth: await this.getN8nHealth(cfg.n8nWebhookBaseUrl),
       n8nSecretConfigured: !!cfg.webhookSecret,

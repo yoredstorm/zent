@@ -964,10 +964,7 @@ export default function BotAiSettingsPage() {
                 <div className="mt-2 space-y-2">
                   {(n8nChatTemplates.length
                     ? n8nChatTemplates
-                    : [
-                        'infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json',
-                        'infra/n8n/templates/zent-order-status-chat.workflow.json',
-                      ]
+                    : ['infra/n8n/orquestador/zent-orquestador.workflow.json']
                   ).map((template) => (
                     <div key={template} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-2 sm:flex-row sm:items-center">
                       <code className="flex-1 break-all text-xs text-slate-700">{template}</code>

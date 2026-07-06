@@ -1,5 +1,5 @@
 const { flujoCatalogo } = require('../flujos/catalogo.js');
-const copySrc = require('../../templates/zent-copy-variants.source.js');
+const copySrc = require('../textos.js');
 
 const copys = {
   pick: copySrc.pick,

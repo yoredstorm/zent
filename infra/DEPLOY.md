@@ -812,30 +812,14 @@ El servicio n8n tambien recibe `ZENT_API_URL=http://backend-api:3000/api` y `ZEN
 
 | Archivo | Uso |
 |---------|-----|
+| `infra/n8n/orquestador/zent-orquestador.workflow.json` | **Orquestador por fases** WhatsApp: catálogo, carrito, checkout, pedidos, handoff (único flujo de chat soportado) |
 | `infra/n8n/examples/zent-sales-sandbox.workflow.json` | Recibe cualquier evento `/webhook/zent/:event` y responde OK para pruebas |
-| `infra/n8n/examples/zent-payment-reference.workflow.json` | Punto de partida para validar referencias de pago |
-| `infra/n8n/examples/zent-order-status.workflow.json` | Punto de partida para notificaciones por cambio de estado |
-| `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json` | **Orquestador unificado** WhatsApp: catálogo, carrito, checkout, estado, handoff (reemplaza sales-chat) |
-| `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` | *(legacy)* Flujo conversacional anterior — desactivar al importar orchestrator |
-| `infra/n8n/templates/zent-order-status-chat.workflow.json` | Flujo conversacional para consultar estado de pedidos |
 
 Los exports experimentales del editor n8n deben guardarse en `infra/n8n/local-flows/`; esa carpeta esta ignorada por git.
 
-### Error n8n: `access to env vars denied` en Classify Intent
+### Error n8n: `access to env vars denied` en un nodo Code
 
-n8n 2.x bloquea `$env` en nodos Code por defecto. Las plantillas Zent ya reciben credenciales en el payload (`context.zentApiUrl`, `context.zentN8nSecret`) enviadas por `backend-api`.
-
-Si el workflow importado es **anterior** a este fix:
-
-1. **Opcion rapida (sin reimportar):** en n8n, edita el nodo **Classify Intent** y reemplaza las lineas `$env.ZENT_API_URL` / `$env.ZENT_N8N_SECRET` por:
-   ```javascript
-   const apiUrl = context.zentApiUrl || 'http://backend-api:3000/api';
-   const secret = context.zentN8nSecret || '';
-   ```
-2. **Opcion completa:** reimporta `infra/n8n/templates/zent-whatsapp-sales-chat.workflow.json` y activa el workflow.
-3. En Dokploy, anade `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` al servicio n8n y redeploy (respaldo si algun nodo legacy aun usa `$env`).
-
-Tras el fix, un mensaje de WhatsApp sandbox debe ejecutar **Classify Intent** en verde y llegar a **Respond To Zent**.
+n8n 2.x bloquea `$env` en nodos Code por defecto. El orquestador ya recibe credenciales en el payload (`context.zentApiUrl`, `context.zentN8nSecret`) enviadas por `backend-api`, así que no usa `$env`. Si algún workflow propio lo necesita, añade `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` al servicio n8n en Dokploy y redeploy.
 
 ### Eventos enviados
 
@@ -1002,10 +986,10 @@ Reglas clave:
 4. WhatsApp: elegir ese producto → debe listar `1️⃣ Rojo … 2️⃣ Azul …` → elegir → cantidad → resumen con la etiqueta y el precio de la variante
 5. Confirmar pedido y aceptarlo en el dashboard → el stock de la variante elegida baja y el del padre se recalcula
 
-Prueba manual recomendada (orquestador unificado):
+Prueba manual recomendada (orquestador por fases):
 
-1. **Desactivar** el workflow legacy `Zent WhatsApp Sales Chat` en n8n si estaba activo.
-2. Importar `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json`.
+1. **Desactivar** cualquier workflow de chat legacy en n8n si estaba activo.
+2. Importar `infra/n8n/orquestador/zent-orquestador.workflow.json`.
 3. Activar el workflow y confirmar path `/webhook/zent-chat`.
 4. Guardar `N8N_CHAT_MODE=sandbox` y tu número en `N8N_CHAT_SANDBOX_PHONES`.
 5. Probar con `POST /api/settings/n8n/chat/test` o enviar mensajes desde WhatsApp:
@@ -1025,7 +1009,6 @@ Prueba manual recomendada (orquestador unificado):
 | 9 | Dashboard "Reactivar bot" | Bot vuelve a saludar |
 
 6. Cambiar pedido a `CONFIRMADO` / `EN_DELIVERY` / `COMPLETADO` en dashboard; cliente recibe WhatsApp (backend existente).
-7. Opcional: importar `infra/n8n/templates/zent-order-status-chat.workflow.json` solo si mantienes flujo separado de estado.
 
 ### Callback desde n8n
 
