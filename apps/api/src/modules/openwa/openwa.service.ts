@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import Redis from 'ioredis';
+import { parseUploadLocation } from './upload-media.util';
 
 export interface OpenWASession {
   id: string;
@@ -209,23 +210,24 @@ export class OpenwaService {
   }
 
   /** OpenWA @IsUrl() rejects hostnames without TLD (e.g. backend-api). Read our uploads from disk. */
-  private tryLoadLocalUpload(url: string): { base64: string; mimetype: string; filename: string } | null {
-    const match = url.match(/(?:\/api)?\/uploads\/(pdf|images)\/([^/?#]+)$/i);
-    if (!match) return null;
+  private loadUploadFromDisk(
+    url: string,
+  ): { base64: string; mimetype: string; filename: string } | null {
+    const loc = parseUploadLocation(url);
+    if (!loc) return null;
 
-    const [, folder, filename] = match;
     const uploadsDir = this.config.get('UPLOADS_DIR', './uploads');
-    const filepath = path.join(uploadsDir, folder, filename);
+    const filepath = path.join(uploadsDir, loc.folder, loc.filename);
     if (!fs.existsSync(filepath)) {
-      this.logger.warn(`Upload file not found on disk: ${filepath}`);
+      this.logger.warn(`Upload file not found on disk: ${filepath} (from ${url})`);
       return null;
     }
 
-    const ext = path.extname(filename).toLowerCase();
+    const ext = path.extname(loc.filename).toLowerCase();
     const mimetype =
-      MIME_BY_EXT[ext] || (folder === 'pdf' ? 'application/pdf' : 'application/octet-stream');
+      MIME_BY_EXT[ext] || (loc.folder === 'pdf' ? 'application/pdf' : 'application/octet-stream');
     const base64 = fs.readFileSync(filepath).toString('base64');
-    return { base64, mimetype, filename };
+    return { base64, mimetype, filename: loc.filename };
   }
 
   /** Prefer public URL for remote fetch; internal hostnames fail OpenWA @IsUrl() validation. */
@@ -253,15 +255,21 @@ export class OpenwaService {
     const body: Record<string, string> = { chatId };
 
     if (source.url) {
-      const local = this.tryLoadLocalUpload(source.url);
+      const local = this.loadUploadFromDisk(source.url);
       if (local) {
         body.base64 = local.base64;
         body.mimetype = source.mimetype || local.mimetype;
         body.filename = source.filename || local.filename;
+        this.logger.debug(
+          `OpenWA media via base64: ${local.filename} (${Math.round(local.base64.length / 1024)}KB)`,
+        );
+      } else if (parseUploadLocation(source.url)) {
+        throw new Error(`Archivo de media no encontrado en el servidor: ${source.url}`);
       } else {
         body.url = this.resolveMediaUrl(source.url)!;
         if (source.mimetype) body.mimetype = source.mimetype;
         if (source.filename) body.filename = source.filename;
+        this.logger.debug(`OpenWA media via url: ${body.url}`);
       }
     } else if (source.base64) {
       body.base64 = source.base64;

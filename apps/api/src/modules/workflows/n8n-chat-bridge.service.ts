@@ -157,7 +157,7 @@ export class N8nChatBridgeService {
               });
             }
           } catch (err: any) {
-            this.logger.warn(
+            this.logger.error(
               `n8n media send failed (${item.type} ${item.url}): ${err?.message || err}`,
             );
           }

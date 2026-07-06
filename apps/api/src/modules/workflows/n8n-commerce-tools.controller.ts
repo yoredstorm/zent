@@ -107,8 +107,13 @@ export class N8nCommerceToolsController {
         source: 'bot',
       });
       return { available: true, sent: true, url: pdf.url };
-    } catch {
-      return { available: true, sent: false, url: pdf.url };
+    } catch (err: any) {
+      return {
+        available: true,
+        sent: false,
+        url: pdf.url,
+        error: err?.message || String(err),
+      };
     }
   }
 
