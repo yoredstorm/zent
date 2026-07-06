@@ -1,7 +1,21 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  CreateVariantDto,
+  UpdateVariantDto,
+} from './dto/product.dto';
 import { BotCatalogContextService } from '../bot-ai/bot-catalog-context.service';
+
+const INCLUDE_VARIANTES = {
+  values: { include: { attributeValue: { include: { attribute: true } } } },
+} as const;
 
 @Injectable()
 export class ProductsService {
@@ -39,7 +53,12 @@ export class ProductsService {
   async findOne(id: string) {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: { images: { orderBy: { orden: 'asc' } }, category: true },
+      include: {
+        images: { orderBy: { orden: 'asc' } },
+        category: true,
+        attributeValues: { include: { attributeValue: { include: { attribute: true } } } },
+        variants: { where: { isActive: true }, include: INCLUDE_VARIANTES },
+      },
     });
     if (!product) throw new NotFoundException('Product not found');
     return product;
@@ -95,6 +114,117 @@ export class ProductsService {
   async deleteImage(id: string) {
     await this.prisma.productImage.delete({ where: { id } });
     return { success: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // Atributos informativos por producto
+  // -------------------------------------------------------------------------
+  async setAttributes(productId: string, attributeValueIds: string[]) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+    await this.prisma.productAttributeValue.deleteMany({ where: { productId } });
+    if (attributeValueIds.length) {
+      await this.prisma.productAttributeValue.createMany({
+        data: attributeValueIds.map((attributeValueId) => ({ productId, attributeValueId })),
+        skipDuplicates: true,
+      });
+    }
+    this.botCatalog.invalidate();
+    return this.prisma.productAttributeValue.findMany({
+      where: { productId },
+      include: { attributeValue: { include: { attribute: true } } },
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Subproductos (variantes)
+  // -------------------------------------------------------------------------
+  async findVariants(productId: string) {
+    return this.prisma.productVariant.findMany({
+      where: { productId },
+      include: INCLUDE_VARIANTES,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async createVariant(productId: string, dto: CreateVariantDto) {
+    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (!dto.attributeValueIds?.length) {
+      throw new BadRequestException('El subproducto necesita al menos un valor de atributo');
+    }
+
+    const existentes = await this.prisma.productVariant.findMany({
+      where: { productId, isActive: true },
+      include: { values: true },
+    });
+    const combinacionNueva = [...dto.attributeValueIds].sort().join('|');
+    const duplicada = existentes.some(
+      (v) => v.values.map((vv) => vv.attributeValueId).sort().join('|') === combinacionNueva,
+    );
+    if (duplicada) {
+      throw new ConflictException('Ya existe un subproducto con esa combinación de valores');
+    }
+
+    const variant = await this.prisma.productVariant.create({
+      data: {
+        productId,
+        sku: dto.sku || null,
+        salePrice: dto.salePrice ?? null,
+        stock: dto.stock ?? 0,
+        values: {
+          create: dto.attributeValueIds.map((attributeValueId) => ({ attributeValueId })),
+        },
+      },
+      include: INCLUDE_VARIANTES,
+    });
+    await this.recalcularStockPadre(productId);
+    this.botCatalog.invalidate();
+    return variant;
+  }
+
+  async updateVariant(variantId: string, dto: UpdateVariantDto) {
+    const existing = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!existing) throw new NotFoundException('Subproducto no encontrado');
+    const variant = await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data: {
+        stock: dto.stock,
+        salePrice: dto.salePrice,
+        sku: dto.sku,
+        isActive: dto.isActive,
+      },
+      include: INCLUDE_VARIANTES,
+    });
+    await this.recalcularStockPadre(existing.productId);
+    this.botCatalog.invalidate();
+    return variant;
+  }
+
+  async removeVariant(variantId: string) {
+    const existing = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!existing) throw new NotFoundException('Subproducto no encontrado');
+    await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data: { isActive: false },
+    });
+    await this.recalcularStockPadre(existing.productId);
+    this.botCatalog.invalidate();
+    return { success: true };
+  }
+
+  /** Si el producto tiene variantes activas, su stock es la suma de ellas. */
+  async recalcularStockPadre(productId: string) {
+    const agregado = await this.prisma.productVariant.aggregate({
+      where: { productId, isActive: true },
+      _sum: { stock: true },
+    });
+    const suma = agregado._sum.stock;
+    if (suma === null || suma === undefined) return; // sin variantes: stock manual
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { stock: suma, isOutOfStock: suma <= 0 },
+    });
   }
 
   async adjustStock(id: string, quantity: number, reason: string) {

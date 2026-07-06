@@ -138,7 +138,14 @@ export class OrdersService {
       notes?: string;
       source?: OrderSource;
       deliveryCost?: number;
-      items: { productId: string; quantity: number; unitPrice: number; costAtSale: number }[];
+      items: {
+        productId: string;
+        quantity: number;
+        unitPrice: number;
+        costAtSale: number;
+        variantId?: string;
+        variantLabel?: string;
+      }[];
     },
     options?: { commitStock?: boolean; status?: OrderStatus },
   ) {
@@ -172,6 +179,8 @@ export class OrdersService {
               requestedQuantity: item.quantity,
               unitPrice: item.unitPrice,
               costAtSale: item.costAtSale,
+              variantId: item.variantId ?? null,
+              variantLabel: item.variantLabel ?? null,
             })),
           },
         },

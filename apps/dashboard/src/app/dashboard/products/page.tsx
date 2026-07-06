@@ -7,6 +7,8 @@ import { api } from '@/lib/api';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { AtributosProducto } from '@/components/products/AtributosProducto';
+import { SubproductosProducto } from '@/components/products/SubproductosProducto';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -217,6 +219,25 @@ export default function ProductsPage() {
                 >
                   {uploadingImage ? 'Subiendo...' : '+ Agregar foto'}
                 </button>
+              </div>
+            )}
+            {editing && (
+              <div className="md:col-span-2 border-t pt-4">
+                <h3 className="font-medium text-gray-800 mb-3">Atributos del producto</h3>
+                <p className="mb-3 text-sm text-slate-500">
+                  Datos informativos que se muestran en el chat (ej: Marca: Faber · Peso: 2 kg).
+                </p>
+                <AtributosProducto productId={editing.id} />
+              </div>
+            )}
+            {editing && (
+              <div className="md:col-span-2 border-t pt-4">
+                <h3 className="font-medium text-gray-800 mb-3">Subproductos (variantes)</h3>
+                <p className="mb-3 text-sm text-slate-500">
+                  Opciones con stock propio (ej: Rojo / M). El cliente elige una en el chat antes de
+                  la cantidad.
+                </p>
+                <SubproductosProducto productId={editing.id} />
               </div>
             )}
             <div className="md:col-span-2 flex gap-2">

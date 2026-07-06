@@ -947,32 +947,58 @@ Reglas de inventario:
 - Cuando pasa a `CANCELADO`, `OrdersService.updateStatus()` restaura stock si ya estaba comprometido.
 - Cuando pasa a `COMPLETADO`, `OrdersService.updateStatus()` envia el mensaje final de cierre al cliente.
 
-### Orchestrator modular
+### Orquestador por fases (workflow visible)
 
-El motor conversacional vive en `infra/n8n/templates/` como fuentes concatenadas por `build-orchestrator-workflow.js`:
+El motor conversacional vive en `infra/n8n/orquestador/` como módulos en español concatenados por `construir-workflow.js`. El workflow generado tiene nodos visibles por flujo (depurables en el editor n8n):
+
+`Entrada WhatsApp` → `Preparar Contexto` → `Enrutador de Fase` (Switch) → `Flujo Menú` / `Flujo Catálogo` / `Flujo Carrito` / `Flujo Checkout` / `Flujo Pedido` / `Flujo Asesor` → `Guardar Sesión y Responder` → `Responder a Zent`
 
 | Ruta | Rol |
 |------|-----|
-| `shared/zent-intent.source.js` | Intents globales (`catálogo`, `reset`, `handoff`, …) |
-| `shared/zent-product-utils.source.js` | Fuzzy match, listas, carrito |
-| `shared/zent-flow-patch.source.js` | `applyFlowPatch` entre rondas del tool loop |
-| `shared/zent-catalog-render.source.js` | `enterBrowseCategories`, lista de categorías |
-| `flows/zent-flow-*.source.js` | Handlers por fase (`menu`, `catalog`, `cart`, `checkout`, `order`) |
-| `zent-orchestrator-router.source.js` | Router delgado que delega por `flow.phase` |
+| `nucleo/intencion.js` | Normalización + intención global (`saludo`, `catalogo`, `asesor`, …) |
+| `nucleo/productos.js` | Búsqueda difusa, listas, resumen de carrito |
+| `nucleo/copys.js` | Anti-repetición de copys y bienvenida compartida |
+| `nucleo/sesion.js` | `aplicarParche(sesion, parche)` |
+| `flujos/*.js` | Un flujo async por grupo de fases; llaman tools con `await` directo (sin fillers) |
+| `construir-workflow.js` | Genera `zent-orquestador.workflow.json` |
 
-Los números `1/2/3` solo se interpretan dentro del handler activo (`browse_categories`, `browse_products`, `product_detail`). En `cart` y `checkout_*` no son selección de producto.
+Reglas clave:
+
+- Cada flujo llama las tools del backend con `await` — no existe loop interno ni respuestas "Un momentito".
+- El resumen del carrito **siempre** usa el objeto devuelto por la tool (`cart.get` / `cart.add_item`), nunca la sesión.
+- Números `1/2/3` solo se interpretan en `Flujo Catálogo` (categoría → producto → cantidad). En carrito y checkout no son selección.
+- `hola` resetea al menú desde cualquier fase **excepto** checkout.
 
 **Checklist tras cambiar el orquestador:**
 
-1. Ejecutar tests locales: `node infra/n8n/templates/test-orchestrator-*.js`
-2. Regenerar JSON: `node infra/n8n/templates/build-orchestrator-workflow.js`
-3. Reimportar `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json` en n8n y **activar**
-4. Desactivar el workflow legacy `zent-whatsapp-sales-chat` si sigue activo
+1. Tests locales (desde `infra/n8n/orquestador/`): `node pruebas/prueba-intencion.js && node pruebas/prueba-menu.js && node pruebas/prueba-catalogo.js && node pruebas/prueba-carrito.js && node pruebas/prueba-checkout.js && node pruebas/prueba-conversacion.js`
+2. Regenerar JSON: `node infra/n8n/orquestador/construir-workflow.js`
+3. Importar `infra/n8n/orquestador/zent-orquestador.workflow.json` en n8n y **activar**
+4. **Desactivar** los workflows legacy: `Zent WhatsApp Orchestrator` (templates) y `Zent WhatsApp Sales Chat`
 5. Smoke en WhatsApp (sandbox):
-   - Carrito con productos → escribir **catálogo** → debe listar categorías (no "Un momentito…")
-   - Elegir categoría → productos → **1** → foto + pedir cantidad
-   - **confirmar pedido** → **sí** → pedido registrado
-6. En logs n8n/backend, verificar que `chat.session.patch` persiste `phase: browse_categories` tras catálogo desde carrito
+   - `hola` → saludo + menú (nunca "producto no lo ubico")
+   - `catálogo` → categorías inmediatas (sin "momentito")
+   - número → productos → número → foto + pedir cantidad
+   - cantidad → **resumen con items y total reales** (nunca en blanco)
+   - `catálogo` desde carrito → categorías
+   - `confirmar pedido` → `sí` → `sí` → pedido creado
+   - `pedido` → estado; `asesor` → handoff
+6. En la ejecución n8n, cada mensaje muestra la rama del Switch que tomó — revisar ahí ante cualquier respuesta rara
+
+### Atributos y subproductos (variantes)
+
+- Migración: `npx prisma migrate deploy` aplica `20260706020000_atributos_y_variantes` (crea `attributes`, `attribute_values`, `product_attribute_values`, `product_variants`, `variant_values` y agrega `variantId`/`variantLabel` a `order_items`; siembra los atributos base Color, Material, Textura, Peso, Alto, Ancho, Voltaje, Talla y Marca sin valores).
+- Dashboard: nueva sección **Atributos** (crear valores tipo Rojo, M, 220V) y en el formulario del producto los bloques **Atributos del producto** (informativos) y **Subproductos** (combinación + stock propio + precio opcional).
+- Si un producto tiene subproductos activos, su stock pasa a ser la **suma** de las variantes (se recalcula al crear/editar/eliminar variantes y al confirmar/cancelar pedidos).
+- Chat: los atributos informativos salen como `📋 Marca: Faber · Peso: 2 kg`; si hay variantes con stock, el bot pide la opción (`1️⃣ Rojo / M — S/ 50.00`) **antes** de la cantidad y `cart.add_item` valida stock por variante.
+
+**Smoke de atributos (tras deploy):**
+
+1. Dashboard → Atributos → agregar valores a Color (ej: Rojo, Azul)
+2. Dashboard → Productos → editar un producto → asignar atributos informativos → guardar
+3. Mismo producto → crear 2 subproductos (Rojo stock 3, Azul stock 2) → el stock del producto debe quedar en 5
+4. WhatsApp: elegir ese producto → debe listar `1️⃣ Rojo … 2️⃣ Azul …` → elegir → cantidad → resumen con la etiqueta y el precio de la variante
+5. Confirmar pedido y aceptarlo en el dashboard → el stock de la variante elegida baja y el del padre se recalcula
 
 Prueba manual recomendada (orquestador unificado):
 

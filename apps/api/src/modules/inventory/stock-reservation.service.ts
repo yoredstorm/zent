@@ -113,6 +113,21 @@ export class StockReservationService implements OnModuleInit {
           `No hay stock suficiente para confirmar el pedido (${product?.nombre ?? item.productId})`,
         );
       }
+      // Ítems con subproducto descuentan el stock de la variante también
+      if (item.variantId) {
+        const variant = await db.productVariant.findUnique({ where: { id: item.variantId } });
+        if (variant) {
+          if (variant.stock < item.quantity) {
+            throw new BadRequestException(
+              `No hay stock suficiente de la opción "${item.variantLabel ?? item.variantId}"`,
+            );
+          }
+          await db.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+      }
       const stockAfter = (product?.stock ?? 0) - item.quantity;
       await db.product.update({
         where: { id: item.productId },
@@ -152,6 +167,15 @@ export class StockReservationService implements OnModuleInit {
 
     for (const item of order.items) {
       if (item.quantity <= 0) continue;
+      if (item.variantId) {
+        const variant = await db.productVariant.findUnique({ where: { id: item.variantId } });
+        if (variant) {
+          await db.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
       const product = await db.product.findUnique({ where: { id: item.productId } });
       const stockAfter = (product?.stock ?? 0) + item.quantity;
       await db.product.update({

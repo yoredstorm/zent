@@ -12,7 +12,23 @@ import { N8nSessionToolsService } from './n8n-session-tools.service';
 import type { N8nFlowContext } from './n8n-flow.types';
 import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 
-type ChatOrderItem = { productId: string; quantity: number };
+type ChatOrderItem = { productId: string; quantity: number; variantId?: string };
+
+const INCLUDE_PRODUCTO_CHAT = {
+  images: { orderBy: { orden: 'asc' as const } },
+  category: true,
+  attributeValues: { include: { attributeValue: { include: { attribute: true } } } },
+  variants: {
+    where: { isActive: true },
+    include: { values: { include: { attributeValue: { include: { attribute: true } } } } },
+  },
+};
+
+function etiquetaVariante(variant: {
+  values: { attributeValue: { valor: string } }[];
+}): string {
+  return variant.values.map((v) => v.attributeValue.valor).join(' / ');
+}
 
 @ApiTags('n8n-tools')
 @Controller('webhooks/n8n/tools')
@@ -62,7 +78,7 @@ export class N8nCommerceToolsController {
             }
           : {}),
       },
-      include: { images: { orderBy: { orden: 'asc' } }, category: true },
+      include: INCLUDE_PRODUCTO_CHAT,
       orderBy: { nombre: 'asc' },
       take: Math.min(body.limit ?? 10, 30),
     });
@@ -74,7 +90,7 @@ export class N8nCommerceToolsController {
   async productsByCategory(@Body() body: { categoryId: string; limit?: number }) {
     const rows = await this.prisma.product.findMany({
       where: { categoryId: body.categoryId, isActive: true, stock: { gt: 0 } },
-      include: { images: { orderBy: { orden: 'asc' } }, category: true },
+      include: INCLUDE_PRODUCTO_CHAT,
       orderBy: { nombre: 'asc' },
       take: Math.min(body.limit ?? 20, 50),
     });
@@ -169,6 +185,7 @@ export class N8nCommerceToolsController {
       customerName?: string;
       productId: string;
       quantity: number;
+      variantId?: string;
     },
   ) {
     if (!body.stateKey?.trim()) throw new BadRequestException('stateKey is required');
@@ -182,6 +199,29 @@ export class N8nCommerceToolsController {
       throw new NotFoundException(`Producto no encontrado: ${body.productId}`);
     }
 
+    let variant: {
+      id: string;
+      stock: number;
+      salePrice: unknown;
+      values: { attributeValue: { valor: string } }[];
+    } | null = null;
+    if (body.variantId?.trim()) {
+      variant = await this.prisma.productVariant.findUnique({
+        where: { id: body.variantId },
+        include: { values: { include: { attributeValue: true } } },
+      });
+      if (!variant || (variant as any).productId !== product.id || !(variant as any).isActive) {
+        throw new NotFoundException(`Subproducto no encontrado: ${body.variantId}`);
+      }
+      if (body.quantity > variant.stock) {
+        throw new BadRequestException(
+          variant.stock <= 0
+            ? 'Esa opción está sin stock'
+            : `De esa opción solo hay ${variant.stock} unidad(es)`,
+        );
+      }
+    }
+
     const held = await this.cartHold.getHeldQuantity(body.productId, body.stateKey);
     const available = product.stock - held;
     if (body.quantity > available) {
@@ -190,12 +230,18 @@ export class N8nCommerceToolsController {
       );
     }
 
+    const variantLabel = variant ? etiquetaVariante(variant) : undefined;
     const cart = await this.cart.addItem(body.stateKey, {
       productId: product.id,
-      nombre: product.nombre,
+      nombre: variantLabel ? `${product.nombre} (${variantLabel})` : product.nombre,
       quantity: body.quantity,
-      unitPrice: Number(product.salePrice),
+      unitPrice:
+        variant && variant.salePrice != null
+          ? Number(variant.salePrice)
+          : Number(product.salePrice),
       costAtSale: Number(product.costPrice),
+      variantId: variant?.id,
+      variantLabel,
     });
 
     await this.cartHold.syncFromCart(body.stateKey, cart, {
@@ -322,11 +368,26 @@ export class N8nCommerceToolsController {
         if (!product || !product.isActive) {
           throw new NotFoundException(`Producto no encontrado: ${item.productId}`);
         }
+        let unitPrice = Number(product.salePrice);
+        let variantLabel: string | undefined;
+        if (item.variantId?.trim()) {
+          const variant = await this.prisma.productVariant.findUnique({
+            where: { id: item.variantId },
+            include: { values: { include: { attributeValue: true } } },
+          });
+          if (!variant || variant.productId !== product.id) {
+            throw new NotFoundException(`Subproducto no encontrado: ${item.variantId}`);
+          }
+          if (variant.salePrice != null) unitPrice = Number(variant.salePrice);
+          variantLabel = etiquetaVariante(variant);
+        }
         return {
           productId: product.id,
           quantity: item.quantity,
-          unitPrice: Number(product.salePrice),
+          unitPrice,
           costAtSale: Number(product.costPrice),
+          variantId: item.variantId?.trim() || undefined,
+          variantLabel,
         };
       }),
     );
@@ -436,7 +497,30 @@ export class N8nCommerceToolsController {
     minStock: number;
     category?: { nombre: string } | null;
     images?: { url: string }[];
+    attributeValues?: {
+      attributeValue: { valor: string; attribute: { nombre: string } };
+    }[];
+    variants?: {
+      id: string;
+      stock: number;
+      salePrice: unknown;
+      values: { attributeValue: { valor: string; attribute: { nombre: string } } }[];
+    }[];
   }) {
+    // "Marca: Faber · Peso: 2 kg" — atributos informativos para la descripción del chat
+    const atributos =
+      row.attributeValues
+        ?.map((pav) => `${pav.attributeValue.attribute.nombre}: ${pav.attributeValue.valor}`)
+        .join(' · ') || null;
+    const variantes =
+      row.variants
+        ?.filter((v) => v.stock > 0)
+        .map((v) => ({
+          id: v.id,
+          etiqueta: etiquetaVariante(v),
+          precio: v.salePrice != null ? Number(v.salePrice) : Number(row.salePrice),
+          stock: v.stock,
+        })) ?? [];
     return {
       id: row.id,
       name: row.nombre,
@@ -447,6 +531,8 @@ export class N8nCommerceToolsController {
       lowStock: row.stock <= row.minStock,
       category: row.category?.nombre ?? null,
       imageUrl: row.images?.[0]?.url ?? null,
+      atributos,
+      variantes,
     };
   }
 

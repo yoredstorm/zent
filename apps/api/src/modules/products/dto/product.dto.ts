@@ -96,3 +96,53 @@ export class UploadImageDto {
   @IsNumber()
   orden?: number;
 }
+
+export class SetProductAttributesDto {
+  @ApiProperty({ type: [String], description: 'IDs de valores de atributo asignados al producto' })
+  @IsArray()
+  @IsString({ each: true })
+  attributeValueIds: string[];
+}
+
+export class CreateVariantDto {
+  @ApiProperty({ type: [String], description: 'Combinación de valores que define el subproducto' })
+  @IsArray()
+  @IsString({ each: true })
+  attributeValueIds: string[];
+
+  @ApiProperty()
+  @IsNumber()
+  stock: number;
+
+  @ApiPropertyOptional({ description: 'Precio propio; si se omite hereda el del producto' })
+  @IsOptional()
+  @IsNumber()
+  salePrice?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  sku?: string;
+}
+
+export class UpdateVariantDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  stock?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  salePrice?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

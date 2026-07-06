@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProductsModule } from './modules/products/products.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { AttributesModule } from './modules/attributes/attributes.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -34,6 +35,7 @@ import { SeedService } from './seed.service';
     AuthModule,
     ProductsModule,
     CategoriesModule,
+    AttributesModule,
     InventoryModule,
     RealtimeModule,
     OpenwaModule,

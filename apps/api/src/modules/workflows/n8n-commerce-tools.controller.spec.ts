@@ -29,11 +29,15 @@ describe('N8nCommerceToolsController', () => {
         costPrice: { toString: () => '7' },
       }),
     };
+    const productVariant = {
+      findUnique: jest.fn().mockResolvedValue(null),
+    };
     const prisma = {
       category: {
         findMany: categories.findAll,
       },
       product: products,
+      productVariant,
       catalogPdf: {
         findFirst: jest.fn().mockResolvedValue({ id: 'pdf_1', url: 'https://cdn.test/catalog.pdf' }),
       },
@@ -90,6 +94,7 @@ describe('N8nCommerceToolsController', () => {
       controller,
       categories,
       products,
+      productVariant,
       prisma,
       orders,
       openwa,
@@ -165,9 +170,123 @@ describe('N8nCommerceToolsController', () => {
           lowStock: false,
           category: 'Bebidas',
           imageUrl: 'https://img.test/cafe.png',
+          atributos: null,
+          variantes: [],
         },
       ],
     });
+  });
+
+  it('productForChat expone atributos y variantes con stock', () => {
+    const { controller } = createController();
+    const result = (controller as any).productForChat({
+      id: 'p1',
+      nombre: 'Polo',
+      descripcion: '',
+      salePrice: 50,
+      stock: 5,
+      minStock: 1,
+      category: { nombre: 'Ropa' },
+      images: [],
+      attributeValues: [
+        { attributeValue: { valor: 'Faber', attribute: { nombre: 'Marca' } } },
+        { attributeValue: { valor: '2 kg', attribute: { nombre: 'Peso' } } },
+      ],
+      variants: [
+        {
+          id: 'v1',
+          stock: 3,
+          salePrice: null,
+          values: [
+            { attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } },
+            { attributeValue: { valor: 'M', attribute: { nombre: 'Talla' } } },
+          ],
+        },
+        {
+          id: 'v2',
+          stock: 0,
+          salePrice: 60,
+          values: [{ attributeValue: { valor: 'Azul', attribute: { nombre: 'Color' } } }],
+        },
+      ],
+    });
+    expect(result.atributos).toBe('Marca: Faber · Peso: 2 kg');
+    expect(result.variantes).toEqual([{ id: 'v1', etiqueta: 'Rojo / M', precio: 50, stock: 3 }]);
+  });
+
+  it('cart.add_item con variantId valida stock y usa precio de la variante', async () => {
+    const { controller, cartService, productVariant } = createController();
+    productVariant.findUnique.mockResolvedValue({
+      id: 'v1',
+      productId: 'prod_1',
+      isActive: true,
+      stock: 4,
+      salePrice: { toString: () => '15' },
+      values: [{ attributeValue: { valor: 'Rojo' } }],
+    });
+    await controller.cartAddItem({
+      stateKey: 'sess::chat1',
+      chatId: 'chat1',
+      productId: 'prod_1',
+      quantity: 2,
+      variantId: 'v1',
+    });
+    expect(cartService.addItem).toHaveBeenCalledWith(
+      'sess::chat1',
+      expect.objectContaining({
+        variantId: 'v1',
+        variantLabel: 'Rojo',
+        nombre: 'Cafe (Rojo)',
+        unitPrice: 15,
+      }),
+    );
+  });
+
+  it('cart.add_item con variante sin stock rechaza', async () => {
+    const { controller, cartService, productVariant } = createController();
+    productVariant.findUnique.mockResolvedValue({
+      id: 'v1',
+      productId: 'prod_1',
+      isActive: true,
+      stock: 1,
+      salePrice: null,
+      values: [{ attributeValue: { valor: 'Rojo' } }],
+    });
+    await expect(
+      controller.cartAddItem({
+        stateKey: 'sess::chat1',
+        chatId: 'chat1',
+        productId: 'prod_1',
+        quantity: 3,
+        variantId: 'v1',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(cartService.addItem).not.toHaveBeenCalled();
+  });
+
+  it('create_from_chat propaga variantId y variantLabel al pedido', async () => {
+    const { controller, orders, productVariant } = createController();
+    productVariant.findUnique.mockResolvedValue({
+      id: 'v1',
+      productId: 'prod_1',
+      isActive: true,
+      stock: 4,
+      salePrice: null,
+      values: [{ attributeValue: { valor: 'Rojo' } }],
+    });
+    await controller.createOrderFromChat({
+      chatId: 'chat1',
+      customerName: 'Ana',
+      customerPhone: '51999999999',
+      items: [{ productId: 'prod_1', quantity: 2, variantId: 'v1' }],
+    });
+    expect(orders.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({ productId: 'prod_1', variantId: 'v1', variantLabel: 'Rojo' }),
+        ],
+      }),
+    );
   });
 
   it('productForChat marks lowStock when stock <= minStock', () => {

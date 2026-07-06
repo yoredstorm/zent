@@ -1,7 +1,14 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
-import { CreateProductDto, UpdateProductDto, UploadImageDto } from './dto/product.dto';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  UploadImageDto,
+  SetProductAttributesDto,
+  CreateVariantDto,
+  UpdateVariantDto,
+} from './dto/product.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -70,5 +77,39 @@ export class ProductsController {
   @ApiOperation({ summary: 'Delete product image' })
   deleteImage(@Param('imageId') imageId: string) {
     return this.products.deleteImage(imageId);
+  }
+
+  @Put(':id/attributes')
+  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @ApiOperation({ summary: 'Asignar valores de atributo (informativos) al producto' })
+  setAttributes(@Param('id') id: string, @Body() dto: SetProductAttributesDto) {
+    return this.products.setAttributes(id, dto.attributeValueIds);
+  }
+
+  @Get(':id/variants')
+  @ApiOperation({ summary: 'Listar subproductos del producto' })
+  findVariants(@Param('id') id: string) {
+    return this.products.findVariants(id);
+  }
+
+  @Post(':id/variants')
+  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @ApiOperation({ summary: 'Crear subproducto (combinación + stock + precio opcional)' })
+  createVariant(@Param('id') id: string, @Body() dto: CreateVariantDto) {
+    return this.products.createVariant(id, dto);
+  }
+
+  @Put('variants/:variantId')
+  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @ApiOperation({ summary: 'Actualizar subproducto' })
+  updateVariant(@Param('variantId') variantId: string, @Body() dto: UpdateVariantDto) {
+    return this.products.updateVariant(variantId, dto);
+  }
+
+  @Delete('variants/:variantId')
+  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @ApiOperation({ summary: 'Desactivar subproducto' })
+  removeVariant(@Param('variantId') variantId: string) {
+    return this.products.removeVariant(variantId);
   }
 }

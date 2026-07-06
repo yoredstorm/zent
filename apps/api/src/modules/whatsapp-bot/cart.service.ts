@@ -69,7 +69,9 @@ export class CartService {
 
   async addItem(chatId: string, item: CartItem): Promise<Cart> {
     const cart = await this.getCart(chatId);
-    const existing = cart.items.find((i) => i.productId === item.productId);
+    const existing = cart.items.find(
+      (i) => i.productId === item.productId && (i.variantId ?? null) === (item.variantId ?? null),
+    );
     if (existing) {
       existing.quantity += item.quantity;
     } else {
