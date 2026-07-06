@@ -45,7 +45,11 @@ export class ProductsService {
   async findAll() {
     return this.prisma.product.findMany({
       where: { isActive: true },
-      include: { images: { orderBy: { orden: 'asc' } }, category: true },
+      include: {
+        images: { orderBy: { orden: 'asc' } },
+        category: true,
+        variants: { where: { isActive: true }, include: INCLUDE_VARIANTES },
+      },
       orderBy: { nombre: 'asc' },
     });
   }
@@ -65,11 +69,19 @@ export class ProductsService {
   }
 
   async update(id: string, dto: UpdateProductDto) {
+    const variantesActivas = await this.prisma.productVariant.count({
+      where: { productId: id, isActive: true },
+    });
+    const data: any = { ...dto };
+    if (variantesActivas > 0) {
+      // El stock del padre es la suma de variantes; no se edita a mano
+      delete data.stock;
+    }
     const product = await this.prisma.product.update({
       where: { id },
       data: {
-        ...dto,
-        isOutOfStock: dto.stock !== undefined ? dto.stock <= 0 : undefined,
+        ...data,
+        isOutOfStock: data.stock !== undefined ? data.stock <= 0 : undefined,
       },
       include: { images: true, category: true },
     });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -20,6 +20,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState({ sku: '', nombre: '', descripcion: '', categoryId: '', costPrice: 0, salePrice: 0, stock: 0, minStock: 0 });
   const [productImages, setProductImages] = useState<any[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [expandido, setExpandido] = useState<string | null>(null);
   const imageRef = useRef<HTMLInputElement>(null);
   const formSectionRef = useRef<HTMLDivElement>(null);
 
@@ -184,7 +185,17 @@ export default function ProductsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Stock</label>
-              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) })} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              <input
+                type="number"
+                value={form.stock}
+                onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) })}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={(editing?.variants?.length ?? 0) > 0}
+                required
+              />
+              {(editing?.variants?.length ?? 0) > 0 && (
+                <p className="mt-1 text-xs text-slate-400">Calculado automáticamente: suma de subproductos.</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Stock Mínimo</label>
@@ -279,7 +290,8 @@ export default function ProductsPage() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {products.map((p: any) => (
-              <tr key={p.id}>
+              <React.Fragment key={p.id}>
+              <tr>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{p.sku}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {p.images?.[0] ? (
@@ -294,9 +306,20 @@ export default function ProductsPage() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">S/ {Number(p.salePrice).toFixed(2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">S/ {(Number(p.salePrice) - Number(p.costPrice)).toFixed(2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${p.stock <= p.minStock ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                    {p.stock}
-                  </span>
+                  {p.variants?.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setExpandido(expandido === p.id ? null : p.id)}
+                      className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                    >
+                      {p.stock} en {p.variants.length} {p.variants.length === 1 ? 'opción' : 'opciones'}{' '}
+                      {expandido === p.id ? '▾' : '▸'}
+                    </button>
+                  ) : (
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${p.stock <= p.minStock ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                      {p.stock}
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Editar</button>
@@ -304,6 +327,26 @@ export default function ProductsPage() {
                   <button onClick={() => handleDelete(p.id)} className="text-red-600 hover:text-red-800">Eliminar</button>
                 </td>
               </tr>
+              {expandido === p.id && p.variants?.length > 0 && (
+                <tr className="bg-slate-50">
+                  <td colSpan={9} className="px-6 py-3">
+                    <p className="mb-2 text-xs font-medium uppercase text-slate-400">
+                      Subproductos — el stock del producto es la suma de estas opciones
+                    </p>
+                    {p.variants.map((v: any) => (
+                      <div key={v.id} className="flex justify-between border-b border-slate-100 py-1 text-sm last:border-b-0">
+                        <span className="text-slate-700">
+                          {v.values?.map((x: any) => x.attributeValue?.valor).filter(Boolean).join(' / ') || v.sku || 'Opción'}
+                        </span>
+                        <span className={v.stock <= 0 ? 'font-medium text-red-600' : 'text-slate-600'}>
+                          {v.stock} uds — S/ {Number(v.salePrice ?? p.salePrice).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

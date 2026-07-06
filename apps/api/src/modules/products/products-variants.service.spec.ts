@@ -94,6 +94,25 @@ describe('ProductsService — atributos y variantes', () => {
     expect(prisma.product.update).not.toHaveBeenCalled();
   });
 
+  it('update ignora stock manual si el producto tiene variantes activas', async () => {
+    const { service, prisma } = createService();
+    prisma.productVariant.count = jest.fn().mockResolvedValue(2);
+    prisma.product.update.mockResolvedValue({ id: 'p1' });
+    await service.update('p1', { stock: 99 } as any);
+    const data = prisma.product.update.mock.calls[0][0].data;
+    expect(data.stock).toBeUndefined();
+  });
+
+  it('update aplica stock manual si el producto no tiene variantes', async () => {
+    const { service, prisma } = createService();
+    prisma.productVariant.count = jest.fn().mockResolvedValue(0);
+    prisma.product.update.mockResolvedValue({ id: 'p1' });
+    await service.update('p1', { stock: 99 } as any);
+    const data = prisma.product.update.mock.calls[0][0].data;
+    expect(data.stock).toBe(99);
+    expect(data.isOutOfStock).toBe(false);
+  });
+
   it('updateVariant inexistente lanza NotFound', async () => {
     const { service, prisma } = createService();
     prisma.productVariant.findUnique.mockResolvedValue(null);
