@@ -79,14 +79,22 @@ export class ReportsService {
       },
     });
 
-    const productMap = new Map<string, { id: string; sku: string; nombre: string; totalSold: number; revenue: number; profit: number }>();
+    const productMap = new Map<
+      string,
+      { id: string; sku: string; nombre: string; variantLabel: string | null; totalSold: number; revenue: number; profit: number }
+    >();
 
     for (const order of orders) {
       for (const item of order.items) {
-        const existing = productMap.get(item.productId) || {
+        // Agrupar por producto+variante: "Polo — Rojo / M" se reporta aparte de "Polo — Azul / L"
+        const clave = `${item.productId}::${item.variantLabel ?? ''}`;
+        const existing = productMap.get(clave) || {
           id: String(item.product.id),
           sku: item.product.sku,
-          nombre: item.product.nombre,
+          nombre: item.variantLabel
+            ? `${item.product.nombre} — ${item.variantLabel}`
+            : item.product.nombre,
+          variantLabel: item.variantLabel ?? null,
           totalSold: 0,
           revenue: 0,
           profit: 0,
@@ -94,7 +102,7 @@ export class ReportsService {
         existing.totalSold += item.quantity;
         existing.revenue += Number(item.unitPrice) * item.quantity;
         existing.profit += (Number(item.unitPrice) - Number(item.costAtSale)) * item.quantity;
-        productMap.set(item.productId, existing);
+        productMap.set(clave, existing);
       }
     }
 

@@ -192,11 +192,22 @@ export default function ReportsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {topProducts.map((p: any, i: number) => (
-                    <tr key={p.id}>
+                    <tr key={`${p.id}-${p.variantLabel ?? ''}`}>
                       <td className="whitespace-nowrap px-6 py-4 text-sm tabular-nums text-slate-500">
                         {i + 1}
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-900">{p.nombre}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-900">
+                        {p.variantLabel ? (
+                          <>
+                            {p.nombre.replace(` — ${p.variantLabel}`, '')}
+                            <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700">
+                              {p.variantLabel}
+                            </span>
+                          </>
+                        ) : (
+                          p.nombre
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-medium tabular-nums">
                         {p.totalSold}
                       </td>

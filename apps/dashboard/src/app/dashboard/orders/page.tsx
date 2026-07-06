@@ -472,6 +472,9 @@ export default function OrdersPage() {
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex-1">
                         <div className="font-medium">{item.product?.nombre}</div>
+                        {item.variantLabel && (
+                          <div className="text-xs font-medium text-indigo-600">Opción: {item.variantLabel}</div>
+                        )}
                         {requested !== item.quantity && (
                           <div className="text-xs text-gray-500">Pedido original: {requested}</div>
                         )}
