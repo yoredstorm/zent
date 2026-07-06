@@ -27,10 +27,12 @@ describe('N8nChatBridgeService', () => {
         flow: { phase: 'greeting' },
         cart: { items: [], subtotal: 0, deliveryCost: 0, total: 0 },
         cartTtlMinutes: 30,
-        storeName: 'Zent',
+        storeName: 'Ohana',
+        localHour: 10,
         botPaused: false,
       }),
       handoff: jest.fn().mockResolvedValue({ ok: true, botPaused: true }),
+      patchFlow: jest.fn().mockResolvedValue({ phase: 'main_menu' }),
     };
     return {
       service: new N8nChatBridgeService(
@@ -164,6 +166,48 @@ describe('N8nChatBridgeService', () => {
       sessionId: 'session_1',
       text: 'Producto agregado.',
     });
+  });
+
+  it('falls back to greeting+menu when n8n fails on hola', async () => {
+    const fetchMock = jest.fn().mockRejectedValue(new Error('fetch failed'));
+    const { service, openwa, sessionTools } = createService(fetchMock);
+
+    const result = await service.handleMessage({
+      chatId: '51999999999@c.us',
+      waSessionId: 'session_1',
+      contactPhone: '51999999999',
+      message: 'hola',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.replied).toBe(true);
+    expect(result.metadata?.localGreetingFallback).toBe(true);
+    expect(openwa.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringMatching(/Ohana.*Catálogo.*Mi pedido/s),
+      }),
+    );
+    expect(sessionTools.patchFlow).toHaveBeenCalledWith('session_1::51999999999@c.us', {
+      phase: 'main_menu',
+    });
+  });
+
+  it('uses technical fallback for non-greeting when n8n fails', async () => {
+    const fetchMock = jest.fn().mockRejectedValue(new Error('404 Not Found'));
+    const { service, openwa } = createService(fetchMock);
+
+    await service.handleMessage({
+      chatId: '51999999999@c.us',
+      waSessionId: 'session_1',
+      contactPhone: '51999999999',
+      message: 'quiero el catalogo de zapatos',
+    });
+
+    expect(openwa.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringMatching(/problema técnico/i),
+      }),
+    );
   });
 
   it('does not handle messages when chat mode is enabled without a signing secret', () => {

@@ -5,6 +5,10 @@ import { OpenwaService } from '../openwa/openwa.service';
 import { BotTurnLogService } from '../whatsapp-bot/bot-turn-log.service';
 import { WORKFLOW_FETCH } from './workflow-events.service';
 import { N8nSessionToolsService } from './n8n-session-tools.service';
+import { buildN8nGreetingFallback, isGreetingLikeMessage } from './n8n-message-intent.util';
+
+const FALLBACK_TEXT =
+  'Disculpa, hubo un problema técnico. Intenta de nuevo en un momento o escribe *asesor* para hablar con una persona.';
 
 export interface N8nChatBridgeInput {
   chatId: string;
@@ -70,6 +74,7 @@ export class N8nChatBridgeService {
     runtime?: N8nChatBridgeRuntime,
   ): Promise<N8nChatBridgeResult> {
     const startedAt = Date.now();
+    const stateKey = input.waSessionId ? `${input.waSessionId}::${input.chatId}` : input.chatId;
     const logId = await this.turnLog.startTurn({
       stateKey: input.waSessionId ? `${input.waSessionId}:${input.chatId}` : input.chatId,
       chatId: input.chatId,
@@ -78,16 +83,16 @@ export class N8nChatBridgeService {
       userMessage: input.message.slice(0, 2000),
     });
 
+    const session = await this.sessionTools.bootstrap({
+      chatId: stateKey,
+      stateKey,
+      contactPhone: input.contactPhone,
+      message: input.message,
+    });
+
     try {
       const secret = runtime?.webhookSecret ?? this.secret();
       const zentApiUrl = this.zentApiUrl();
-      const stateKey = input.waSessionId ? `${input.waSessionId}::${input.chatId}` : input.chatId;
-      const session = await this.sessionTools.bootstrap({
-        chatId: stateKey,
-        stateKey,
-        contactPhone: input.contactPhone,
-        message: input.message,
-      });
       const payload = {
         chatId: input.chatId,
         waSessionId: input.waSessionId,
@@ -186,16 +191,31 @@ export class N8nChatBridgeService {
       await this.turnLog.completeTurn(logId, reply, Date.now() - startedAt);
       return { ok: true, replied: true, handoff: data.handoff, metadata: data.metadata };
     } catch (err: any) {
-      const fallback =
-        'Estoy revisando tu mensaje con el equipo de ventas. Te responderemos en breve para continuar con tu pedido.';
-      this.logger.warn(`n8n chat bridge fallback: ${err?.message || String(err)}`);
+      const errMsg = err?.message || String(err);
+      this.logger.error(
+        `n8n chat webhook failed (${runtime?.chatWebhookUrl ?? this.chatWebhookUrl()}): ${errMsg}`,
+      );
+
+      let fallback = FALLBACK_TEXT;
+      let metadata: Record<string, unknown> = { n8nError: errMsg };
+
+      if (isGreetingLikeMessage(input.message)) {
+        fallback = buildN8nGreetingFallback(session);
+        metadata = { ...metadata, localGreetingFallback: true };
+        try {
+          await this.sessionTools.patchFlow(stateKey, { phase: 'main_menu' });
+        } catch (patchErr: any) {
+          this.logger.warn(`patchFlow after n8n fallback failed: ${patchErr?.message || patchErr}`);
+        }
+      }
+
       await this.openwa.sendText({
         chatId: input.chatId,
         sessionId: input.waSessionId,
         text: fallback,
       });
-      await this.turnLog.failTurn(logId, err?.message || String(err), fallback);
-      return { ok: false, replied: true, error: err?.message || String(err) };
+      await this.turnLog.failTurn(logId, errMsg, fallback);
+      return { ok: false, replied: true, error: errMsg, metadata };
     }
   }
 
