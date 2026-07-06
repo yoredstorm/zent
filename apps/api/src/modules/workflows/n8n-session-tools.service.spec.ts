@@ -66,6 +66,24 @@ describe('N8nSessionToolsService', () => {
     expect(res.flow.phase).toBe('greeting');
   });
 
+  it('bootstrap resets browse_products on hola', async () => {
+    const { service, chatSession } = createService();
+    chatSession.getContext.mockResolvedValue({
+      n8nFlow: {
+        phase: 'browse_products',
+        categoryName: 'oficina',
+        lastProductList: [{ id: 'p1', name: 'papel grueso', price: 50 }],
+      },
+    });
+    const res = await service.bootstrap({
+      chatId: 'c1',
+      stateKey: 's::c1',
+      contactPhone: '51999',
+      message: 'hola',
+    });
+    expect(res.flow.phase).toBe('greeting');
+  });
+
   it('bootstrap keeps browse_products when user sends a menu number', async () => {
     const { service, chatSession } = createService();
     chatSession.getContext.mockResolvedValue({

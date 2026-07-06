@@ -77,7 +77,7 @@ if (r2.reply.includes('S/ 50.00') || r2.reply.includes('papel grueso')) {
   console.error('FAIL should not repeat product header after image:', r2.reply);
   process.exit(1);
 }
-if (!r2.reply.includes('cantidad') && !r2.reply.includes('unidades')) {
+if (!/cantidad|cuántas|unidades/i.test(r2.reply)) {
   console.error('FAIL should ask quantity:', r2.reply);
   process.exit(1);
 }

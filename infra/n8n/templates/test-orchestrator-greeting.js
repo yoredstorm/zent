@@ -40,6 +40,16 @@ if (!holaMenu.reply.includes('¿En qué te ayudo') && !holaMenu.reply.includes('
   process.exit(1);
 }
 
+const holaProducts = run('hola', {
+  phase: 'browse_products',
+  categoryName: 'oficina',
+  lastProductList: [{ id: 'p1', name: 'papel', price: 10 }],
+});
+if (holaProducts.reply.includes('producto no lo ubico') || !holaProducts.reply.includes('Mi Tienda')) {
+  console.error('FAIL hola in browse_products:', holaProducts.reply);
+  process.exit(1);
+}
+
 const markdown = run('*hola*', { phase: 'main_menu' });
 if (markdown.reply.includes('No me quedó claro')) {
   console.error('FAIL *hola* markdown:', markdown.reply);

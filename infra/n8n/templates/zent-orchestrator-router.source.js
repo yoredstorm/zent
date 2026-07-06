@@ -67,10 +67,21 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     return { reply, nextPhase: 'main_menu', handoff: false, toolCalls, patch, media };
   }
 
+  // Saludo reinicia desde cualquier fase excepto checkout (incluye catálogo atascado)
   if (
-    (intent === 'greeting' || (flow.phase === 'main_menu' && intent === 'freeform' && msg.length <= 40)) &&
-    !checkoutPhases.includes(flow.phase) &&
-    !browsePhases.includes(flow.phase)
+    (intent === 'greeting' || isGreetingLike(msg)) &&
+    !checkoutPhases.includes(flow.phase)
+  ) {
+    const reply = buildWelcomeReply();
+    const patch = buildWelcomePatch();
+    return { reply, nextPhase: 'main_menu', handoff: false, toolCalls, patch, media };
+  }
+
+  if (
+    flow.phase === 'main_menu' &&
+    intent === 'freeform' &&
+    msg.length <= 40 &&
+    !checkoutPhases.includes(flow.phase)
   ) {
     const reply = buildWelcomeReply();
     const patch = buildWelcomePatch();
