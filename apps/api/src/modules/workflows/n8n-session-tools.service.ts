@@ -8,7 +8,7 @@ import { CustomersService, normalizePhone } from '../customers/customers.service
 import { VendorNotifyService } from '../orders/vendor-notify.service';
 import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 import type { N8nFlowContext, N8nFlowPhase } from './n8n-flow.types';
-import { isCheckoutPhase, isGreetingLikeMessage } from './n8n-message-intent.util';
+import { isCheckoutPhase, isBrowsePhase, isGreetingLikeMessage } from './n8n-message-intent.util';
 
 @Injectable()
 export class N8nSessionToolsService {
@@ -42,8 +42,13 @@ export class N8nSessionToolsService {
     const session = await this.chatSession.peek(input.chatId);
     let flow = (ctx.n8nFlow ?? { phase: 'greeting' }) as N8nFlowContext;
 
-    // Saludo reinicia flujo atascado (ej. browse_categories de pruebas anteriores)
-    if (input.message && isGreetingLikeMessage(input.message) && !isCheckoutPhase(flow.phase)) {
+    // Saludo reinicia flujo atascado — nunca durante checkout ni navegación de catálogo
+    if (
+      input.message &&
+      isGreetingLikeMessage(input.message) &&
+      !isCheckoutPhase(flow.phase) &&
+      !isBrowsePhase(flow.phase)
+    ) {
       flow = { phase: 'greeting', lastCopyKeys: flow.lastCopyKeys };
     }
 

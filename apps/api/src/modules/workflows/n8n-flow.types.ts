@@ -3,6 +3,7 @@ export type N8nFlowPhase =
   | 'main_menu'
   | 'browse_categories'
   | 'browse_products'
+  | 'product_detail'
   | 'cart'
   | 'checkout_name'
   | 'checkout_address'
@@ -23,7 +24,14 @@ export interface N8nFlowContext {
   categoryId?: string;
   categoryName?: string;
   categoryList?: { id: string; name: string; productCount: number }[];
-  lastProductList?: { id: string; name: string; price: number; lowStock?: boolean }[];
+  lastProductList?: {
+    id: string;
+    name: string;
+    price: number;
+    lowStock?: boolean;
+    imageUrl?: string | null;
+  }[];
+  selectedProductId?: string;
   checkout?: N8nCheckoutDraft;
   lastCopyKeys?: Record<string, number>;
   productPage?: number;

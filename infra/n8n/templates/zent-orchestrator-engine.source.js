@@ -21,7 +21,8 @@ function normalizeInput(message) {
 }
 
 function isGreetingLike(msg) {
-  if (!msg || msg.length < 2) return true;
+  if (!msg) return true;
+  if (/^\d+$/.test(msg)) return false;
   if (/^(hola|buenas|buenos|hey|hi|hello|saludos|que tal|ola)[\s!.?,]*$/.test(msg)) return true;
   if (msg.length <= 30 && /\b(hola|buenas|buenos|hey|saludos)\b/.test(msg)) return true;
   return false;

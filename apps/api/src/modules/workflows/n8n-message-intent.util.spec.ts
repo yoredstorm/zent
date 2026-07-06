@@ -1,15 +1,23 @@
-import { isGreetingLikeMessage, normalizeChatMessage } from './n8n-message-intent.util';
+import {
+  isBrowsePhase,
+  isGreetingLikeMessage,
+} from './n8n-message-intent.util';
 
 describe('n8n-message-intent.util', () => {
-  it('normalizes markdown and punctuation from hola', () => {
-    expect(normalizeChatMessage('*hola*')).toBe('hola');
-    expect(normalizeChatMessage('  Hola!  ')).toBe('hola');
+  it('does not treat menu numbers as greetings', () => {
+    expect(isGreetingLikeMessage('1')).toBe(false);
+    expect(isGreetingLikeMessage('2')).toBe(false);
+    expect(isGreetingLikeMessage('10')).toBe(false);
   });
 
-  it('detects greeting variants', () => {
+  it('still detects real greetings', () => {
     expect(isGreetingLikeMessage('hola')).toBe(true);
-    expect(isGreetingLikeMessage('*hola*')).toBe(true);
-    expect(isGreetingLikeMessage('buenas tardes')).toBe(true);
-    expect(isGreetingLikeMessage('catalogo')).toBe(false);
+    expect(isGreetingLikeMessage('buenas noches')).toBe(true);
+  });
+
+  it('marks browse phases', () => {
+    expect(isBrowsePhase('browse_products')).toBe(true);
+    expect(isBrowsePhase('product_detail')).toBe(true);
+    expect(isBrowsePhase('main_menu')).toBe(false);
   });
 });

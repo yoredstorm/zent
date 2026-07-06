@@ -66,6 +66,44 @@ describe('N8nSessionToolsService', () => {
     expect(res.flow.phase).toBe('greeting');
   });
 
+  it('bootstrap keeps browse_products when user sends a menu number', async () => {
+    const { service, chatSession } = createService();
+    chatSession.getContext.mockResolvedValue({
+      n8nFlow: {
+        phase: 'browse_products',
+        categoryName: 'oficina',
+        lastProductList: [{ id: 'p1', name: 'papel grueso', price: 50 }],
+      },
+    });
+    const res = await service.bootstrap({
+      chatId: 'c1',
+      stateKey: 's::c1',
+      contactPhone: '51999',
+      message: '1',
+    });
+    expect(res.flow.phase).toBe('browse_products');
+    expect(res.flow.lastProductList).toHaveLength(1);
+  });
+
+  it('bootstrap keeps product_detail when user sends quantity', async () => {
+    const { service, chatSession } = createService();
+    chatSession.getContext.mockResolvedValue({
+      n8nFlow: {
+        phase: 'product_detail',
+        selectedProductId: 'p1',
+        lastProductList: [{ id: 'p1', name: 'papel grueso', price: 50 }],
+      },
+    });
+    const res = await service.bootstrap({
+      chatId: 'c1',
+      stateKey: 's::c1',
+      contactPhone: '51999',
+      message: '3',
+    });
+    expect(res.flow.phase).toBe('product_detail');
+    expect(res.flow.selectedProductId).toBe('p1');
+  });
+
   it('bootstrap returns customer, flow phase, cart and botPaused', async () => {
     const { service } = createService();
     const res = await service.bootstrap({
