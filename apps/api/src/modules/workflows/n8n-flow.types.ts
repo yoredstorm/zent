@@ -30,6 +30,7 @@ export interface N8nFlowContext {
     price: number;
     lowStock?: boolean;
     imageUrl?: string | null;
+    description?: string | null;
   }[];
   selectedProductId?: string;
   checkout?: N8nCheckoutDraft;

@@ -31,8 +31,11 @@ function isGreetingLike(msg) {
 function detectGlobalIntent(msg) {
   if (/^(menu|inicio|empezar de nuevo|volver al inicio)/.test(msg)) return 'reset';
   if (/^\d+$/.test(msg)) return 'number';
+  if (/confirmar pedido|confirmo pedido|finalizar pedido/.test(msg)) return 'confirm';
+  if (/^confirmar$|^confirmo$|^finalizar$|^checkout$/.test(msg)) return 'confirm';
+  if (/^si$|^ok$|^dale$|^claro$|^yes$|^ya$/.test(msg)) return 'confirm';
+  if (/^no$|^nop$|^cancelar$/.test(msg)) return 'no';
   if (isGreetingLike(msg)) return 'greeting';
-  if (msg.length < 3) return 'greeting';
   if (/asesor|humano|persona|agente|hablar con/.test(msg)) return 'handoff';
   if (/pedido|estado|seguimiento|donde esta|donde está|mi compra/.test(msg)) return 'order_status';
   if (/pdf|catalogo completo|catálogo completo|catalogo pdf|catálogo pdf|ver pdf/.test(msg)) {
@@ -40,10 +43,16 @@ function detectGlobalIntent(msg) {
   }
   if (/catalogo|catálogo|productos|comprar|venta|ver productos/.test(msg)) return 'catalog';
   if (/carrito|ver carrito|mi carrito/.test(msg)) return 'cart';
-  if (/confirmar|confirmo|finalizar|checkout|^si$|^sí$|^ok$|^dale$/.test(msg)) return 'confirm';
   if (/^no$|^nop|cambiar/.test(msg)) return 'no';
-  if (/^\d+$/.test(msg)) return 'number';
   return 'freeform';
+}
+
+function isAffirmative(msg) {
+  return /^(si|confirmo|confirmar|ok|dale|claro|yes|ya)$/.test(msg);
+}
+
+function isSavedAddressConfirmation(msg, customer) {
+  return isAffirmative(msg) && Boolean(customer?.address);
 }
 
 function fuzzyMatchCategory(name, categories) {
@@ -123,10 +132,24 @@ function parseQuantityMessage(text) {
   return m ? parseInt(m[1], 10) || 0 : 0;
 }
 
-function formatProductDetail(product) {
-  let text = `*${product.name}*\n💰 Precio: S/ ${Number(product.price).toFixed(2)}`;
+function formatProductDetail(product, opts = {}) {
+  const { skipHeader = false } = opts;
+  let text = skipHeader ? '' : `*${product.name}*\n💰 Precio: S/ ${Number(product.price).toFixed(2)}`;
+  if (product.description?.trim()) {
+    text += (text ? '\n' : '') + `📝 ${product.description.trim()}`;
+  }
   if (product.lowStock) text += '\n⚠️ *¡Quedan pocas unidades!*';
   return text;
+}
+
+function formatProductImageCaption(product) {
+  let cap = `*${product.name}*\n💰 S/ ${Number(product.price).toFixed(2)}`;
+  if (product.description?.trim()) {
+    const desc = product.description.trim();
+    cap += `\n📝 ${desc.length > 120 ? desc.slice(0, 117) + '…' : desc}`;
+  }
+  if (product.lowStock) cap += '\n⚠️ *¡Quedan pocas unidades!*';
+  return cap;
 }
 
 function formatKeycap(n) {
@@ -213,6 +236,42 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   const checkoutPhases = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
   const browsePhases = ['browse_categories', 'browse_products', 'product_detail'];
 
+  function buildCheckoutConfirmReply() {
+    flow.phase = 'checkout_confirm';
+    const address = flow.checkout.address || customer.address || '';
+    const reference = flow.checkout.reference || customer.reference || '';
+    reply =
+      mergeKeys(COPY.checkoutSummaryIntro()) +
+      '\n\n' +
+      formatCartSummary(cart) +
+      '\n📍 ' +
+      address +
+      (reference ? '\n📌 ' + reference : '') +
+      '\n\nResponde *sí* o *confirmo* para registrar el pedido.';
+    patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
+    return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+  }
+
+  function advanceAfterAddressResolved() {
+    flow.checkout.address = flow.checkout.address || customer.address || '';
+    if (flow.checkout.useSavedAddress) {
+      flow.checkout.reference = flow.checkout.reference || customer.reference || '';
+      return buildCheckoutConfirmReply();
+    }
+    if (customer.reference?.trim() && !flow.checkout.reference) {
+      flow.checkout.reference = customer.reference.trim();
+      return buildCheckoutConfirmReply();
+    }
+    flow.phase = 'checkout_reference';
+    reply = mergeKeys(COPY.checkoutAskReference());
+    patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
+    return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+  }
+
+  function productQuantityPrompt() {
+    return mergeKeys(COPY.productAskQuantity());
+  }
+
   function buildCartAddResult(match) {
     if (!toolResults['cart.add_item']) {
       toolCalls.push({
@@ -263,7 +322,12 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     if (product.imageUrl && !imageOk) {
       toolCalls.push({
         name: 'products.send_image',
-        body: { chatId, waSessionId, productId: product.id },
+        body: {
+          chatId,
+          waSessionId,
+          productId: product.id,
+          caption: formatProductImageCaption(product),
+        },
       });
       reply = mergeKeys(COPY.lookupFiller());
       patch = {
@@ -274,9 +338,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
     }
     reply =
-      formatProductDetail(product) +
-      '\n\n' +
-      mergeKeys(COPY.productAskQuantity());
+      (product.imageUrl ? productQuantityPrompt() : formatProductDetail(product) + '\n\n' + productQuantityPrompt());
     patch = {
       phase: 'product_detail',
       selectedProductId: product.id,
@@ -437,6 +499,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
           price: p.price,
           lowStock: p.lowStock,
           imageUrl: p.imageUrl,
+          description: p.description || null,
         }));
         flow.productPage = 0;
         const fmt = formatProductList(products, 0);
@@ -481,10 +544,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       ) {
         flow.phase = 'product_detail';
         flow.selectedProductId = picked.id;
-        reply =
-          formatProductDetail(picked) +
-          '\n\n' +
-          mergeKeys(COPY.productAskQuantity());
+        reply = productQuantityPrompt();
         patch = {
           phase: 'product_detail',
           selectedProductId: picked.id,
@@ -535,16 +595,13 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
         toolResults['products.send_image']?.sent &&
         toolResults['products.send_image']?.productId === current.id
       ) {
-        reply =
-          formatProductDetail(current) +
-          '\n\n' +
-          mergeKeys(COPY.productAskQuantity());
+        reply = productQuantityPrompt();
         patch = { phase: 'product_detail', selectedProductId: current.id, lastCopyKeys: keys };
         return { reply, nextPhase: flow.phase, handoff, toolCalls: [], patch };
       }
 
       reply = current
-        ? formatProductDetail(current) + '\n\n' + mergeKeys(COPY.productAskQuantity())
+        ? formatProductDetail(current) + '\n\n' + productQuantityPrompt()
         : mergeKeys(COPY.productNotFound());
       patch = { phase: 'product_detail', lastCopyKeys: keys };
       return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
@@ -592,6 +649,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       flow.checkout.customerName = message.trim();
       flow.phase = 'checkout_address';
       if (customer.found && customer.address) {
+        flow.checkout.useSavedAddress = true;
         reply = mergeKeys(COPY.checkoutConfirmSavedAddress(customer.address));
       } else {
         reply = mergeKeys(COPY.checkoutAskAddress());
@@ -602,34 +660,32 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
 
     case 'checkout_address': {
       flow.checkout = flow.checkout || {};
-      if (intent === 'confirm' && flow.checkout.useSavedAddress && customer.address) {
-        flow.checkout.address = customer.address;
-        flow.phase = 'checkout_reference';
-        reply = mergeKeys(COPY.checkoutAskReference());
-        patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
-      }
       if (/cambiar/.test(msg)) {
         flow.checkout.useSavedAddress = false;
+        flow.checkout.address = undefined;
         reply = mergeKeys(COPY.checkoutAskAddress());
         patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
         return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
-      if (!flow.checkout.address) {
-        flow.checkout.address = message.trim();
-        flow.phase = 'checkout_reference';
-        reply = mergeKeys(COPY.checkoutAskReference());
-        patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
-        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+      if (
+        isSavedAddressConfirmation(msg, customer) ||
+        (isAffirmative(msg) && flow.checkout.useSavedAddress && customer.address)
+      ) {
+        flow.checkout.useSavedAddress = true;
+        flow.checkout.address = customer.address;
+        return advanceAfterAddressResolved();
       }
-      flow.phase = 'checkout_confirm';
-      reply =
-        mergeKeys(COPY.checkoutSummaryIntro()) +
-        '\n\n' +
-        formatCartSummary(cart) +
-        '\n📍 ' +
-        flow.checkout.address +
-        '\n\nResponde *sí* o *confirmo* para registrar el pedido.';
+      if (!isAffirmative(msg) && message.trim().length > 2) {
+        flow.checkout.address = message.trim();
+        flow.checkout.useSavedAddress = false;
+        return advanceAfterAddressResolved();
+      }
+      if (customer.found && customer.address) {
+        flow.checkout.useSavedAddress = true;
+        reply = mergeKeys(COPY.checkoutConfirmSavedAddress(customer.address));
+      } else {
+        reply = mergeKeys(COPY.checkoutAskAddress());
+      }
       patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
       return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
     }
@@ -639,22 +695,12 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       if (!/^no$|^nop|^ninguna|^-$/.test(msg)) {
         flow.checkout.reference = message.trim();
       }
-      flow.phase = 'checkout_confirm';
-      reply =
-        mergeKeys(COPY.checkoutSummaryIntro()) +
-        '\n\n' +
-        formatCartSummary(cart) +
-        '\n📍 ' +
-        (flow.checkout.address || customer.address || '') +
-        (flow.checkout.reference ? '\n📌 ' + flow.checkout.reference : '') +
-        '\n\nResponde *sí* o *confirmo* para registrar el pedido.';
-      patch = { phase: flow.phase, checkout: flow.checkout, lastCopyKeys: keys };
-      return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+      return buildCheckoutConfirmReply();
     }
 
     case 'checkout_confirm': {
       flow.checkout = flow.checkout || {};
-      if (intent === 'confirm') {
+      if (intent === 'confirm' || isAffirmative(msg)) {
         const custName = flow.checkout.customerName || (customer.found ? customer.name : 'Cliente');
         const address = flow.checkout.address || customer.address || '';
         const reference = flow.checkout.reference || customer.reference || '';
@@ -742,6 +788,9 @@ if (typeof module !== 'undefined') {
     fuzzyMatchCategory,
     fuzzyMatchProduct,
     resolveProductPick,
+    isAffirmative,
+    isSavedAddressConfirmation,
+    formatProductDetail,
     parseQuantityMessage,
     formatProductList,
     formatCartSummary,
