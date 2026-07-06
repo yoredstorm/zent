@@ -943,6 +943,8 @@ El motor conversacional vive en `infra/n8n/orquestador/` como módulos en españ
 | `nucleo/productos.js` | Búsqueda difusa, listas, resumen de carrito |
 | `nucleo/copys.js` | Anti-repetición de copys y bienvenida compartida |
 | `nucleo/sesion.js` | `aplicarParche(sesion, parche)` |
+| `nucleo/tiempo.js` | `haceCuanto(fecha)` — antigüedad en español para estados de pedido |
+| `textos.js` | Todos los textos del bot (variantes anti-repetición) — editar aquí los saludos y copys |
 | `flujos/*.js` | Un flujo async por grupo de fases; llaman tools con `await` directo (sin fillers) |
 | `construir-workflow.js` | Genera `zent-orquestador.workflow.json` |
 
@@ -957,10 +959,10 @@ Reglas clave:
 
 **Checklist tras cambiar el orquestador:**
 
-1. Tests locales (desde `infra/n8n/orquestador/`): `node pruebas/prueba-intencion.js && node pruebas/prueba-menu.js && node pruebas/prueba-catalogo.js && node pruebas/prueba-carrito.js && node pruebas/prueba-checkout.js && node pruebas/prueba-conversacion.js`
+1. Tests locales (desde `infra/n8n/orquestador/`): `node pruebas/prueba-intencion.js && node pruebas/prueba-menu.js && node pruebas/prueba-catalogo.js && node pruebas/prueba-carrito.js && node pruebas/prueba-checkout.js && node pruebas/prueba-pedido.js && node pruebas/prueba-conversacion.js`
 2. Regenerar JSON: `node infra/n8n/orquestador/construir-workflow.js`
 3. Importar `infra/n8n/orquestador/zent-orquestador.workflow.json` en n8n y **activar**
-4. **Desactivar** los workflows legacy: `Zent WhatsApp Orchestrator` (templates) y `Zent WhatsApp Sales Chat`
+4. **Desactivar** cualquier workflow de chat legacy que quede en la instancia n8n (ej: `Zent WhatsApp Orchestrator`, `Zent WhatsApp Sales Chat`)
 5. Smoke en WhatsApp (sandbox):
    - `hola` → saludo + menú (nunca "producto no lo ubico")
    - `catálogo` → categorías inmediatas (sin "momentito")
@@ -968,8 +970,13 @@ Reglas clave:
    - cantidad → **resumen con items y total reales** (nunca en blanco)
    - `catálogo` desde carrito → categorías
    - `confirmar pedido` → `sí` → `sí` → pedido creado
-   - `pedido` → estado; `asesor` → handoff
-6. En la ejecución n8n, cada mensaje muestra la rama del Switch que tomó — revisar ahí ante cualquier respuesta rara
+   - `mi pedido` → el bot **pide el código** (o `no tengo` para buscar por teléfono) → detalle con estado, antigüedad (`hace 2 horas`) e items con variante → `asesor` funciona desde ahí
+   - `asesor` → handoff
+6. Smoke en dashboard:
+   - **Productos**: producto con subproductos muestra badge `5 en 2 opciones` y el drilldown lista cada opción con su stock; el campo Stock queda bloqueado ("Calculado automáticamente")
+   - **Pedidos**: cada item del detalle muestra `Opción: Rojo / M` (lo que hay que preparar)
+   - **Reportes**: el top de ventas separa `Polo — Rojo / M` de `Polo — Azul / L`
+7. En la ejecución n8n, cada mensaje muestra la rama del Switch que tomó — revisar ahí ante cualquier respuesta rara
 
 ### Atributos y subproductos (variantes)
 
@@ -1004,7 +1011,7 @@ Prueba manual recomendada (orquestador por fases):
 | 5 | `confirmar pedido` | Pide datos o reutiliza dirección |
 | 6 | confirmar | Pedido NUEVO creado |
 | 6b | Dashboard → Clientes | Cliente visible con `totalOrders = 1` |
-| 7 | `pedido` sin código | Estado por teléfono |
+| 7 | `mi pedido` | El bot pide el código; con código → detalle (estado + antigüedad + items con variante); `no tengo` → busca por teléfono |
 | 8 | `asesor` | Handoff; bot no responde más |
 | 9 | Dashboard "Reactivar bot" | Bot vuelve a saludar |
 
