@@ -2,11 +2,31 @@ const fs = require('fs');
 const path = require('path');
 
 const dir = __dirname;
-const copySrc = fs.readFileSync(path.join(dir, 'zent-copy-variants.source.js'), 'utf8');
-const engineSrc = fs.readFileSync(path.join(dir, 'zent-orchestrator-engine.source.js'), 'utf8');
 
-const flowEngineCode = `${copySrc}
-${engineSrc}
+function readSource(relPath) {
+  return fs.readFileSync(path.join(dir, relPath), 'utf8');
+}
+
+const concatOrder = [
+  'zent-copy-variants.source.js',
+  'shared/zent-intent.source.js',
+  'shared/zent-product-utils.source.js',
+  'shared/zent-flow-patch.source.js',
+  'shared/zent-catalog-render.source.js',
+  'shared/zent-orchestrator-helpers.source.js',
+  'flows/zent-flow-order-status.source.js',
+  'flows/zent-flow-checkout.source.js',
+  'flows/zent-flow-cart.source.js',
+  'flows/zent-flow-catalog.source.js',
+  'flows/zent-flow-menu.source.js',
+  'zent-orchestrator-router.source.js',
+];
+
+function stripNodeExports(src) {
+  return src.replace(/\r?\nif \(typeof module !== 'undefined'\) \{[\s\S]*?\}\s*$/m, '\n');
+}
+
+const flowEngineCode = `${concatOrder.map((f) => stripNodeExports(readSource(f))).join('\n')}
 
 const input = $json.body ?? $json;
 const ctx = input.context ?? {};
@@ -42,16 +62,14 @@ const orchInput = () => ({
   categories: toolResults['categories.list']?.categories,
 });
 
-function isLookupFiller(text) {
-  return /segundito|momentito|Voy a mirarlo/i.test(String(text || ''));
-}
-
 let result = runOrchestrator(orchInput(), copyLib, toolResults);
 const executedTools = new Set();
 
 for (let round = 0; round < 6; round++) {
   const calls = result.toolCalls || [];
   if (!calls.length) break;
+
+  mergedSession = applyFlowPatch(mergedSession, result.patch);
 
   for (const tc of calls) {
     const sig = tc.name + ':' + JSON.stringify(tc.body || {});
@@ -64,10 +82,10 @@ for (let round = 0; round < 6; round++) {
     }
   }
 
-  const next = runOrchestrator(orchInput(), copyLib, toolResults);
-  result = next;
-  if (!(next.toolCalls || []).length && !isLookupFiller(next.reply)) break;
+  result = runOrchestrator(orchInput(), copyLib, toolResults);
+  if (!(result.toolCalls || []).length) break;
 }
+mergedSession = applyFlowPatch(mergedSession, result.patch);
 
 if (result.patch && Object.keys(result.patch).length > 0) {
   try {

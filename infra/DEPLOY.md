@@ -947,6 +947,33 @@ Reglas de inventario:
 - Cuando pasa a `CANCELADO`, `OrdersService.updateStatus()` restaura stock si ya estaba comprometido.
 - Cuando pasa a `COMPLETADO`, `OrdersService.updateStatus()` envia el mensaje final de cierre al cliente.
 
+### Orchestrator modular
+
+El motor conversacional vive en `infra/n8n/templates/` como fuentes concatenadas por `build-orchestrator-workflow.js`:
+
+| Ruta | Rol |
+|------|-----|
+| `shared/zent-intent.source.js` | Intents globales (`catálogo`, `reset`, `handoff`, …) |
+| `shared/zent-product-utils.source.js` | Fuzzy match, listas, carrito |
+| `shared/zent-flow-patch.source.js` | `applyFlowPatch` entre rondas del tool loop |
+| `shared/zent-catalog-render.source.js` | `enterBrowseCategories`, lista de categorías |
+| `flows/zent-flow-*.source.js` | Handlers por fase (`menu`, `catalog`, `cart`, `checkout`, `order`) |
+| `zent-orchestrator-router.source.js` | Router delgado que delega por `flow.phase` |
+
+Los números `1/2/3` solo se interpretan dentro del handler activo (`browse_categories`, `browse_products`, `product_detail`). En `cart` y `checkout_*` no son selección de producto.
+
+**Checklist tras cambiar el orquestador:**
+
+1. Ejecutar tests locales: `node infra/n8n/templates/test-orchestrator-*.js`
+2. Regenerar JSON: `node infra/n8n/templates/build-orchestrator-workflow.js`
+3. Reimportar `infra/n8n/templates/zent-whatsapp-orchestrator.workflow.json` en n8n y **activar**
+4. Desactivar el workflow legacy `zent-whatsapp-sales-chat` si sigue activo
+5. Smoke en WhatsApp (sandbox):
+   - Carrito con productos → escribir **catálogo** → debe listar categorías (no "Un momentito…")
+   - Elegir categoría → productos → **1** → foto + pedir cantidad
+   - **confirmar pedido** → **sí** → pedido registrado
+6. En logs n8n/backend, verificar que `chat.session.patch` persiste `phase: browse_categories` tras catálogo desde carrito
+
 Prueba manual recomendada (orquestador unificado):
 
 1. **Desactivar** el workflow legacy `Zent WhatsApp Sales Chat` en n8n si estaba activo.
@@ -961,6 +988,7 @@ Prueba manual recomendada (orquestador unificado):
 | 2 | `catálogo` o `1` | Lista categorías |
 | 3 | elegir categoría | Productos; bajo stock en negrita |
 | 4 | agregar producto | Carrito + aviso 30 min |
+| 4b | `catálogo` desde carrito | Lista categorías (sin quedar en "momentito") |
 | 5 | `confirmar pedido` | Pide datos o reutiliza dirección |
 | 6 | confirmar | Pedido NUEVO creado |
 | 6b | Dashboard → Clientes | Cliente visible con `totalOrders = 1` |
