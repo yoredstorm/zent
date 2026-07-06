@@ -117,6 +117,26 @@ function buildCopy(lastKeys = {}) {
         ],
         lastKeys,
       ),
+    productAskQuantity: () =>
+      pickAvoidRepeat(
+        'productAskQuantity',
+        [
+          '¿Cuántas unidades quieres? Escribe la *cantidad* (ej: *3*).\n*0* — volver al listado',
+          'Escribe la *cantidad* que necesitas.\n*0* para ver otros productos.',
+          '¿Cuántas llevas? Solo escribe un número.\n*0* — volver a la lista.',
+        ],
+        lastKeys,
+      ),
+    keepShopping: () =>
+      pickAvoidRepeat(
+        'keepShopping',
+        [
+          '¿Seguimos comprando? Escribe *catálogo* o el *número* de otro producto.\n*confirmar pedido* para cerrar la compra.',
+          'Puedes seguir eligiendo productos con *catálogo* o un *número*.\nCuando estés listo: *confirmar pedido*.',
+          '¿Algo más? *catálogo* para seguir comprando o *confirmar pedido* para finalizar.',
+        ],
+        lastKeys,
+      ),
     addedToCart: (name, qty, minutes) =>
       pickAvoidRepeat(
         'addedToCart',

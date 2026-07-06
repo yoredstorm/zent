@@ -29,13 +29,15 @@ function isGreetingLike(msg) {
 
 function detectGlobalIntent(msg) {
   if (/^(menu|inicio|empezar de nuevo|volver al inicio)/.test(msg)) return 'reset';
-  if (isGreetingLike(msg) || msg.length < 3) return 'greeting';
+  if (/^\d+$/.test(msg)) return 'number';
+  if (isGreetingLike(msg)) return 'greeting';
+  if (msg.length < 3) return 'greeting';
   if (/asesor|humano|persona|agente|hablar con/.test(msg)) return 'handoff';
   if (/pedido|estado|seguimiento|donde esta|donde está|mi compra/.test(msg)) return 'order_status';
   if (/pdf|catalogo completo|catálogo completo|catalogo pdf|catálogo pdf|ver pdf/.test(msg)) {
     return 'catalog_pdf';
   }
-  if (/catalogo|catálogo|productos|comprar|venta|ver productos|^1$/.test(msg)) return 'catalog';
+  if (/catalogo|catálogo|productos|comprar|venta|ver productos/.test(msg)) return 'catalog';
   if (/carrito|ver carrito|mi carrito/.test(msg)) return 'cart';
   if (/confirmar|confirmo|finalizar|checkout|^si$|^sí$|^ok$|^dale$/.test(msg)) return 'confirm';
   if (/^no$|^nop|cambiar/.test(msg)) return 'no';
@@ -87,6 +89,43 @@ function fuzzyMatchProduct(text, lastProductList) {
     if (found) return { product: found, quantity: qty };
   }
   return null;
+}
+
+/** Selección por número o nombre para *ver* un producto (sin cantidad). */
+function resolveProductPick(text, lastProductList) {
+  if (!lastProductList?.length) return null;
+  const msg = normalizeInput(text);
+  if (/^\d+$/.test(msg)) {
+    const idx = parseInt(msg, 10);
+    if (idx >= 1 && idx <= lastProductList.length) return lastProductList[idx - 1];
+    return null;
+  }
+  return (
+    lastProductList.find(
+      (p) => normalizeInput(p.name).includes(msg) || msg.includes(normalizeInput(p.name)),
+    ) || null
+  );
+}
+
+function isDirectAddMessage(text) {
+  const msg = normalizeInput(text);
+  return (
+    /^(agrega(r)?|anade|anadir|pon(me)?|quiero)\s+/.test(msg) ||
+    /^\d+\s+[a-z]/.test(msg)
+  );
+}
+
+function parseQuantityMessage(text) {
+  const msg = normalizeInput(text).replace(/^(agrega(r)?|anade|anadir|pon(me)?|quiero)\s+/, '');
+  if (/^\d+$/.test(msg)) return parseInt(msg, 10) || 0;
+  const m = msg.match(/^(\d+)/);
+  return m ? parseInt(m[1], 10) || 0 : 0;
+}
+
+function formatProductDetail(product) {
+  let text = `*${product.name}*\n💰 Precio: S/ ${Number(product.price).toFixed(2)}`;
+  if (product.lowStock) text += '\n⚠️ *¡Quedan pocas unidades!*';
+  return text;
 }
 
 function formatKeycap(n) {
@@ -164,12 +203,86 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
       categoryId: undefined,
       categoryName: undefined,
       lastProductList: undefined,
+      selectedProductId: undefined,
       productPage: undefined,
       lastCopyKeys: keys,
     };
   }
 
   const checkoutPhases = ['checkout_name', 'checkout_address', 'checkout_reference', 'checkout_confirm'];
+  const browsePhases = ['browse_categories', 'browse_products', 'product_detail'];
+
+  function buildCartAddResult(match) {
+    if (!toolResults['cart.add_item']) {
+      toolCalls.push({
+        name: 'cart.add_item',
+        body: {
+          stateKey,
+          chatId: stateKey || chatId,
+          contactPhone,
+          productId: match.product.id,
+          quantity: match.quantity,
+          customerName: customer.found ? customer.name : undefined,
+        },
+      });
+      reply = mergeKeys(COPY.lookupFiller());
+      patch = { phase: 'cart', lastCopyKeys: keys };
+      return { reply, nextPhase: 'cart', handoff, toolCalls, patch };
+    }
+
+    if (match.product.imageUrl && !toolResults['products.send_image']) {
+      toolCalls.push({
+        name: 'products.send_image',
+        body: { chatId, waSessionId, productId: match.product.id },
+      });
+      reply = mergeKeys(COPY.lookupFiller());
+      patch = { phase: 'cart', lastCopyKeys: keys };
+      return { reply, nextPhase: 'cart', handoff, toolCalls, patch };
+    }
+
+    const c = toolResults['cart.add_item'].cart;
+    reply =
+      mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
+      '\n\n' +
+      mergeKeys(COPY.cartSummary()) +
+      '\n' +
+      formatCartSummary(c) +
+      '\n\n' +
+      mergeKeys(COPY.keepShopping());
+    patch = { phase: 'cart', selectedProductId: undefined, lastCopyKeys: keys };
+    return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch };
+  }
+
+  function showProductDetail(product) {
+    flow.phase = 'product_detail';
+    flow.selectedProductId = product.id;
+    const imageOk =
+      toolResults['products.send_image']?.sent &&
+      toolResults['products.send_image']?.productId === product.id;
+    if (product.imageUrl && !imageOk) {
+      toolCalls.push({
+        name: 'products.send_image',
+        body: { chatId, waSessionId, productId: product.id },
+      });
+      reply = mergeKeys(COPY.lookupFiller());
+      patch = {
+        phase: 'product_detail',
+        selectedProductId: product.id,
+        lastCopyKeys: keys,
+      };
+      return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+    }
+    reply =
+      formatProductDetail(product) +
+      '\n\n' +
+      mergeKeys(COPY.productAskQuantity());
+    patch = {
+      phase: 'product_detail',
+      selectedProductId: product.id,
+      lastCopyKeys: keys,
+    };
+    return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
+  }
 
   if (intent === 'reset') {
     reply = buildWelcomeReply();
@@ -180,7 +293,8 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
   // Saludo o mensaje corto amigable → siempre bienvenida + menú (excepto checkout)
   if (
     (intent === 'greeting' || (flow.phase === 'main_menu' && intent === 'freeform' && msg.length <= 40)) &&
-    !checkoutPhases.includes(flow.phase)
+    !checkoutPhases.includes(flow.phase) &&
+    !browsePhases.includes(flow.phase)
   ) {
     reply = buildWelcomeReply();
     patch = buildWelcomePatch();
@@ -330,7 +444,7 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
           '\n\n' +
           fmt.text +
           (fmt.hasMore ? '\n\n' + mergeKeys(COPY.paginationMore()) : '') +
-          '\n\nEscribe el *número* o *"agregar 2 arroz"*';
+          '\n\nEscribe el *número* para ver un producto, su nombre, o *agregar 2* para añadir directo.';
         patch = {
           phase: 'browse_products',
           categoryId: cat.id,
@@ -347,50 +461,92 @@ function runOrchestrator(input, copyLib, toolResults = {}) {
     }
 
     case 'browse_products': {
-      const match = fuzzyMatchProduct(message, flow.lastProductList);
-      if (!match) {
+      const list = flow.lastProductList || [];
+      if (isDirectAddMessage(message)) {
+        const addMatch = fuzzyMatchProduct(message, list);
+        if (addMatch) return buildCartAddResult(addMatch);
+      }
+
+      const picked = resolveProductPick(message, list);
+      if (!picked) {
         reply = mergeKeys(COPY.productNotFound());
         return { reply, nextPhase: flow.phase, handoff, toolCalls, patch: { lastCopyKeys: keys } };
       }
 
-      if (!toolResults['cart.add_item']) {
-        toolCalls.push({
-          name: 'cart.add_item',
-          body: {
-            stateKey,
-            chatId: stateKey || chatId,
-            contactPhone,
-            productId: match.product.id,
-            quantity: match.quantity,
-            customerName: customer.found ? customer.name : undefined,
-          },
-        });
-        flow.phase = 'cart';
-        reply = mergeKeys(COPY.lookupFiller());
-        patch = { phase: 'cart', lastCopyKeys: keys };
+      if (
+        picked.imageUrl &&
+        toolResults['products.send_image']?.sent &&
+        toolResults['products.send_image']?.productId === picked.id
+      ) {
+        flow.phase = 'product_detail';
+        flow.selectedProductId = picked.id;
+        reply =
+          formatProductDetail(picked) +
+          '\n\n' +
+          mergeKeys(COPY.productAskQuantity());
+        patch = {
+          phase: 'product_detail',
+          selectedProductId: picked.id,
+          lastCopyKeys: keys,
+        };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls: [], patch };
+      }
+
+      return showProductDetail(picked);
+    }
+
+    case 'product_detail': {
+      const list = flow.lastProductList || [];
+      const current = list.find((p) => p.id === flow.selectedProductId);
+
+      if (/^0$|^volver$|^lista$/.test(msg)) {
+        flow.phase = 'browse_products';
+        const fmt = formatProductList(list, flow.productPage || 0);
+        reply =
+          mergeKeys(COPY.productsIntro(flow.categoryName || 'catálogo')) +
+          '\n\n' +
+          fmt.text +
+          '\n\nEscribe el *número* para ver un producto, su nombre, o *agregar 2* para añadir directo.';
+        patch = { phase: 'browse_products', selectedProductId: undefined, lastCopyKeys: keys };
         return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
 
-      if (match.product.imageUrl && !toolResults['products.send_image']) {
-        toolCalls.push({
-          name: 'products.send_image',
-          body: { chatId, waSessionId, productId: match.product.id },
-        });
+      if (intent === 'catalog') {
+        flow.phase = 'browse_categories';
+        toolCalls.push({ name: 'categories.list', body: {} });
         reply = mergeKeys(COPY.lookupFiller());
-        patch = { phase: 'cart', lastCopyKeys: keys };
-        return { reply, nextPhase: 'cart', handoff, toolCalls, patch };
+        patch = { phase: 'browse_categories', selectedProductId: undefined, lastCopyKeys: keys };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
       }
 
-      const c = toolResults['cart.add_item'].cart;
-      reply =
-        mergeKeys(COPY.addedToCart(match.product.name, match.quantity, reservedMinutes)) +
-        '\n\n' +
-        mergeKeys(COPY.cartSummary()) +
-        '\n' +
-        formatCartSummary(c) +
-        '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.';
-      patch = { phase: 'cart', lastCopyKeys: keys };
-      return { reply, nextPhase: 'cart', handoff, toolCalls: [], patch };
+      const otherPick = resolveProductPick(message, list);
+      if (otherPick && otherPick.id !== flow.selectedProductId && !parseQuantityMessage(message)) {
+        return showProductDetail(otherPick);
+      }
+
+      const qty = parseQuantityMessage(message);
+      if (qty > 0 && current) {
+        return buildCartAddResult({ product: current, quantity: qty });
+      }
+
+      if (
+        current &&
+        toolResults['products.send_image']?.sent &&
+        toolResults['products.send_image']?.productId === current.id
+      ) {
+        reply =
+          formatProductDetail(current) +
+          '\n\n' +
+          mergeKeys(COPY.productAskQuantity());
+        patch = { phase: 'product_detail', selectedProductId: current.id, lastCopyKeys: keys };
+        return { reply, nextPhase: flow.phase, handoff, toolCalls: [], patch };
+      }
+
+      reply = current
+        ? formatProductDetail(current) + '\n\n' + mergeKeys(COPY.productAskQuantity())
+        : mergeKeys(COPY.productNotFound());
+      patch = { phase: 'product_detail', lastCopyKeys: keys };
+      return { reply, nextPhase: flow.phase, handoff, toolCalls, patch };
     }
 
     case 'cart': {
@@ -584,6 +740,8 @@ if (typeof module !== 'undefined') {
     detectGlobalIntent,
     fuzzyMatchCategory,
     fuzzyMatchProduct,
+    resolveProductPick,
+    parseQuantityMessage,
     formatProductList,
     formatCartSummary,
     runOrchestrator,
