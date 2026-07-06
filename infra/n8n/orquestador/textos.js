@@ -233,6 +233,24 @@ function buildCopy(lastKeys = {}) {
         ],
         lastKeys,
       ),
+    orderAskCode: () =>
+      pickAvoidRepeat(
+        'orderAskCode',
+        [
+          'Claro, te ayudo con tu pedido 📦\n\nEscríbeme el *código* (ej: *9375c821*) o *no tengo* para buscarlo con tu número.',
+          '¿Me pasas el *código* del pedido? (aparece en tu confirmación, ej: *9375c821*)\nSi no lo tienes, escribe *no tengo*.',
+        ],
+        lastKeys,
+      ),
+    orderDetailFooter: () =>
+      pickAvoidRepeat(
+        'orderDetailFooter',
+        [
+          '¿Dudas con la entrega? Escribe *asesor* y una persona lo revisa contigo.',
+          'Si algo no cuadra, di *asesor* para que revisemos tu delivery.',
+        ],
+        lastKeys,
+      ),
     orderNotFound: () =>
       pickAvoidRepeat(
         'orderNotFound',

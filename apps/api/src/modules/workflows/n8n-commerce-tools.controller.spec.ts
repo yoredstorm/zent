@@ -405,6 +405,33 @@ describe('N8nCommerceToolsController', () => {
     await expect(controller.getOrderStatus({ orderId: '' })).rejects.toThrow(BadRequestException);
   });
 
+  it('orders.get_status devuelve updatedAt e items con variantLabel', async () => {
+    const { controller, prisma } = createController();
+    const updatedAt = new Date('2026-07-05T10:00:00Z');
+    (prisma as any).order = {
+      findFirst: jest.fn().mockResolvedValue({
+        id: '9375c821-aaaa-bbbb-cccc-dddddddddddd',
+        status: 'EN_DELIVERY',
+        total: { toString: () => '100' },
+        customerPhone: '51999999999',
+        createdAt: new Date('2026-07-04T10:00:00Z'),
+        updatedAt,
+        items: [
+          { quantity: 2, variantLabel: 'Rojo / M', product: { nombre: 'Polo' } },
+          { quantity: 1, variantLabel: null, product: { nombre: 'Polo' } },
+        ],
+      }),
+    };
+
+    const result = await controller.getOrderStatus({ orderId: '9375c821' });
+
+    expect(result.updatedAt).toEqual(updatedAt);
+    expect(result.items).toEqual([
+      { productName: 'Polo', quantity: 2, variantLabel: 'Rojo / M' },
+      { productName: 'Polo', quantity: 1, variantLabel: null },
+    ]);
+  });
+
   it('rejects phone lookups without a customer phone', async () => {
     const { controller } = createController();
 

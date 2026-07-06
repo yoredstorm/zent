@@ -452,9 +452,11 @@ export class N8nCommerceToolsController {
       total: Number(order.total),
       customerPhone: order.customerPhone,
       createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
       items: order.items.map((item) => ({
         productName: item.product?.nombre ?? 'Producto',
         quantity: item.quantity,
+        variantLabel: item.variantLabel ?? null,
       })),
     };
   }

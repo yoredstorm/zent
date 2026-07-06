@@ -39,6 +39,7 @@ const libreriaComun = [
   'nucleo/productos.js',
   'nucleo/copys.js',
   'nucleo/sesion.js',
+  'nucleo/tiempo.js',
   'nucleo/ejecutor.js',
 ]
   .map((f) => limpiarExports(leer(f)))

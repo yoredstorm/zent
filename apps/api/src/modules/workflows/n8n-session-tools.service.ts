@@ -188,9 +188,11 @@ export class N8nSessionToolsService {
         status: order.status,
         total: Number(order.total),
         createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
         items: order.items.map((item) => ({
           productName: item.product?.nombre ?? 'Producto',
           quantity: item.quantity,
+          variantLabel: item.variantLabel ?? null,
         })),
       },
     };
