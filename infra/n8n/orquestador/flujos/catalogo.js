@@ -42,9 +42,9 @@ async function flujoCatalogo(ctx) {
       parche: {
         phase: 'browse_categories',
         categoryList: cats.map((c) => ({ id: c.id, name: c.name, productCount: c.productCount })),
-        selectedProductId: undefined,
-        esperandoVariante: undefined,
-        varianteSeleccionada: undefined,
+        selectedProductId: null,
+        esperandoVariante: null,
+        varianteSeleccionada: null,
         lastCopyKeys: { ...claves },
       },
     };
@@ -84,7 +84,7 @@ async function flujoCatalogo(ctx) {
         categoryName: categoria.name,
         lastProductList: listaGuardada,
         productPage: 0,
-        selectedProductId: undefined,
+        selectedProductId: null,
         lastCopyKeys: { ...claves },
       },
     };
@@ -113,8 +113,8 @@ async function flujoCatalogo(ctx) {
     const parche = {
       phase: 'product_detail',
       selectedProductId: producto.id,
-      esperandoVariante: tieneVariantes || undefined,
-      varianteSeleccionada: undefined,
+      esperandoVariante: tieneVariantes ? true : null,
+      varianteSeleccionada: null,
       lastCopyKeys: { ...claves },
     };
     // Con variantes se pide primero la opción; sin variantes, la cantidad.
@@ -167,9 +167,9 @@ async function flujoCatalogo(ctx) {
       respuesta,
       parche: {
         phase: 'cart',
-        selectedProductId: undefined,
-        esperandoVariante: undefined,
-        varianteSeleccionada: undefined,
+        selectedProductId: null,
+        esperandoVariante: null,
+        varianteSeleccionada: null,
         lastCopyKeys: { ...claves },
       },
     };
@@ -206,13 +206,13 @@ async function flujoCatalogo(ctx) {
       respuesta,
       parche: {
         phase: 'browse_products',
-        categoryId: undefined,
+        categoryId: null,
         categoryName: query,
         lastProductList: listaGuardada,
         productPage: 0,
-        selectedProductId: undefined,
-        esperandoVariante: undefined,
-        varianteSeleccionada: undefined,
+        selectedProductId: null,
+        esperandoVariante: null,
+        varianteSeleccionada: null,
         lastCopyKeys: { ...claves },
       },
     };
@@ -297,9 +297,9 @@ async function flujoCatalogo(ctx) {
           respuesta: listarDeNuevo(lista),
           parche: {
             phase: 'browse_products',
-            selectedProductId: undefined,
-            esperandoVariante: undefined,
-            varianteSeleccionada: undefined,
+            selectedProductId: null,
+            esperandoVariante: null,
+            varianteSeleccionada: null,
             lastCopyKeys: { ...claves },
           },
         };
@@ -328,10 +328,12 @@ async function flujoCatalogo(ctx) {
             variantId: objetivo.id,
             caption: `${objetivo.etiqueta} — S/ ${Number(objetivo.precio).toFixed(2)}`,
           });
-          return {
-            respuesta: envio?.sent ? '' : unir(COPY.opcionSinFoto()),
-            parche: { lastCopyKeys: { ...claves } },
-          };
+          // Nunca dejar la foto "sola": siempre invitar al siguiente paso (elegirla
+          // o seguir comparando), para que no se sienta como un envío seco.
+          const respuesta = envio?.sent
+            ? unir(COPY.fotoOpcionEnviada(nFoto, actual.variantes.length > 1))
+            : unir(COPY.opcionSinFoto());
+          return { respuesta, parche: { lastCopyKeys: { ...claves } } };
         }
 
         let variante = null;
@@ -356,7 +358,7 @@ async function flujoCatalogo(ctx) {
             `Elegiste *${variante.etiqueta}* — S/ ${Number(variante.precio).toFixed(2)}\n\n` +
             unir(COPY.productAskQuantity()),
           parche: {
-            esperandoVariante: undefined,
+            esperandoVariante: null,
             varianteSeleccionada: {
               id: variante.id,
               etiqueta: variante.etiqueta,

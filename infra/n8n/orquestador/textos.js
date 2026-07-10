@@ -430,6 +430,20 @@ function buildCopy(lastKeys = {}) {
         ],
         lastKeys,
       ),
+    fotoOpcionEnviada: (n, hayOtras) =>
+      pickAvoidRepeat(
+        'fotoOpcionEnviada',
+        hayOtras
+          ? [
+              `¿Es esta la que buscas? Escribe *${n}* para elegirla, o *foto* y otro número para comparar.`,
+              `Escribe *${n}* si te quedas con esta opción, o pide otra *foto* para seguir mirando.`,
+            ]
+          : [
+              `¿Es esta la que buscas? Escribe *${n}* para elegirla.`,
+              `Escribe *${n}* si te quedas con esta opción.`,
+            ],
+        lastKeys,
+      ),
     searchResultsIntro: (query) =>
       pickAvoidRepeat(
         'searchResultsIntro',

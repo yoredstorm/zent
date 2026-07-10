@@ -35,8 +35,8 @@ const productosPorCategoria = {
       description: null,
       atributos: 'Marca: Faber',
       variantes: [
-        { id: 'v1', etiqueta: '12 colores', precio: 80, stock: 4 },
-        { id: 'v2', etiqueta: '24 colores', precio: 120, stock: 2 },
+        { id: 'v1', etiqueta: '12 colores', precio: 80, stock: 4, imageUrl: '/api/uploads/images/acuarela-12.jpg' },
+        { id: 'v2', etiqueta: '24 colores', precio: 120, stock: 2, imageUrl: null },
       ],
     },
   ],
@@ -107,9 +107,15 @@ function mockBackend(nombre, cuerpo) {
     case 'chat.handoff':
       handoffCount += 1;
       return { ok: true };
-    case 'chat.session.patch':
-      session.flow = { ...(session.flow || {}), ...(cuerpo.flow || {}) };
+    case 'chat.session.patch': {
+      // El parche viaja de verdad por HTTP como JSON (helpers.httpRequest serializa
+      // el body): simular ese round-trip es lo que detecta bugs como usar `undefined`
+      // para "borrar" un campo — JSON.stringify lo descarta y el backend real nunca
+      // recibe la instrucción, dejando el valor viejo pegado en la sesión.
+      const flowPorHttp = JSON.parse(JSON.stringify(cuerpo.flow || {}));
+      session.flow = { ...(session.flow || {}), ...flowPorHttp };
       return { flow: session.flow };
+    }
     default:
       return null;
   }
@@ -264,5 +270,41 @@ function verificar(paso, r, cond, detalle) {
     process.exit(1);
   }
 
-  console.log('OK conversacion completa (20 pasos, punto de entrada real)');
+  // 21. REGRESIÓN CRÍTICA: producto con variantes — ver la foto de una opción,
+  //     elegirla y DESPUÉS mandar la cantidad. Bug real ya visto en producción:
+  //     "esperandoVariante: undefined" (para "borrarlo") se perdía al viajar como
+  //     JSON hacia chat.session.patch (JSON.stringify descarta claves undefined),
+  //     así que el backend nunca recibía la orden de limpiarlo y el cliente quedaba
+  //     atascado en el selector de opciones para siempre en vez de entender la
+  //     cantidad. El mock de chat.session.patch de este archivo ahora simula ese
+  //     viaje JSON real (ver arriba), así que este paso lo habría detectado.
+  session.flow = { phase: 'main_menu' };
+  r = await enviar('catalogo');
+  verificar(21, r, fase() === 'browse_categories', 'volver a categorías');
+
+  r = await enviar('arte');
+  verificar(21, r, /acuarelas/i.test(r.reply) && fase() === 'browse_products', 'categoría arte por nombre');
+
+  r = await enviar('1');
+  verificar(21, r, /12 colores/i.test(r.reply) && /24 colores/i.test(r.reply) && fase() === 'product_detail', 'lista de variantes de acuarelas');
+  if (!/foto 1/i.test(r.reply)) {
+    console.error('FAIL paso 21: no ofrece "foto 1" habiendo una opción con imagen', r.reply);
+    process.exit(1);
+  }
+
+  r = await enviar('foto 1');
+  verificar(21, r, fase() === 'product_detail', 'ver foto no cambia de fase');
+  if (!/\*1\*/.test(r.reply)) {
+    console.error('FAIL paso 21: la foto no invita a elegir esa opción (queda "seca")', r.reply);
+    process.exit(1);
+  }
+
+  r = await enviar('1');
+  verificar(21, r, /12 colores/i.test(r.reply) && /cantidad|cu[aá]ntas/i.test(r.reply), 'elegir variante 1 tras ver su foto');
+
+  // *** Este es exactamente el paso que reproduce el bug real del screenshot ***
+  r = await enviar('3');
+  verificar(21, r, /12 colores/i.test(r.reply) && /240\.00/.test(r.reply) && fase() === 'cart', 'la cantidad se entiende (NO vuelve a "no ubico esa opción")');
+
+  console.log('OK conversacion completa (21 pasos, punto de entrada real)');
 })();

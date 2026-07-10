@@ -49,12 +49,12 @@ async function flujoPedido(ctx) {
     if (r?.found) {
       return {
         respuesta: textoDetallePedido(r.order, unir, COPY),
-        parche: { phase: 'main_menu', esperandoCodigo: undefined, lastCopyKeys: { ...claves } },
+        parche: { phase: 'main_menu', esperandoCodigo: null, lastCopyKeys: { ...claves } },
       };
     }
     return {
       respuesta: unir(COPY.noActiveOrder()),
-      parche: { phase: 'main_menu', esperandoCodigo: undefined, lastCopyKeys: { ...claves } },
+      parche: { phase: 'main_menu', esperandoCodigo: null, lastCopyKeys: { ...claves } },
     };
   }
 
@@ -70,7 +70,7 @@ async function flujoPedido(ctx) {
       if (r?.status) {
         return {
           respuesta: textoDetallePedido(r, unir, COPY),
-          parche: { phase: 'main_menu', esperandoCodigo: undefined, lastCopyKeys: { ...claves } },
+          parche: { phase: 'main_menu', esperandoCodigo: null, lastCopyKeys: { ...claves } },
         };
       }
       return {

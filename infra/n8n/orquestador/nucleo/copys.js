@@ -23,16 +23,21 @@ function textoBienvenida({ sesion, copys, COPY, unir }) {
 }
 
 function parcheBienvenida(claves) {
+  // OJO: usar `null`, nunca `undefined` — el parche viaja por HTTP como JSON hacia
+  // `chat.session.patch` (helpers.httpRequest serializa el body), y JSON.stringify
+  // DESCARTA las claves con valor `undefined`. Si se usara `undefined` aquí, el
+  // backend nunca recibiría la instrucción de "borrar" el campo y el valor viejo
+  // quedaría pegado en la sesión para siempre (bug real ya visto en producción).
   return {
     phase: 'main_menu',
     checkout: {},
-    categoryId: undefined,
-    categoryName: undefined,
-    lastProductList: undefined,
-    selectedProductId: undefined,
-    productPage: undefined,
-    esperandoVariante: undefined,
-    varianteSeleccionada: undefined,
+    categoryId: null,
+    categoryName: null,
+    lastProductList: null,
+    selectedProductId: null,
+    productPage: null,
+    esperandoVariante: null,
+    varianteSeleccionada: null,
     lastCopyKeys: { ...claves },
   };
 }
