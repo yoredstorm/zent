@@ -16,11 +16,12 @@ async function flujoCheckout(ctx) {
     const respuesta =
       unir(COPY.checkoutSummaryIntro()) +
       '\n\n' +
-      resumenCarrito(carrito) +
-      '\n📍 ' +
+      resumenCarrito(carrito, { numerar: true }) +
+      '\n\n📍 *Entrega:* ' +
       direccion +
-      (referencia ? '\n📌 ' + referencia : '') +
-      '\n\nResponde *sí* o *confirmo* para registrar el pedido.';
+      (referencia ? '\n📌 *Referencia:* ' + referencia : '') +
+      '\n\n' +
+      unir(COPY.checkoutConfirmCta());
     return {
       respuesta,
       parche: { phase: 'checkout_confirm', checkout, lastCopyKeys: { ...claves } },
@@ -113,7 +114,8 @@ async function flujoCheckout(ctx) {
           if (flujo.lastOrderId) {
             return {
               respuesta:
-                `Tu pedido *#${String(flujo.lastOrderId).slice(0, 8)}* ya quedó registrado ✅\n\n` +
+                unir(COPY.orderAlreadyRegistered(String(flujo.lastOrderId).slice(0, 8))) +
+                '\n\n' +
                 unir(COPY.goodbyeSoft()),
               parche: { phase: 'main_menu', checkout: {}, lastCopyKeys: { ...claves } },
             };
@@ -141,14 +143,16 @@ async function flujoCheckout(ctx) {
         });
         if (!pedido?.orderId) {
           return {
-            respuesta:
-              'No pude registrar el pedido en este momento 😔 Escribe *sí* para intentar de nuevo o *asesor* para que te atienda una persona.',
+            respuesta: unir(COPY.orderCreateFailed()),
             parche: { phase: 'checkout_confirm', checkout, lastCopyKeys: { ...claves } },
           };
         }
         await llamarHerramienta('cart.clear', { stateKey: claveEstado });
         const respuesta =
-          unir(COPY.orderConfirmed(pedido.orderId)) + '\n\n' + unir(COPY.goodbyeSoft());
+          unir(COPY.orderConfirmed(pedido.orderId)) +
+          `\n📍 Lo enviaremos a: ${direccion}` +
+          '\n\n' +
+          unir(COPY.goodbyeSoft());
         return {
           respuesta,
           parche: {
@@ -162,8 +166,7 @@ async function flujoCheckout(ctx) {
 
       if (intencion === 'negar') {
         return {
-          respuesta:
-            'Sin problema, no registré el pedido. Tu carrito sigue guardado — di *catálogo* para seguir o *confirmar pedido* cuando estés listo.',
+          respuesta: unir(COPY.checkoutDeclined()),
           parche: { phase: 'cart', lastCopyKeys: { ...claves } },
         };
       }

@@ -87,6 +87,24 @@ function listaProductos(productos, pagina = 0, porPagina = 8) {
   return { texto: lineas.join('\n'), hayMas, pagina };
 }
 
+/**
+ * El backend manda los atributos como una sola línea "Marca: Faber · Peso: 2 kg".
+ * Con 1 solo atributo se ve bien en una línea; con varios, apretarlos con "·" se
+ * vuelve ilegible — aquí se abren en viñetas, una por atributo.
+ */
+function formatearAtributos(atributos, opts = {}) {
+  if (!atributos) return '';
+  const { maxItems = 5 } = opts;
+  const partes = atributos
+    .split('·')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
+  if (!partes.length) return '';
+  if (partes.length === 1) return `📋 ${partes[0]}`;
+  return '📋 *Detalles:*\n' + partes.map((p) => `   ▫️ ${p}`).join('\n');
+}
+
 function detalleProducto(producto, opts = {}) {
   const { sinEncabezado = false } = opts;
   let texto = sinEncabezado
@@ -95,7 +113,8 @@ function detalleProducto(producto, opts = {}) {
   if (producto.description?.trim()) {
     texto += (texto ? '\n' : '') + `📝 ${producto.description.trim()}`;
   }
-  if (producto.atributos) texto += `\n📋 ${producto.atributos}`;
+  const atributosFmt = formatearAtributos(producto.atributos);
+  if (atributosFmt) texto += (texto ? '\n' : '') + atributosFmt;
   if (producto.lowStock) texto += '\n⚠️ *¡Quedan pocas unidades!*';
   return texto;
 }
@@ -106,22 +125,27 @@ function leyendaImagen(producto) {
     const desc = producto.description.trim();
     leyenda += `\n📝 ${desc.length > 120 ? desc.slice(0, 117) + '…' : desc}`;
   }
-  if (producto.atributos) leyenda += `\n📋 ${producto.atributos}`;
+  const atributosFmt = formatearAtributos(producto.atributos, { maxItems: 3 });
+  if (atributosFmt) leyenda += `\n${atributosFmt}`;
   if (producto.lowStock) leyenda += '\n⚠️ *¡Quedan pocas unidades!*';
   return leyenda;
 }
 
+const DIVISOR_CARRITO = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄';
+
+/** Resumen de carrito estilo recibo: divisores + ítems + subtotal/envío/total. */
 function resumenCarrito(carrito, opts = {}) {
   if (!carrito?.items?.length) return '';
   const { numerar = false } = opts;
   const lineas = carrito.items.map(
     (i, idx) =>
-      `${numerar ? tecla(idx + 1) + ' ' : '• '}${i.quantity}x ${i.nombre} — S/ ${(i.quantity * i.unitPrice).toFixed(2)}`,
+      `${numerar ? tecla(idx + 1) + ' ' : '▫️ '}${i.quantity}x ${i.nombre} — S/ ${(i.quantity * i.unitPrice).toFixed(2)}`,
   );
-  lineas.push(`\nSubtotal: S/ ${Number(carrito.subtotal).toFixed(2)}`);
-  if (carrito.deliveryCost > 0) lineas.push(`Delivery: S/ ${Number(carrito.deliveryCost).toFixed(2)}`);
-  lineas.push(`*Total: S/ ${Number(carrito.total).toFixed(2)}*`);
-  return lineas.join('\n');
+  const bloque = [DIVISOR_CARRITO, ...lineas, DIVISOR_CARRITO];
+  bloque.push(`Subtotal: S/ ${Number(carrito.subtotal).toFixed(2)}`);
+  if (carrito.deliveryCost > 0) bloque.push(`Envío: S/ ${Number(carrito.deliveryCost).toFixed(2)}`);
+  bloque.push(`*Total: S/ ${Number(carrito.total).toFixed(2)}*`);
+  return bloque.join('\n');
 }
 
 if (typeof module !== 'undefined') {
@@ -134,6 +158,7 @@ if (typeof module !== 'undefined') {
     leerCantidad,
     tecla,
     listaProductos,
+    formatearAtributos,
     detalleProducto,
     leyendaImagen,
     resumenCarrito,

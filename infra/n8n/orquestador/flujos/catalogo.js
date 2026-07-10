@@ -158,7 +158,7 @@ async function flujoCatalogo(ctx) {
       '\n\n' +
       unir(COPY.cartSummary()) +
       '\n' +
-      resumenCarrito(resultado.cart) +
+      resumenCarrito(resultado.cart, { numerar: true }) +
       '\n\n' +
       unir(COPY.keepShopping());
     return {

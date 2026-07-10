@@ -965,6 +965,8 @@ Reglas clave:
 - Texto libre desde el menú/navegando → **búsqueda de producto** (`products.search`).
 - En el carrito, `quita N` / `elimina <nombre>` → quita ese ítem (`cart.remove_item`).
 - Paginación de productos: `más` muestra la siguiente página.
+- **Atributos y carrito en formato recibo**: el backend manda los atributos como una sola línea ("Marca: Faber · Peso: 2 kg"); `formatearAtributos` (nucleo/productos.js) la abre en viñetas cuando hay más de uno. El carrito/checkout se muestran con divisores, ítems numerados y Subtotal/Envío/Total etiquetados (`resumenCarrito`), como un recibo real.
+- **Variedad y calidez**: cada copy en `textos.js` tiene 3-5 variantes (antes 2-3) elegidas sin repetir la anterior (`pickAvoidRepeat`), con toques de calidez ("¡Buena elección!", agradecimientos). Al añadir variantes nuevas, revisar que sigan cumpliendo los regex de `pruebas/` (p. ej. `cartEmpty` siempre debe contener "vacío" o "no tienes").
 - `hola` resetea al menú desde cualquier fase **excepto** checkout.
 
 **Checklist tras cambiar el orquestador:**

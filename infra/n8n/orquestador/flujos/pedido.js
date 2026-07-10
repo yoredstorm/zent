@@ -17,6 +17,8 @@ const EMOJI_ESTADO = {
   CANCELADO: '❌',
 };
 
+const DIVISOR_PEDIDO = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄';
+
 function textoDetallePedido(o, unir, COPY) {
   const fechaRef = o.updatedAt || o.createdAt;
   const antiguedad = fechaRef ? haceCuanto(fechaRef) : '';
@@ -25,10 +27,11 @@ function textoDetallePedido(o, unir, COPY) {
       (antiguedad ? ` (${antiguedad})` : ''),
   ];
   if (o.items?.length) {
-    lineas.push('');
+    lineas.push(DIVISOR_PEDIDO);
     for (const it of o.items) {
-      lineas.push(`• ${it.quantity}x ${it.productName}` + (it.variantLabel ? ` — _${it.variantLabel}_` : ''));
+      lineas.push(`▫️ ${it.quantity}x ${it.productName}` + (it.variantLabel ? ` — _${it.variantLabel}_` : ''));
     }
+    lineas.push(DIVISOR_PEDIDO);
   }
   lineas.push('', unir(COPY.orderDetailFooter()));
   return lineas.join('\n');
