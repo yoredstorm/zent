@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { AtributosProducto } from '@/components/products/AtributosProducto';
 import { SubproductosProducto } from '@/components/products/SubproductosProducto';
+import { etiquetaVariante } from '@/lib/variantes';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -336,7 +337,7 @@ export default function ProductsPage() {
                     {p.variants.map((v: any) => (
                       <div key={v.id} className="flex justify-between border-b border-slate-100 py-1 text-sm last:border-b-0">
                         <span className="text-slate-700">
-                          {v.values?.map((x: any) => x.attributeValue?.valor).filter(Boolean).join(' / ') || v.sku || 'Opción'}
+                          {(v.values?.length ? etiquetaVariante(v) : '') || v.sku || 'Opción'}
                         </span>
                         <span className={v.stock <= 0 ? 'font-medium text-red-600' : 'text-slate-600'}>
                           {v.stock} uds — S/ {Number(v.salePrice ?? p.salePrice).toFixed(2)}

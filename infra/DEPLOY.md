@@ -987,8 +987,8 @@ Reglas clave:
    - `asesor` → handoff (una sola vez; mensajes siguientes no repiten el handoff)
 6. Smoke en dashboard:
    - **Productos**: producto con subproductos muestra badge `5 en 2 opciones` y el drilldown lista cada opción con su stock; el campo Stock queda bloqueado ("Calculado automáticamente")
-   - **Pedidos**: cada item del detalle muestra `Opción: Rojo / M` (lo que hay que preparar)
-   - **Reportes**: el top de ventas separa `Polo — Rojo / M` de `Polo — Azul / L`
+   - **Pedidos**: cada item del detalle muestra `Opción: Color: Rojo · Talla: M` (lo que hay que preparar)
+   - **Reportes**: el top de ventas separa `Polo — Color: Rojo · Talla: M` de `Polo — Color: Azul · Talla: L`
 7. En la ejecución n8n, el nodo `Orquestar` devuelve `metadata.grupo` y `metadata.phase` — revisar ahí (o los logs `ERROR orquestador …`) ante cualquier respuesta rara
 8. **Timeout**: con varios round-trips por turno, sube `N8N_CHAT_TIMEOUT_MS` a `8000` (ver bloque n8n del `.env`) para evitar fallbacks y pedidos duplicados por corte a los 5 s
 
@@ -997,7 +997,7 @@ Reglas clave:
 - Migración: `npx prisma migrate deploy` aplica `20260706020000_atributos_y_variantes` (crea `attributes`, `attribute_values`, `product_attribute_values`, `product_variants`, `variant_values` y agrega `variantId`/`variantLabel` a `order_items`; siembra los atributos base Color, Material, Textura, Peso, Alto, Ancho, Voltaje, Talla y Marca sin valores).
 - Dashboard: nueva sección **Atributos** (crear valores tipo Rojo, M, 220V) y en el formulario del producto los bloques **Atributos del producto** (informativos) y **Subproductos** (combinación + stock propio + precio opcional).
 - Si un producto tiene subproductos activos, su stock pasa a ser la **suma** de las variantes (se recalcula al crear/editar/eliminar variantes y al confirmar/cancelar pedidos).
-- Chat: los atributos informativos salen como `📋 Marca: Faber · Peso: 2 kg`; si hay variantes con stock, el bot pide la opción (`1️⃣ Rojo / M — S/ 50.00`) **antes** de la cantidad y `cart.add_item` valida stock por variante.
+- Chat: los atributos informativos salen como `📋 Marca: Faber · Peso: 2 kg`; si hay variantes con stock, el bot pide la opción (`1️⃣ Color: Rojo · Talla: M — S/ 50.00`) **antes** de la cantidad y `cart.add_item` valida stock por variante. `etiquetaVariante` (n8n-commerce-tools.controller.ts) etiqueta cada valor con el nombre de su atributo — "Color: Rojo · Material: Acero inoxidable" en vez de valores sueltos unidos por "/" — y capitaliza el valor; este label se reusa tal cual en el carrito, los items de pedido y los reportes. Además, un atributo cuyo nombre ya se usa para armar los subproductos se excluye del bloque informativo `atributos` del producto (evita mostrar "Color: rojo" Y "Color: verde" a la vez antes de elegir opción).
 
 **Smoke de atributos (tras deploy):**
 

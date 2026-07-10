@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
+import { etiquetaVariante } from '@/lib/variantes';
 
 interface ValorAtributo {
   id: string;
@@ -22,10 +23,6 @@ interface Variante {
   salePrice: string | number | null;
   isActive: boolean;
   values: { attributeValue: { id: string; valor: string; attribute: { nombre: string } } }[];
-}
-
-function etiqueta(variante: Variante) {
-  return variante.values.map((v) => v.attributeValue.valor).join(' / ');
 }
 
 /**
@@ -133,7 +130,7 @@ export function SubproductosProducto({ productId }: { productId: string }) {
           <tbody className="divide-y divide-slate-100">
             {variantes.map((v) => (
               <tr key={v.id}>
-                <td className="py-2 pr-4 font-medium text-slate-800">{etiqueta(v)}</td>
+                <td className="py-2 pr-4 font-medium text-slate-800">{etiquetaVariante(v)}</td>
                 <td className="py-2 pr-4">
                   <input
                     type="number"

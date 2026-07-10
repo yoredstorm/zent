@@ -211,7 +211,87 @@ describe('N8nCommerceToolsController', () => {
       ],
     });
     expect(result.atributos).toBe('Marca: Faber · Peso: 2 kg');
-    expect(result.variantes).toEqual([{ id: 'v1', etiqueta: 'Rojo / M', precio: 50, stock: 3 }]);
+    expect(result.variantes).toEqual([{ id: 'v1', etiqueta: 'Color: Rojo · Talla: M', precio: 50, stock: 3 }]);
+  });
+
+  it('productForChat excluye de "atributos" los que ya diferencian subproductos', () => {
+    const { controller } = createController();
+    const result = (controller as any).productForChat({
+      id: 'p1',
+      nombre: 'papel grueso',
+      descripcion: '',
+      salePrice: 50,
+      stock: 15,
+      minStock: 1,
+      category: { nombre: 'oficina' },
+      images: [],
+      // Datos mal cargados: Color y Textura quedaron también como "informativos",
+      // pero Color y Textura son justamente los atributos que arman los subproductos.
+      attributeValues: [
+        { attributeValue: { valor: 'rojo', attribute: { nombre: 'Color' } } },
+        { attributeValue: { valor: 'verde', attribute: { nombre: 'Color' } } },
+        { attributeValue: { valor: 'piel genuino', attribute: { nombre: 'Textura' } } },
+      ],
+      variants: [
+        {
+          id: 'v1',
+          stock: 7,
+          salePrice: null,
+          values: [
+            { attributeValue: { valor: 'rojo', attribute: { nombre: 'Color' } } },
+            { attributeValue: { valor: 'acero inoxidable', attribute: { nombre: 'Material' } } },
+            { attributeValue: { valor: 'piel genuino', attribute: { nombre: 'Textura' } } },
+          ],
+        },
+        {
+          id: 'v2',
+          stock: 8,
+          salePrice: null,
+          values: [
+            { attributeValue: { valor: 'verde', attribute: { nombre: 'Color' } } },
+            { attributeValue: { valor: 'oro', attribute: { nombre: 'Material' } } },
+            { attributeValue: { valor: 'piel genuino', attribute: { nombre: 'Textura' } } },
+          ],
+        },
+      ],
+    });
+    // Color y Textura se descartan del bloque informativo por ser parte de la
+    // combinación de subproductos; ya se ven completas en cada opción del selector.
+    expect(result.atributos).toBeNull();
+    expect(result.variantes).toEqual([
+      { id: 'v1', etiqueta: 'Color: Rojo · Material: Acero inoxidable · Textura: Piel genuino', precio: 50, stock: 7 },
+      { id: 'v2', etiqueta: 'Color: Verde · Material: Oro · Textura: Piel genuino', precio: 50, stock: 8 },
+    ]);
+  });
+
+  it('productForChat mantiene atributos informativos que no varían entre subproductos', () => {
+    const { controller } = createController();
+    const result = (controller as any).productForChat({
+      id: 'p2',
+      nombre: 'Polo deportivo',
+      descripcion: '',
+      salePrice: 55,
+      stock: 5,
+      minStock: 1,
+      category: { nombre: 'Ropa' },
+      images: [],
+      attributeValues: [
+        { attributeValue: { valor: 'Nike', attribute: { nombre: 'Marca' } } },
+        { attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } },
+      ],
+      variants: [
+        {
+          id: 'v1',
+          stock: 3,
+          salePrice: null,
+          values: [{ attributeValue: { valor: 'M', attribute: { nombre: 'Talla' } } }],
+        },
+      ],
+    });
+    // "Marca" no es un atributo de las variantes (solo Talla lo es) → se conserva.
+    // "Color" tampoco varía entre subproductos en este caso, pero como no hay overlap
+    // con "Talla" (el único atributo de variante), también se conserva.
+    expect(result.atributos).toBe('Marca: Nike · Color: Rojo');
   });
 
   it('cart.add_item con variantId valida stock y usa precio de la variante', async () => {
@@ -222,7 +302,7 @@ describe('N8nCommerceToolsController', () => {
       isActive: true,
       stock: 4,
       salePrice: { toString: () => '15' },
-      values: [{ attributeValue: { valor: 'Rojo' } }],
+      values: [{ attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } }],
     });
     await controller.cartAddItem({
       stateKey: 'sess::chat1',
@@ -235,8 +315,8 @@ describe('N8nCommerceToolsController', () => {
       'sess::chat1',
       expect.objectContaining({
         variantId: 'v1',
-        variantLabel: 'Rojo',
-        nombre: 'Cafe (Rojo)',
+        variantLabel: 'Color: Rojo',
+        nombre: 'Cafe (Color: Rojo)',
         unitPrice: 15,
       }),
     );
@@ -250,7 +330,7 @@ describe('N8nCommerceToolsController', () => {
       isActive: true,
       stock: 1,
       salePrice: null,
-      values: [{ attributeValue: { valor: 'Rojo' } }],
+      values: [{ attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } }],
     });
     await expect(
       controller.cartAddItem({
@@ -272,7 +352,7 @@ describe('N8nCommerceToolsController', () => {
       isActive: true,
       stock: 4,
       salePrice: null,
-      values: [{ attributeValue: { valor: 'Rojo' } }],
+      values: [{ attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } }],
     });
     await controller.createOrderFromChat({
       chatId: 'chat1',
@@ -283,7 +363,7 @@ describe('N8nCommerceToolsController', () => {
     expect(orders.create).toHaveBeenCalledWith(
       expect.objectContaining({
         items: [
-          expect.objectContaining({ productId: 'prod_1', variantId: 'v1', variantLabel: 'Rojo' }),
+          expect.objectContaining({ productId: 'prod_1', variantId: 'v1', variantLabel: 'Color: Rojo' }),
         ],
       }),
     );

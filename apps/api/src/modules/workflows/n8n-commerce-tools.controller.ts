@@ -24,10 +24,22 @@ const INCLUDE_PRODUCTO_CHAT = {
   },
 };
 
+function capitalizarPrimera(valor: string): string {
+  return valor ? valor.charAt(0).toUpperCase() + valor.slice(1) : valor;
+}
+
+/**
+ * "Color: Rojo · Material: Acero inoxidable" en vez de valores sueltos unidos por
+ * "/" (rojo / acero inoxidable) — el nombre del atributo evita que se lea como una
+ * lista ambigua de palabras sueltas. Se usa en el selector del chat, el nombre del
+ * ítem del carrito, los items de pedido (dashboard/reportes) y las confirmaciones.
+ */
 function etiquetaVariante(variant: {
-  values: { attributeValue: { valor: string } }[];
+  values: { attributeValue: { valor: string; attribute: { nombre: string } } }[];
 }): string {
-  return variant.values.map((v) => v.attributeValue.valor).join(' / ');
+  return variant.values
+    .map((v) => `${v.attributeValue.attribute.nombre}: ${capitalizarPrimera(v.attributeValue.valor)}`)
+    .join(' · ');
 }
 
 @ApiTags('n8n-tools')
@@ -203,12 +215,12 @@ export class N8nCommerceToolsController {
       id: string;
       stock: number;
       salePrice: unknown;
-      values: { attributeValue: { valor: string } }[];
+      values: { attributeValue: { valor: string; attribute: { nombre: string } } }[];
     } | null = null;
     if (body.variantId?.trim()) {
       variant = await this.prisma.productVariant.findUnique({
         where: { id: body.variantId },
-        include: { values: { include: { attributeValue: true } } },
+        include: { values: { include: { attributeValue: { include: { attribute: true } } } } },
       });
       if (!variant || (variant as any).productId !== product.id || !(variant as any).isActive) {
         throw new NotFoundException(`Subproducto no encontrado: ${body.variantId}`);
@@ -373,7 +385,7 @@ export class N8nCommerceToolsController {
         if (item.variantId?.trim()) {
           const variant = await this.prisma.productVariant.findUnique({
             where: { id: item.variantId },
-            include: { values: { include: { attributeValue: true } } },
+            include: { values: { include: { attributeValue: { include: { attribute: true } } } } },
           });
           if (!variant || variant.productId !== product.id) {
             throw new NotFoundException(`Subproducto no encontrado: ${item.variantId}`);
@@ -509,11 +521,6 @@ export class N8nCommerceToolsController {
       values: { attributeValue: { valor: string; attribute: { nombre: string } } }[];
     }[];
   }) {
-    // "Marca: Faber · Peso: 2 kg" — atributos informativos para la descripción del chat
-    const atributos =
-      row.attributeValues
-        ?.map((pav) => `${pav.attributeValue.attribute.nombre}: ${pav.attributeValue.valor}`)
-        .join(' · ') || null;
     const variantes =
       row.variants
         ?.filter((v) => v.stock > 0)
@@ -523,6 +530,21 @@ export class N8nCommerceToolsController {
           precio: v.salePrice != null ? Number(v.salePrice) : Number(row.salePrice),
           stock: v.stock,
         })) ?? [];
+    // Un atributo que ya diferencia los subproductos (ej. Color, Material) no debe
+    // repetirse como "informativo": ahí mostraría valores contradictorios (Color:
+    // rojo Y Color: verde a la vez) y sería redundante con el selector de opciones.
+    // Solo se listan aquí los atributos que NO varían entre subproductos (Marca, Peso...).
+    const nombresAtributosDeVariantes = new Set(
+      variantes.length > 0
+        ? (row.variants ?? []).flatMap((v) => v.values.map((vv) => vv.attributeValue.attribute.nombre))
+        : [],
+    );
+    // "Marca: Faber · Peso: 2 kg" — atributos informativos para la descripción del chat
+    const atributos =
+      row.attributeValues
+        ?.filter((pav) => !nombresAtributosDeVariantes.has(pav.attributeValue.attribute.nombre))
+        .map((pav) => `${pav.attributeValue.attribute.nombre}: ${pav.attributeValue.valor}`)
+        .join(' · ') || null;
     return {
       id: row.id,
       name: row.nombre,
