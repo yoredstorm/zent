@@ -108,6 +108,16 @@ async function flujoCheckout(ctx) {
 
       if (intencion === 'confirmar' || esAfirmativo(msj)) {
         if (!carrito.items?.length) {
+          // Guard anti-duplicado: si ya se creó un pedido y el carrito quedó vacío,
+          // no volver a crear — solo confirmar que ya está registrado.
+          if (flujo.lastOrderId) {
+            return {
+              respuesta:
+                `Tu pedido *#${String(flujo.lastOrderId).slice(0, 8)}* ya quedó registrado ✅\n\n` +
+                unir(COPY.goodbyeSoft()),
+              parche: { phase: 'main_menu', checkout: {}, lastCopyKeys: { ...claves } },
+            };
+          }
           return {
             respuesta: unir(COPY.cartEmpty()),
             parche: { phase: 'main_menu', checkout: {}, lastCopyKeys: { ...claves } },
@@ -141,7 +151,12 @@ async function flujoCheckout(ctx) {
           unir(COPY.orderConfirmed(pedido.orderId)) + '\n\n' + unir(COPY.goodbyeSoft());
         return {
           respuesta,
-          parche: { phase: 'main_menu', checkout: {}, lastCopyKeys: { ...claves } },
+          parche: {
+            phase: 'main_menu',
+            checkout: {},
+            lastOrderId: pedido.orderId,
+            lastCopyKeys: { ...claves },
+          },
         };
       }
 

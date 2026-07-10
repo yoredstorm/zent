@@ -14,9 +14,16 @@ function normalizarMensaje(mensaje) {
 function esSaludo(msj) {
   if (!msj) return true;
   if (/^\d+$/.test(msj)) return false;
-  if (/^(hola|buenas|buenos|hey|hi|hello|saludos|que tal|ola)[\s!.?,]*$/.test(msj)) return true;
-  if (msj.length <= 30 && /\b(hola|buenas|buenos|hey|saludos)\b/.test(msj)) return true;
-  return false;
+  if (/^(hola+|buenas|buenos dias|buenas tardes|buenas noches|buen dia|hey|hi|hello|saludos|que tal|ola|holi)[\s!.?,]*$/.test(msj)) {
+    return true;
+  }
+  // "buenas, quiero la regla" NO es saludo: quita las palabras de saludo y mira si queda algo.
+  const resto = msj
+    .replace(/\b(hola+|buenas|buenos|buen|dias|tardes|noches|dia|hey|hi|hello|saludos|que|tal|ola|holi)\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return resto.length <= 3;
 }
 
 function detectarIntencion(msj) {
@@ -43,6 +50,34 @@ function pareceIdPedido(msj) {
   return /^[a-f0-9-]{6,}$/i.test(msj.trim()) || /^#?[a-f0-9]{6,8}$/i.test(msj.trim());
 }
 
+/** "quita la regla", "elimina 2", "sacar del carrito" → intención de quitar del carrito. */
+function esQuitar(msj) {
+  return /^(quita(r)?|elimina(r)?|borra(r)?|remueve(r)?|remover|saca(r)?)\b/.test(msj);
+}
+
+/** Devuelve lo que queda tras el verbo de quitar: un número o un nombre. */
+function referenciaQuitar(msj) {
+  return msj
+    .replace(/^(quita(r)?|elimina(r)?|borra(r)?|remueve(r)?|remover|saca(r)?)\s*/, '')
+    .replace(/\b(el|la|los|las|un|una|del|de|carrito|producto|item|articulo)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** "más", "ver más", "siguiente" → pedir la siguiente página del listado. */
+function esVerMas(msj) {
+  return /^(mas|ver mas|mostrar mas|siguiente|siguiente pagina|otra pagina|mas productos|continuar)$/.test(msj);
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { normalizarMensaje, esSaludo, detectarIntencion, esAfirmativo, pareceIdPedido };
+  module.exports = {
+    normalizarMensaje,
+    esSaludo,
+    detectarIntencion,
+    esAfirmativo,
+    pareceIdPedido,
+    esQuitar,
+    referenciaQuitar,
+    esVerMas,
+  };
 }

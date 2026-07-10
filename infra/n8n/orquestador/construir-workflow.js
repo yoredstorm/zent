@@ -1,16 +1,20 @@
 /**
  * Constructor del workflow "Zent Orquestador WhatsApp".
- * Genera zent-orquestador.workflow.json con nodos visibles por flujo:
- *   Entrada WhatsApp → Preparar Contexto → Enrutador de Fase (Switch)
- *     → Flujo Menú / Catálogo / Carrito / Checkout / Pedido / Asesor
- *     → Guardar Sesión y Responder → Responder a Zent
+ * Genera zent-orquestador.workflow.json con un GRAFO MÍNIMO Y ROBUSTO:
  *
- * Nota de diseño (KISS): los nodos Code de n8n son entornos aislados — no pueden
- * compartir funciones entre sí ni hacer require de archivos externos. Por eso cada
- * nodo lleva embebida la librería compartida (copys + nucleo), pero:
- *   - La lógica editable de cada nodo son 2-3 líneas al inicio.
- *   - La librería va al final, marcada como GENERADA (se regenera con este script).
- *   - La única fuente de verdad son los archivos de nucleo/ y flujos/.
+ *   Entrada WhatsApp (webhook) → Orquestar (Code) → Responder a Zent
+ *
+ * Nota de diseño (KISS + robustez):
+ *   - Un solo nodo Code ("Orquestar") hace todo: normaliza el mensaje, enruta,
+ *     ejecuta el flujo correspondiente, persiste la sesión y arma la respuesta.
+ *   - `orquestarMensaje` envuelve todo en try/catch: el nodo NUNCA lanza, así el
+ *     webhook siempre responde y la sesión nunca queda a medias.
+ *   - Los nodos Code de n8n son sandboxes aislados (no hay require ni funciones
+ *     compartidas entre nodos). Por eso la librería (copys + nucleo + flujos) va
+ *     embebida UNA sola vez en este nodo, marcada como GENERADA.
+ *   - La ÚNICA fuente de verdad son los archivos de nucleo/ y flujos/.
+ *   - La invocación va AL FINAL del nodo, después de la librería, para que todas
+ *     las definiciones (incluidas const) estén inicializadas antes de ejecutarse.
  */
 const fs = require('fs');
 const path = require('path');
@@ -25,88 +29,43 @@ function limpiarExports(codigo) {
   return codigo.replace(/^if \(typeof module !== 'undefined'\) \{[\s\S]*?\n\}/gm, '');
 }
 
-const SEPARADOR = `
-// ╔══════════════════════════════════════════════════════════════════════╗
-// ║  LIBRERÍA COMPARTIDA (GENERADA — NO EDITAR AQUÍ)                      ║
-// ║  Fuente: infra/n8n/orquestador/{nucleo,flujos}/*.js                   ║
-// ║  Regenerar con: node infra/n8n/orquestador/construir-workflow.js      ║
-// ╚══════════════════════════════════════════════════════════════════════╝
-`;
-
-const libreriaComun = [
+// ---------------------------------------------------------------------------
+// Librería embebida (orden de carga). Todo son declaraciones de función +
+// algunas const de módulo; la invocación al final garantiza que todo exista.
+// ---------------------------------------------------------------------------
+const ARCHIVOS_LIBRERIA = [
   'textos.js',
   'nucleo/intencion.js',
+  'nucleo/enrutador.js',
   'nucleo/productos.js',
   'nucleo/copys.js',
   'nucleo/sesion.js',
   'nucleo/tiempo.js',
   'nucleo/ejecutor.js',
-]
-  .map((f) => limpiarExports(leer(f)))
-  .join('\n');
+  'flujos/menu.js',
+  'flujos/catalogo.js',
+  'flujos/carrito.js',
+  'flujos/checkout.js',
+  'flujos/pedido.js',
+  'flujos/asesor.js',
+  'nucleo/orquestador.js',
+];
 
-// ---------------------------------------------------------------------------
-// Nodo "Preparar Contexto" — solo enrutador + intención (no necesita copys)
-// ---------------------------------------------------------------------------
-const codigoPrepararContexto = `// Normaliza el mensaje, detecta la intención y decide el grupo de flujo.
-return [{ json: prepararContexto($json.body ?? $json) }];
-${SEPARADOR}
-${limpiarExports(leer('nucleo/intencion.js'))}
-${limpiarExports(leer('nucleo/enrutador.js'))}`;
+const libreria = ARCHIVOS_LIBRERIA.map((f) => limpiarExports(leer(f))).join('\n');
 
-// ---------------------------------------------------------------------------
-// Nodos de flujo — 3 líneas editables + flujo propio + librería común
-// ---------------------------------------------------------------------------
-function codigoNodoFlujo(archivoFlujo, nombreFuncion) {
-  return `// Ejecuta ${nombreFuncion} con las herramientas del backend (await directo, sin fillers).
-const ejecutor = crearEjecutor({ datos: $json, helpers: this.helpers, copys: copysZent() });
-return [{ json: await ejecutor.ejecutar(${nombreFuncion}) }];
+const codigoOrquestar = `// ╔══════════════════════════════════════════════════════════════════════╗
+// ║  ORQUESTADOR ZENT — NODO ÚNICO (GENERADO — NO EDITAR AQUÍ)            ║
+// ║  Fuente de verdad: infra/n8n/orquestador/{textos,nucleo,flujos}/*.js  ║
+// ║  Regenerar con: node infra/n8n/orquestador/construir-workflow.js      ║
+// ╚══════════════════════════════════════════════════════════════════════╝
+${libreria}
 
-// ─── Lógica de este flujo ───
-${limpiarExports(leer(archivoFlujo))}
-${SEPARADOR}
-${libreriaComun}`;
-}
-
-// ---------------------------------------------------------------------------
-// Nodo "Guardar Sesión y Responder"
-// ---------------------------------------------------------------------------
-const codigoGuardarResponder = `// Persiste el parche de sesión (chat.session.patch) y arma la respuesta al bridge.
-const ejecutor = crearEjecutor({ datos: $json, helpers: this.helpers, copys: null });
-return [{ json: await ejecutor.guardarYResponder() }];
-${SEPARADOR}
-${limpiarExports(leer('nucleo/ejecutor.js'))}`;
+// ─── Punto de entrada (al final: toda la librería ya está inicializada) ───
+return [{ json: await orquestarMensaje($json.body ?? $json, this.helpers) }];`;
 
 // ---------------------------------------------------------------------------
 // Nodos y conexiones
 // ---------------------------------------------------------------------------
-const GRUPOS = [
-  { valor: 'menu', etiqueta: 'Menú', nodo: 'Flujo Menú', archivo: 'flujos/menu.js', funcion: 'flujoMenu' },
-  { valor: 'catalogo', etiqueta: 'Catálogo', nodo: 'Flujo Catálogo', archivo: 'flujos/catalogo.js', funcion: 'flujoCatalogo' },
-  { valor: 'carrito', etiqueta: 'Carrito', nodo: 'Flujo Carrito', archivo: 'flujos/carrito.js', funcion: 'flujoCarrito' },
-  { valor: 'checkout', etiqueta: 'Checkout', nodo: 'Flujo Checkout', archivo: 'flujos/checkout.js', funcion: 'flujoCheckout' },
-  { valor: 'pedido', etiqueta: 'Pedido', nodo: 'Flujo Pedido', archivo: 'flujos/pedido.js', funcion: 'flujoPedido' },
-  { valor: 'asesor', etiqueta: 'Asesor', nodo: 'Flujo Asesor', archivo: 'flujos/asesor.js', funcion: 'flujoAsesor' },
-];
-
-function reglaGrupo(valor, etiqueta) {
-  return {
-    conditions: {
-      options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
-      combinator: 'and',
-      conditions: [
-        {
-          leftValue: '={{ $json.grupo }}',
-          rightValue: valor,
-          operator: { type: 'string', operation: 'equals' },
-        },
-      ],
-    },
-    renameOutput: true,
-    outputKey: etiqueta,
-  };
-}
-
 const nodos = [
   {
     parameters: { path: 'zent-chat', httpMethod: 'POST', responseMode: 'responseNode' },
@@ -114,43 +73,16 @@ const nodos = [
     name: 'Entrada WhatsApp',
     type: 'n8n-nodes-base.webhook',
     typeVersion: 2,
-    position: [-900, 300],
+    position: [-600, 300],
     webhookId: 'zent-chat-orchestrator',
   },
   {
-    parameters: { jsCode: codigoPrepararContexto },
-    id: 'preparar-contexto',
-    name: 'Preparar Contexto',
+    parameters: { jsCode: codigoOrquestar },
+    id: 'orquestar',
+    name: 'Orquestar',
     type: 'n8n-nodes-base.code',
     typeVersion: 2,
-    position: [-620, 300],
-  },
-  {
-    parameters: {
-      rules: { values: GRUPOS.map((g) => reglaGrupo(g.valor, g.etiqueta)) },
-      options: {},
-    },
-    id: 'enrutador-de-fase',
-    name: 'Enrutador de Fase',
-    type: 'n8n-nodes-base.switch',
-    typeVersion: 3,
-    position: [-340, 300],
-  },
-  ...GRUPOS.map((g, i) => ({
-    parameters: { jsCode: codigoNodoFlujo(g.archivo, g.funcion) },
-    id: `flujo-${g.valor}`,
-    name: g.nodo,
-    type: 'n8n-nodes-base.code',
-    typeVersion: 2,
-    position: [-40, i * 160 - 100],
-  })),
-  {
-    parameters: { jsCode: codigoGuardarResponder },
-    id: 'guardar-responder',
-    name: 'Guardar Sesión y Responder',
-    type: 'n8n-nodes-base.code',
-    typeVersion: 2,
-    position: [260, 300],
+    position: [-260, 300],
   },
   {
     parameters: {
@@ -162,23 +94,14 @@ const nodos = [
     name: 'Responder a Zent',
     type: 'n8n-nodes-base.respondToWebhook',
     typeVersion: 1.1,
-    position: [540, 300],
+    position: [120, 300],
   },
 ];
 
 const conexiones = {
-  'Entrada WhatsApp': { main: [[{ node: 'Preparar Contexto', type: 'main', index: 0 }]] },
-  'Preparar Contexto': { main: [[{ node: 'Enrutador de Fase', type: 'main', index: 0 }]] },
-  'Enrutador de Fase': {
-    main: GRUPOS.map((g) => [{ node: g.nodo, type: 'main', index: 0 }]),
-  },
-  'Guardar Sesión y Responder': {
-    main: [[{ node: 'Responder a Zent', type: 'main', index: 0 }]],
-  },
+  'Entrada WhatsApp': { main: [[{ node: 'Orquestar', type: 'main', index: 0 }]] },
+  Orquestar: { main: [[{ node: 'Responder a Zent', type: 'main', index: 0 }]] },
 };
-for (const g of GRUPOS) {
-  conexiones[g.nodo] = { main: [[{ node: 'Guardar Sesión y Responder', type: 'main', index: 0 }]] };
-}
 
 const workflow = {
   name: 'Zent Orquestador WhatsApp',
@@ -200,4 +123,4 @@ for (const nodo of nodos) {
 }
 
 fs.writeFileSync(path.join(dir, 'zent-orquestador.workflow.json'), json);
-console.log('Escrito zent-orquestador.workflow.json');
+console.log('Escrito zent-orquestador.workflow.json (grafo: Webhook → Orquestar → Responder)');

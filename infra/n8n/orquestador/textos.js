@@ -62,8 +62,8 @@ function buildCopy(lastKeys = {}) {
       pickAvoidRepeat(
         'mainMenu',
         [
-          '¿En qué te ayudo?\n• *Catálogo PDF* — catálogo completo\n• *Catálogo* — productos por categoría\n• *Mi pedido* — estado de tu compra\n• *Asesor* — hablar con una persona',
-          'Puedes decirme *catálogo PDF*, *catálogo*, *mi pedido* o *asesor*, o cuéntame qué necesitas.',
+          '¿En qué te ayudo?\n1️⃣ *Catálogo* — productos por categoría\n2️⃣ *Mi pedido* — estado de tu compra\n3️⃣ *Asesor* — hablar con una persona\nTambién puedes pedir el *catálogo PDF* o escribir lo que buscas.',
+          'Escribe *1* (catálogo), *2* (mi pedido) o *3* (asesor) — o pídeme el *catálogo PDF*, o cuéntame qué buscas.',
           '¿Qué te gustaría hacer?\n1️⃣ Ver *catálogo* por categoría\n2️⃣ Consultar *mi pedido*\n3️⃣ Hablar con un *asesor*\nTambién puedes pedir el *catálogo PDF*.',
         ],
         lastKeys,
@@ -334,7 +334,67 @@ function buildCopy(lastKeys = {}) {
     paginationMore: () =>
       pickAvoidRepeat(
         'paginationMore',
-        ['¿Sigo con más productos? (*sí* / *no*)', 'Hay más — ¿te muestro el resto?', '¿Quieres ver más?'],
+        [
+          'Hay más productos — escribe *más* para ver el resto.',
+          '¿Te muestro más? Escribe *más*.',
+          'Escribe *más* para la siguiente página.',
+        ],
+        lastKeys,
+      ),
+    noMoreProducts: () =>
+      pickAvoidRepeat(
+        'noMoreProducts',
+        [
+          'Eso es todo por aquí 🙂 Escribe el *número* de un producto o *catálogo* para ver otras categorías.',
+          'No hay más productos en esta lista. Elige uno por su *número* o di *catálogo*.',
+        ],
+        lastKeys,
+      ),
+    searchResultsIntro: (query) =>
+      pickAvoidRepeat(
+        'searchResultsIntro',
+        [
+          `Esto encontré para *${query}*:`,
+          `Resultados para *${query}*:`,
+          `Mira lo que tenemos parecido a *${query}*:`,
+        ],
+        lastKeys,
+      ),
+    searchEmpty: (query) =>
+      pickAvoidRepeat(
+        'searchEmpty',
+        [
+          `No encontré nada para *${query}* 🤔 Escribe *catálogo* para ver todo por categoría o dime otra palabra.`,
+          `No tengo resultados para *${query}*. Prueba con otra palabra o escribe *catálogo*.`,
+        ],
+        lastKeys,
+      ),
+    itemRemoved: (name) =>
+      pickAvoidRepeat(
+        'itemRemoved',
+        [
+          `Quité *${name}* de tu carrito.`,
+          `Listo, saqué *${name}* del carrito.`,
+          `*${name}* fuera del carrito 👍`,
+        ],
+        lastKeys,
+      ),
+    itemRemoveNotFound: () =>
+      pickAvoidRepeat(
+        'itemRemoveNotFound',
+        [
+          'No ubico ese producto en tu carrito. Escribe *quita* y el *número* de la lista (ej: *quita 1*).',
+          '¿Cuál quito? Usa *quita* + el número del producto (ej: *quita 2*).',
+        ],
+        lastKeys,
+      ),
+    checkoutCancelled: () =>
+      pickAvoidRepeat(
+        'checkoutCancelled',
+        [
+          'Listo, cancelé el checkout. Tu carrito sigue guardado 🛒',
+          'Sin problema, dejamos el pedido para después. Tu carrito no se pierde.',
+        ],
         lastKeys,
       ),
   };

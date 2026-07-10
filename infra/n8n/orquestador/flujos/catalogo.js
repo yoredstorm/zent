@@ -173,9 +173,60 @@ async function flujoCatalogo(ctx) {
     };
   }
 
+  // Búsqueda por texto libre: "tienen papel?", "cuadernos", … → products.search
+  async function buscarProductos(query) {
+    const resultado = await llamarHerramienta('products.search', { query, limit: 20 });
+    const productos = resultado?.products || [];
+    if (!productos.length) {
+      return {
+        respuesta: unir(COPY.searchEmpty(query)),
+        parche: { phase: 'main_menu', lastCopyKeys: { ...claves } },
+      };
+    }
+    const listaGuardada = productos.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      lowStock: p.lowStock,
+      imageUrl: p.imageUrl,
+      description: p.description || null,
+      atributos: p.atributos || null,
+      variantes: p.variantes || [],
+    }));
+    const fmt = listaProductos(productos, 0);
+    const respuesta =
+      unir(COPY.searchResultsIntro(query)) +
+      '\n\n' +
+      fmt.texto +
+      (fmt.hayMas ? '\n\n' + unir(COPY.paginationMore()) : '') +
+      AYUDA_PRODUCTOS;
+    return {
+      respuesta,
+      parche: {
+        phase: 'browse_products',
+        categoryId: undefined,
+        categoryName: query,
+        lastProductList: listaGuardada,
+        productPage: 0,
+        selectedProductId: undefined,
+        esperandoVariante: undefined,
+        varianteSeleccionada: undefined,
+        lastCopyKeys: { ...claves },
+      },
+    };
+  }
+
+  const query = (mensaje || '').trim();
+  const esBusquedaLibre =
+    intencion === 'libre' && normalizarMensaje(query).replace(/[^a-z0-9]/g, '').length >= 2;
+
   // Entrada explícita al catálogo (desde cualquier fase) o fase desconocida
   const fasesCatalogo = ['browse_categories', 'browse_products', 'product_detail'];
-  if (intencion === 'catalogo' || !fasesCatalogo.includes(flujo.phase)) {
+  if (intencion === 'catalogo') {
+    return mostrarCategorias();
+  }
+  if (!fasesCatalogo.includes(flujo.phase)) {
+    if (esBusquedaLibre) return buscarProductos(query);
     return mostrarCategorias();
   }
 
@@ -199,6 +250,22 @@ async function flujoCatalogo(ctx) {
       const lista = flujo.lastProductList || [];
       if (!lista.length) return mostrarCategorias();
 
+      // Paginación: "más" / "siguiente" → siguiente página del listado.
+      if (esVerMas(msj)) {
+        const paginaActual = flujo.productPage || 0;
+        const fmt = listaProductos(lista, paginaActual + 1);
+        if (!fmt.texto) {
+          return { respuesta: unir(COPY.noMoreProducts()), parche: { lastCopyKeys: { ...claves } } };
+        }
+        const respuesta =
+          unir(COPY.productsIntro(flujo.categoryName || 'catálogo')) +
+          '\n\n' +
+          fmt.texto +
+          (fmt.hayMas ? '\n\n' + unir(COPY.paginationMore()) : '') +
+          AYUDA_PRODUCTOS;
+        return { respuesta, parche: { productPage: paginaActual + 1, lastCopyKeys: { ...claves } } };
+      }
+
       if (esAgregarDirecto(mensaje)) {
         const directo = buscarProductoConCantidad(mensaje, lista);
         if (directo) return agregarAlCarrito(directo.producto, directo.cantidad);
@@ -206,6 +273,11 @@ async function flujoCatalogo(ctx) {
 
       const elegido = elegirProducto(mensaje, lista);
       if (!elegido) {
+        // Antes de rendirse: quizá busca otro producto de todo el catálogo.
+        if (esBusquedaLibre) {
+          const r = await buscarProductos(query);
+          if (r.parche.phase === 'browse_products') return r;
+        }
         return {
           respuesta: unir(COPY.productNotFound()) + '\n\n' + listarDeNuevo(lista),
           parche: { lastCopyKeys: { ...claves } },

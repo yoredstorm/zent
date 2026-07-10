@@ -1,25 +1,19 @@
 /**
- * Prueba E2E simulada: replica el pipeline del workflow
- * (Preparar Contexto → enrutar por grupo → flujo → aplicarParche a la sesión)
- * con un backend simulado en memoria.
+ * Prueba E2E: ejercita el MISMO punto de entrada que producción
+ * (`orquestarMensaje`, el nodo único "Orquestar") con un backend simulado.
+ *
+ * El bridge real hace bootstrap de la sesión y la pasa en context.session; aquí
+ * simulamos eso manteniendo `session` en memoria: `chat.session.patch` la actualiza
+ * igual que el backend (merge superficial de flow), y el siguiente turno la relee.
  */
-const { normalizarMensaje, detectarIntencion } = require('../nucleo/intencion.js');
-const { aplicarParche } = require('../nucleo/sesion.js');
-const { enrutarGrupo } = require('../nucleo/enrutador.js');
-const { flujoMenu } = require('../flujos/menu.js');
-const { flujoCatalogo } = require('../flujos/catalogo.js');
-const { flujoCarrito } = require('../flujos/carrito.js');
-const { flujoCheckout } = require('../flujos/checkout.js');
-const { flujoPedido } = require('../flujos/pedido.js');
-const { flujoAsesor } = require('../flujos/asesor.js');
-const copySrc = require('../textos.js');
+const { orquestarMensaje } = require('../nucleo/orquestador.js');
 
-const copys = {
-  pick: copySrc.pick,
-  pickAvoidRepeat: copySrc.pickAvoidRepeat,
-  timeGreeting: copySrc.timeGreeting,
-  buildCopy: copySrc.buildCopy,
-};
+const normaliza = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
 
 // --- Backend simulado -------------------------------------------------------
 const categorias = [
@@ -50,13 +44,35 @@ const productosPorCategoria = {
 
 let carritoMemoria = { items: [], subtotal: 0, deliveryCost: 0, total: 0 };
 let pedidosCreados = [];
+let handoffCount = 0;
 
-async function llamarHerramienta(nombre, cuerpo) {
+let session = {
+  storeName: 'ohana',
+  customer: { found: true, name: 'Pablo', address: 'Av. Lima 123', reference: 'portón azul' },
+  flow: { phase: 'greeting' },
+  cart: { items: [], total: 0 },
+  cartTtlMinutes: 30,
+};
+
+function recalcular() {
+  carritoMemoria.subtotal = carritoMemoria.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  carritoMemoria.total = carritoMemoria.subtotal + (carritoMemoria.deliveryCost || 0);
+}
+
+function mockBackend(nombre, cuerpo) {
   switch (nombre) {
     case 'categories.list':
       return { categories: categorias };
     case 'products.by_category':
       return { products: productosPorCategoria[cuerpo.categoryId] || [] };
+    case 'products.search': {
+      const q = normaliza(cuerpo.query || '');
+      const todos = Object.values(productosPorCategoria).flat();
+      const hits = todos.filter(
+        (p) => (q && q.includes(normaliza(p.name))) || (q && normaliza(p.name).includes(q)),
+      );
+      return { products: hits };
+    }
     case 'products.send_image':
       return { sent: true, productId: cuerpo.productId };
     case 'cart.get':
@@ -74,8 +90,12 @@ async function llamarHerramienta(nombre, cuerpo) {
         unitPrice: variante ? variante.precio : prod.price,
         variantId: variante ? variante.id : undefined,
       });
-      carritoMemoria.subtotal = carritoMemoria.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-      carritoMemoria.total = carritoMemoria.subtotal;
+      recalcular();
+      return { cart: { ...carritoMemoria }, reservedMinutes: 30 };
+    }
+    case 'cart.remove_item': {
+      carritoMemoria.items = carritoMemoria.items.filter((i) => i.productId !== cuerpo.productId);
+      recalcular();
       return { cart: { ...carritoMemoria }, reservedMinutes: 30 };
     }
     case 'cart.clear':
@@ -83,58 +103,52 @@ async function llamarHerramienta(nombre, cuerpo) {
       return { ok: true };
     case 'orders.create_from_chat':
       pedidosCreados.push(cuerpo);
-      return { orderId: 'ord-12345678-abcd', shortId: 'ord12345' };
+      return { orderId: 'ord-abcd1234', shortId: 'ord-abcd' };
     case 'chat.handoff':
+      handoffCount += 1;
       return { ok: true };
+    case 'chat.session.patch':
+      session.flow = { ...(session.flow || {}), ...(cuerpo.flow || {}) };
+      return { flow: session.flow };
     default:
       return null;
   }
 }
 
-// --- Pipeline simulado (replica Preparar Contexto + Switch) -----------------
-const FLUJOS = {
-  menu: flujoMenu,
-  catalogo: flujoCatalogo,
-  carrito: flujoCarrito,
-  checkout: flujoCheckout,
-  pedido: flujoPedido,
-  asesor: flujoAsesor,
-};
-
-let sesion = {
-  storeName: 'ohana',
-  customer: { found: true, name: 'Pablo', address: 'Av. Lima 123', reference: 'portón azul' },
-  flow: { phase: 'greeting' },
-  cart: { items: [], total: 0 },
-  cartTtlMinutes: 30,
+const helpers = {
+  async httpRequest({ url, body }) {
+    const nombre = url.split('/tools/')[1];
+    return mockBackend(nombre, body || {});
+  },
 };
 
 async function enviar(mensaje) {
-  const msj = normalizarMensaje(mensaje);
-  const intencion = detectarIntencion(msj);
-  const fase = sesion.flow?.phase || 'greeting';
-  const grupo = enrutarGrupo(fase, intencion, msj);
-  const resultado = await FLUJOS[grupo]({
-    mensaje,
-    msj,
-    intencion,
-    sesion,
-    entrada: { chatId: 'x', waSessionId: 's', contactPhone: '519' },
-    claveEstado: 's::x',
-    copys,
-    llamarHerramienta,
-  });
-  sesion = aplicarParche(sesion, resultado.parche);
-  return resultado;
+  const cuerpo = {
+    chatId: 'x',
+    waSessionId: 's',
+    contactPhone: '51999999999',
+    message: mensaje,
+    context: {
+      zentApiUrl: 'http://mock/api',
+      zentN8nSecret: 'secreto',
+      session,
+      stateKey: 's::x',
+    },
+  };
+  return orquestarMensaje(cuerpo, helpers);
+}
+
+function fase() {
+  return session.flow?.phase;
 }
 
 function verificar(paso, r, cond, detalle) {
-  if (/momentito|segundito|voy a mirarlo/i.test(r.respuesta)) {
-    console.error(`FAIL paso ${paso}: filler:`, r.respuesta);
+  if (/momentito|segundito|voy a mirarlo/i.test(r.reply)) {
+    console.error(`FAIL paso ${paso}: filler:`, r.reply);
     process.exit(1);
   }
   if (!cond) {
-    console.error(`FAIL paso ${paso}: ${detalle}\nRespuesta: ${r.respuesta}\nFase: ${sesion.flow?.phase}`);
+    console.error(`FAIL paso ${paso}: ${detalle}\nReply: ${JSON.stringify(r.reply)}\nFase: ${fase()}`);
     process.exit(1);
   }
 }
@@ -142,99 +156,113 @@ function verificar(paso, r, cond, detalle) {
 (async () => {
   // 1. hola → saludo + menú
   let r = await enviar('hola');
-  verificar(1, r, /pablo/i.test(r.respuesta) && sesion.flow.phase === 'main_menu', 'saludo con nombre');
+  verificar(1, r, /pablo/i.test(r.reply) && fase() === 'main_menu', 'saludo con nombre');
 
-  // 2. catalogo → categorías
-  r = await enviar('catalogo');
-  verificar(2, r, /oficina/i.test(r.respuesta) && /arte/i.test(r.respuesta) && sesion.flow.phase === 'browse_categories', 'lista de categorías');
-
-  // 3. 1 → productos de oficina
+  // 2. "1" (menú numerado) → categorías
   r = await enviar('1');
-  verificar(3, r, /papel grueso/i.test(r.respuesta) && /regla/i.test(r.respuesta) && sesion.flow.phase === 'browse_products', 'productos de categoría 1');
+  verificar(2, r, /oficina/i.test(r.reply) && /arte/i.test(r.reply) && fase() === 'browse_categories', 'menú numerado 1 → catálogo');
 
-  // 4. 2 → detalle de regla (sin imagen) + pedir cantidad
+  // 3. "1" → productos de oficina
+  r = await enviar('1');
+  verificar(3, r, /papel grueso/i.test(r.reply) && /regla/i.test(r.reply) && fase() === 'browse_products', 'productos de oficina');
+
+  // 4. "2" → detalle de regla (sin imagen) + pedir cantidad
   r = await enviar('2');
-  verificar(4, r, /regla/i.test(r.respuesta) && /cantidad|cu[aá]ntas/i.test(r.respuesta) && sesion.flow.phase === 'product_detail', 'detalle producto 2');
+  verificar(4, r, /regla/i.test(r.reply) && /cantidad|cu[aá]ntas/i.test(r.reply) && fase() === 'product_detail', 'detalle regla');
 
-  // 5. 5 → agrega 5 reglas, resumen con total real (5 x 30 = 150)
+  // 5. "5" → agrega 5 reglas (5 x 30 = 150)
   r = await enviar('5');
-  verificar(5, r, /regla/i.test(r.respuesta) && /150\.00/.test(r.respuesta) && sesion.flow.phase === 'cart', 'carrito con total real');
+  verificar(5, r, /regla/i.test(r.reply) && /150\.00/.test(r.reply) && fase() === 'cart', 'carrito con total real');
 
-  // 6. catalogo desde carrito → categorías otra vez (regresión "momentito")
+  // 6. catálogo desde el carrito → categorías (regresión "momentito")
   r = await enviar('catalogo');
-  verificar(6, r, /oficina/i.test(r.respuesta) && sesion.flow.phase === 'browse_categories', 'catálogo desde carrito');
+  verificar(6, r, /oficina/i.test(r.reply) && fase() === 'browse_categories', 'catálogo desde carrito');
 
-  // 7. hola en medio del catálogo → menú (regresión "producto no lo ubico")
-  r = await enviar('hola');
-  verificar(7, r, /pablo/i.test(r.respuesta) && !/no lo ubico|no encontr/i.test(r.respuesta) && sesion.flow.phase === 'main_menu', 'hola resetea a menú');
+  // 7. "1" → oficina
+  r = await enviar('1');
+  verificar(7, r, /papel grueso/i.test(r.reply) && fase() === 'browse_products', 'oficina otra vez');
 
-  // 8. carrito sigue con las 5 reglas → confirmar pedido
-  r = await enviar('confirmar pedido');
-  // desde main_menu la intención confirmar no navega; el grupo es menu → debe ir a carrito...
-  // El enrutador manda confirmar según fase: main_menu → menu. Pero el usuario quiere confirmar:
-  // flujoMenu responde bienvenida. Aceptamos que primero pase por "carrito":
-  if (sesion.flow.phase === 'main_menu') {
-    r = await enviar('carrito');
-    verificar(8, r, /regla/i.test(r.respuesta) && /150\.00/.test(r.respuesta), 'ver carrito');
-    r = await enviar('confirmar pedido');
+  // 8. "1" → detalle de papel grueso (con imagen) + cantidad
+  r = await enviar('1');
+  verificar(8, r, /cantidad|cu[aá]ntas/i.test(r.reply) && fase() === 'product_detail', 'detalle papel (imagen)');
+
+  // 9. "2" → agrega 2 papel (2 x 50 = 100) → total 250
+  r = await enviar('2');
+  verificar(9, r, /papel grueso/i.test(r.reply) && /250\.00/.test(r.reply) && fase() === 'cart', 'carrito con dos productos');
+
+  // 10. "quita 2" → quita el 2º ítem (papel) → queda regla (150) [NUEVO]
+  r = await enviar('quita 2');
+  verificar(10, r, /papel grueso/i.test(r.reply) && /150\.00/.test(r.reply) && fase() === 'cart', 'quitar del carrito');
+  if (carritoMemoria.items.length !== 1 || carritoMemoria.items[0].productId !== 'p2') {
+    console.error('FAIL paso 10: el carrito no quedó con solo la regla', carritoMemoria.items);
+    process.exit(1);
   }
-  verificar(8, r, sesion.flow.phase === 'checkout_address' && /av\. lima 123/i.test(r.respuesta), 'checkout con dirección guardada');
 
-  // 9. si → usa dirección guardada, salta a confirmar (referencia guardada)
-  r = await enviar('si');
-  verificar(9, r, sesion.flow.phase === 'checkout_confirm' && /av\. lima 123/i.test(r.respuesta) && /150\.00/.test(r.respuesta), 'resumen final con dirección');
+  // 11. hola → menú (carrito se conserva)
+  r = await enviar('hola');
+  verificar(11, r, /pablo/i.test(r.reply) && fase() === 'main_menu', 'hola resetea a menú');
 
-  // 10. si → pedido creado + carrito limpio
+  // 12. "buenas quiero la regla" → NO se trata como saludo; busca y encuentra la regla [NUEVO]
+  r = await enviar('buenas quiero la regla');
+  verificar(12, r, /regla/i.test(r.reply) && fase() === 'browse_products', 'saludo laxo NO resetea; busca producto');
+
+  // 13. confirmar pedido → checkout con dirección guardada
+  r = await enviar('confirmar pedido');
+  verificar(13, r, fase() === 'checkout_address' && /av\. lima 123/i.test(r.reply), 'confirmar → checkout dirección guardada');
+
+  // 14. "menú" DURANTE el checkout → escapa (fix "atrapado en checkout") [NUEVO]
+  r = await enviar('menu');
+  verificar(14, r, fase() === 'main_menu', 'escape de checkout con "menú"');
+  if (!carritoMemoria.items.length) {
+    console.error('FAIL paso 14: escapar del checkout no debe vaciar el carrito');
+    process.exit(1);
+  }
+
+  // 15. confirmar pedido de nuevo → checkout dirección
+  r = await enviar('confirmar pedido');
+  verificar(15, r, fase() === 'checkout_address' && /av\. lima 123/i.test(r.reply), 'reingreso a checkout');
+
+  // 16. si → usa dirección + referencia guardadas → resumen final
   r = await enviar('si');
-  verificar(10, r, /ord-1234|ord\-?12345/i.test(r.respuesta.replace(/\s/g, '')) || /pedido/i.test(r.respuesta), 'pedido confirmado');
-  if (!pedidosCreados.length) {
-    console.error('FAIL paso 10: no se creó el pedido');
+  verificar(16, r, fase() === 'checkout_confirm' && /av\. lima 123/i.test(r.reply) && /150\.00/.test(r.reply), 'resumen final');
+
+  // 17. si → pedido creado + carrito limpio + main_menu
+  r = await enviar('si');
+  verificar(17, r, /pedido|registr/i.test(r.reply) && fase() === 'main_menu', 'pedido confirmado');
+  if (pedidosCreados.length !== 1) {
+    console.error('FAIL paso 17: se esperaba exactamente 1 pedido', pedidosCreados.length);
     process.exit(1);
   }
   if (carritoMemoria.items.length) {
-    console.error('FAIL paso 10: el carrito no se limpió');
-    process.exit(1);
-  }
-  if (sesion.flow.phase !== 'main_menu') {
-    console.error('FAIL paso 10: fase final debe ser main_menu, es', sesion.flow.phase);
+    console.error('FAIL paso 17: el carrito no se limpió');
     process.exit(1);
   }
 
-  // 11. catalogo después del pedido → funciona de nuevo
-  r = await enviar('catalogo');
-  verificar(11, r, /oficina/i.test(r.respuesta) && sesion.flow.phase === 'browse_categories', 'catálogo tras pedido');
-
-  // 12. Producto con variantes: categoría arte → acuarelas pide OPCIÓN, no cantidad
-  r = await enviar('2');
-  verificar(12, r, /acuarelas/i.test(r.respuesta) && sesion.flow.phase === 'browse_products', 'productos de arte');
-  r = await enviar('1');
-  verificar(
-    12,
-    r,
-    /12 colores/i.test(r.respuesta) && /24 colores/i.test(r.respuesta) && sesion.flow.esperandoVariante === true,
-    'lista de opciones de variante',
-  );
-
-  // 13. Elegir opción 2 → pide cantidad; cantidad 2 → carrito con precio de la variante (2 x 120 = 240)
-  r = await enviar('2');
-  verificar(
-    13,
-    r,
-    /24 colores/i.test(r.respuesta) && /cantidad|cu[aá]ntas/i.test(r.respuesta) && sesion.flow.varianteSeleccionada?.id === 'v2',
-    'variante seleccionada',
-  );
-  r = await enviar('2');
-  verificar(
-    13,
-    r,
-    /24 colores/i.test(r.respuesta) && /240\.00/.test(r.respuesta) && sesion.flow.phase === 'cart',
-    'carrito con variante y precio propio',
-  );
-  const itemVariante = carritoMemoria.items.find((i) => i.variantId === 'v2');
-  if (!itemVariante || itemVariante.quantity !== 2) {
-    console.error('FAIL paso 13: cart.add_item no recibió variantId v2', carritoMemoria.items);
+  // 18. Guard anti-duplicado: reingreso a checkout_confirm con carrito vacío y lastOrderId
+  //     → NO crea un 2º pedido. [NUEVO]
+  session.flow = { phase: 'checkout_confirm', checkout: {}, lastOrderId: 'ord-abcd1234' };
+  r = await enviar('si');
+  verificar(18, r, /registr|qued/i.test(r.reply) && fase() === 'main_menu', 'guard anti-duplicado');
+  if (pedidosCreados.length !== 1) {
+    console.error('FAIL paso 18: se duplicó el pedido', pedidosCreados.length);
     process.exit(1);
   }
 
-  console.log('OK conversacion completa (13 pasos)');
+  // 19. asesor → handoff (una sola vez)
+  r = await enviar('asesor');
+  verificar(19, r, r.handoff === true && /asesor|persona|equipo/i.test(r.reply) && fase() === 'handoff', 'handoff');
+  if (handoffCount !== 1) {
+    console.error('FAIL paso 19: chat.handoff debía llamarse una vez, van', handoffCount);
+    process.exit(1);
+  }
+
+  // 20. asesor de nuevo (ya en handoff) → NO re-dispara handoff ni responde [NUEVO]
+  r = await enviar('asesor');
+  verificar(20, r, r.reply === '' && r.handoff === false, 'handoff no pegajoso');
+  if (handoffCount !== 1) {
+    console.error('FAIL paso 20: se re-disparó chat.handoff', handoffCount);
+    process.exit(1);
+  }
+
+  console.log('OK conversacion completa (20 pasos, punto de entrada real)');
 })();

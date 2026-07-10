@@ -20,15 +20,54 @@ const GRUPO_POR_FASE = {
   handoff: 'asesor',
 };
 
+// Fases desde las que un texto libre se interpreta como búsqueda de producto.
+const FASES_BUSQUEDA = ['greeting', 'main_menu', 'browse_categories', 'browse_products', 'product_detail'];
+
+/**
+ * Comandos de navegación INEQUÍVOCOS (mensaje corto que ES el comando).
+ * Estos escapan de CUALQUIER fase — incluido el checkout — sin confundir una
+ * dirección/nombre que casualmente contenga la palabra (p. ej. "av. catálogo 5").
+ */
+function comandoNavegacion(msj) {
+  if (/^(menu|inicio|menu principal|volver al inicio|empezar de nuevo|volver al menu)$/.test(msj)) return 'menu';
+  if (/^(cancelar|cancela|salir|salgo|olvidalo|ya no|dejalo)$/.test(msj)) return 'carrito';
+  if (/^(catalogo|ver catalogo|productos|ver productos|quiero comprar|comprar)$/.test(msj)) return 'catalogo';
+  if (/^(carrito|mi carrito|ver carrito)$/.test(msj)) return 'carrito';
+  if (/^(mi pedido|estado|estado de mi pedido|seguimiento|donde esta mi pedido)$/.test(msj)) return 'pedido';
+  return null;
+}
+
 function enrutarGrupo(fase, intencion, msj) {
   const enCheckout = FASES_CHECKOUT.includes(fase);
+
+  // 1) El asesor siempre gana (escapa incluso del checkout).
   if (intencion === 'asesor' || fase === 'handoff') return 'asesor';
-  if (!enCheckout && (intencion === 'reinicio' || intencion === 'saludo')) return 'menu';
-  if (!enCheckout && intencion === 'catalogo_pdf') return 'menu';
-  if (!enCheckout && intencion === 'catalogo') return 'catalogo';
-  if (!enCheckout && intencion === 'estado_pedido') return 'pedido';
-  if (!enCheckout && intencion === 'carrito') return 'carrito';
-  if (!enCheckout && /confirmar|finalizar|checkout/.test(msj)) return 'carrito';
+
+  // 2) Comandos de navegación inequívocos: escapan de cualquier fase.
+  const nav = comandoNavegacion(msj);
+  if (nav) return nav;
+
+  // 3) Dentro del checkout, todo lo demás es respuesta al paso actual.
+  if (enCheckout) return 'checkout';
+
+  // 4) Fuera del checkout: intención global.
+  if (intencion === 'reinicio' || intencion === 'saludo') return 'menu';
+  if (intencion === 'catalogo_pdf') return 'menu';
+  if (intencion === 'catalogo') return 'catalogo';
+  if (intencion === 'estado_pedido') return 'pedido';
+  if (intencion === 'carrito') return 'carrito';
+  if (/confirmar|finalizar|checkout/.test(msj)) return 'carrito';
+
+  // 5) Menú numerado (1 catálogo · 2 mi pedido · 3 asesor) desde el menú/saludo.
+  if ((fase === 'main_menu' || fase === 'greeting') && intencion === 'numero') {
+    if (/^1$/.test(msj)) return 'catalogo';
+    if (/^2$/.test(msj)) return 'pedido';
+    if (/^3$/.test(msj)) return 'asesor';
+  }
+
+  // 6) Texto libre desde el menú o navegando → búsqueda de producto (flujo Catálogo).
+  if (intencion === 'libre' && FASES_BUSQUEDA.includes(fase)) return 'catalogo';
+
   return GRUPO_POR_FASE[fase] || 'menu';
 }
 

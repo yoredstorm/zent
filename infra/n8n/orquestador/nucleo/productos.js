@@ -111,10 +111,12 @@ function leyendaImagen(producto) {
   return leyenda;
 }
 
-function resumenCarrito(carrito) {
+function resumenCarrito(carrito, opts = {}) {
   if (!carrito?.items?.length) return '';
+  const { numerar = false } = opts;
   const lineas = carrito.items.map(
-    (i) => `• ${i.quantity}x ${i.nombre} — S/ ${(i.quantity * i.unitPrice).toFixed(2)}`,
+    (i, idx) =>
+      `${numerar ? tecla(idx + 1) + ' ' : '• '}${i.quantity}x ${i.nombre} — S/ ${(i.quantity * i.unitPrice).toFixed(2)}`,
   );
   lineas.push(`\nSubtotal: S/ ${Number(carrito.subtotal).toFixed(2)}`);
   if (carrito.deliveryCost > 0) lineas.push(`Delivery: S/ ${Number(carrito.deliveryCost).toFixed(2)}`);

@@ -54,7 +54,40 @@ function crearEjecutor({ datos, helpers, copys }) {
     };
   }
 
-  return { llamarHerramienta, ejecutar, guardarYResponder };
+  /**
+   * Corre el flujo, persiste su parche y arma la respuesta — todo en un paso.
+   * Es el punto usado por el nodo único (Orquestar): un solo turno, sin nodos intermedios.
+   */
+  async function ejecutarYResponder(flujo) {
+    const resultado = await flujo({
+      mensaje: datos.mensaje,
+      msj: datos.msj,
+      intencion: datos.intencion,
+      sesion: datos.sesion,
+      entrada: datos.entrada,
+      claveEstado: datos.claveEstado,
+      copys,
+      llamarHerramienta,
+    });
+    const estado = { ...datos, ...resultado };
+    if (estado.parche && Object.keys(estado.parche).length) {
+      await llamarHerramienta('chat.session.patch', {
+        chatId: datos.claveEstado,
+        flow: estado.parche,
+      });
+    }
+    return {
+      reply: estado.respuesta || '',
+      handoff: Boolean(estado.traspaso),
+      metadata: {
+        phase: (estado.parche && estado.parche.phase) || datos.fase,
+        grupo: datos.grupo,
+      },
+      media: estado.media || [],
+    };
+  }
+
+  return { llamarHerramienta, ejecutar, guardarYResponder, ejecutarYResponder };
 }
 
 /** Los copys viven como funciones sueltas en el scope del nodo; aquí se empaquetan. */
@@ -63,5 +96,5 @@ function copysZent() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { crearEjecutor };
+  module.exports = { crearEjecutor, copysZent };
 }

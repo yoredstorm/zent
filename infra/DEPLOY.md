@@ -931,30 +931,40 @@ Reglas de inventario:
 - Cuando pasa a `CANCELADO`, `OrdersService.updateStatus()` restaura stock si ya estaba comprometido.
 - Cuando pasa a `COMPLETADO`, `OrdersService.updateStatus()` envia el mensaje final de cierre al cliente.
 
-### Orquestador por fases (workflow visible)
+### Orquestador (nodo único robusto)
 
-El motor conversacional vive en `infra/n8n/orquestador/` como módulos en español concatenados por `construir-workflow.js`. El workflow generado tiene nodos visibles por flujo (depurables en el editor n8n):
+El motor conversacional vive en `infra/n8n/orquestador/` como módulos en español concatenados por `construir-workflow.js`. El workflow generado es un **grafo mínimo**:
 
-`Entrada WhatsApp` → `Preparar Contexto` → `Enrutador de Fase` (Switch) → `Flujo Menú` / `Flujo Catálogo` / `Flujo Carrito` / `Flujo Checkout` / `Flujo Pedido` / `Flujo Asesor` → `Guardar Sesión y Responder` → `Responder a Zent`
+`Entrada WhatsApp` (webhook) → `Orquestar` (Code) → `Responder a Zent`
+
+Todo ocurre dentro del nodo `Orquestar`: normaliza el mensaje, enruta, ejecuta el flujo, persiste la sesión (`chat.session.patch`) y arma la respuesta. La función `orquestarMensaje` envuelve todo en **try/catch global**, así el nodo **nunca lanza**: siempre responde `{ reply, handoff, metadata, media }` y, ante un error interno, no cambia la fase (el usuario reintenta el mismo paso, nunca queda atascado).
 
 | Ruta | Rol |
 |------|-----|
-| `nucleo/intencion.js` | Normalización + intención global (`saludo`, `catalogo`, `asesor`, …) |
-| `nucleo/productos.js` | Búsqueda difusa, listas, resumen de carrito |
+| `nucleo/intencion.js` | Normalización + intención global; helpers `esQuitar`/`esVerMas`/`esSaludo` |
+| `nucleo/enrutador.js` | `enrutarGrupo` + `comandoNavegacion` (escapes globales) + `prepararContexto` |
+| `nucleo/productos.js` | Búsqueda difusa, listas paginadas, resumen de carrito (`numerar`) |
 | `nucleo/copys.js` | Anti-repetición de copys y bienvenida compartida |
 | `nucleo/sesion.js` | `aplicarParche(sesion, parche)` |
 | `nucleo/tiempo.js` | `haceCuanto(fecha)` — antigüedad en español para estados de pedido |
+| `nucleo/ejecutor.js` | `crearEjecutor` (llama tools) + `ejecutarYResponder` |
+| `nucleo/orquestador.js` | `orquestarMensaje(cuerpo, helpers)` — punto de entrada único con red de seguridad |
 | `textos.js` | Todos los textos del bot (variantes anti-repetición) — editar aquí los saludos y copys |
 | `flujos/*.js` | Un flujo async por grupo de fases; llaman tools con `await` directo (sin fillers) |
-| `construir-workflow.js` | Genera `zent-orquestador.workflow.json` |
+| `construir-workflow.js` | Genera `zent-orquestador.workflow.json` (grafo de 3 nodos) |
 
-Estructura de cada nodo Code (KISS): las primeras 2-3 líneas son la lógica editable (`crearEjecutor` + `ejecutar(flujoX)`), luego viene la función del flujo, y al final la **librería compartida generada** detrás de un banner "NO EDITAR AQUÍ". Los nodos Code de n8n 2.x son entornos aislados (sin `require` de archivos externos ni funciones compartidas entre nodos), así que la librería se embebe en cada nodo — pero la única fuente de verdad son los archivos de `nucleo/` y `flujos/`; cualquier cambio se hace ahí y se regenera el JSON.
+Los nodos Code de n8n 2.x son entornos aislados (sin `require` ni funciones compartidas entre nodos), así que la librería (textos + nucleo + flujos) se **embebe una sola vez** en el nodo `Orquestar`, y la **invocación va al final** (tras las definiciones, para que todo esté inicializado). La única fuente de verdad son los archivos de `nucleo/` y `flujos/`; cualquier cambio se hace ahí y se regenera el JSON. Las pruebas ejercitan `orquestarMensaje`, es decir el **mismo** código que producción.
 
 Reglas clave:
 
+- El nodo `Orquestar` **nunca se cae sin responder**: try/catch global → siempre hay `reply` de respaldo.
 - Cada flujo llama las tools del backend con `await` — no existe loop interno ni respuestas "Un momentito".
 - El resumen del carrito **siempre** usa el objeto devuelto por la tool (`cart.get` / `cart.add_item`), nunca la sesión.
-- Números `1/2/3` solo se interpretan en `Flujo Catálogo` (categoría → producto → cantidad). En carrito y checkout no son selección.
+- Números `1/2/3` desde el menú → catálogo / mi pedido / asesor. Dentro de `Flujo Catálogo` los números son categoría → producto → cantidad. En carrito/checkout no son selección.
+- **Escapes globales** (`menú`, `cancelar`, `catálogo`, `carrito`, `mi pedido`, `asesor`) funcionan desde **cualquier** fase, incluido el checkout — sin confundir una dirección que contenga la palabra.
+- Texto libre desde el menú/navegando → **búsqueda de producto** (`products.search`).
+- En el carrito, `quita N` / `elimina <nombre>` → quita ese ítem (`cart.remove_item`).
+- Paginación de productos: `más` muestra la siguiente página.
 - `hola` resetea al menú desde cualquier fase **excepto** checkout.
 
 **Checklist tras cambiar el orquestador:**
@@ -964,19 +974,21 @@ Reglas clave:
 3. Importar `infra/n8n/orquestador/zent-orquestador.workflow.json` en n8n y **activar**
 4. **Desactivar** cualquier workflow de chat legacy que quede en la instancia n8n (ej: `Zent WhatsApp Orchestrator`, `Zent WhatsApp Sales Chat`)
 5. Smoke en WhatsApp (sandbox):
-   - `hola` → saludo + menú (nunca "producto no lo ubico")
-   - `catálogo` → categorías inmediatas (sin "momentito")
-   - número → productos → número → foto + pedir cantidad
-   - cantidad → **resumen con items y total reales** (nunca en blanco)
+   - `hola` → saludo + menú numerado (nunca "producto no lo ubico")
+   - `1` → categorías (menú numerado) · `catálogo` → categorías inmediatas (sin "momentito")
+   - `papel` (texto libre) → resultados de búsqueda
+   - número → productos → número → foto + pedir cantidad → cantidad → **resumen con items y total reales**
+   - `quita 1` en el carrito → ítem quitado, carrito actualizado
    - `catálogo` desde carrito → categorías
-   - `confirmar pedido` → `sí` → `sí` → pedido creado
+   - `confirmar pedido` → durante el checkout escribir `menú` → **escapa** (no guarda basura como dirección) → `confirmar pedido` → `sí` → `sí` → pedido creado (una sola vez)
    - `mi pedido` → el bot **pide el código** (o `no tengo` para buscar por teléfono) → detalle con estado, antigüedad (`hace 2 horas`) e items con variante → `asesor` funciona desde ahí
-   - `asesor` → handoff
+   - `asesor` → handoff (una sola vez; mensajes siguientes no repiten el handoff)
 6. Smoke en dashboard:
    - **Productos**: producto con subproductos muestra badge `5 en 2 opciones` y el drilldown lista cada opción con su stock; el campo Stock queda bloqueado ("Calculado automáticamente")
    - **Pedidos**: cada item del detalle muestra `Opción: Rojo / M` (lo que hay que preparar)
    - **Reportes**: el top de ventas separa `Polo — Rojo / M` de `Polo — Azul / L`
-7. En la ejecución n8n, cada mensaje muestra la rama del Switch que tomó — revisar ahí ante cualquier respuesta rara
+7. En la ejecución n8n, el nodo `Orquestar` devuelve `metadata.grupo` y `metadata.phase` — revisar ahí (o los logs `ERROR orquestador …`) ante cualquier respuesta rara
+8. **Timeout**: con varios round-trips por turno, sube `N8N_CHAT_TIMEOUT_MS` a `8000` (ver bloque n8n del `.env`) para evitar fallbacks y pedidos duplicados por corte a los 5 s
 
 ### Atributos y subproductos (variantes)
 
