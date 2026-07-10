@@ -98,11 +98,13 @@ async function flujoCatalogo(ctx) {
   }
 
   function listarVariantes(producto) {
+    const hayFotos = producto.variantes.some((v) => v.imageUrl);
     return (
       'Elige una *opción*:\n' +
       producto.variantes
         .map((v, i) => `${tecla(i + 1)} ${v.etiqueta} — S/ ${Number(v.precio).toFixed(2)}`)
-        .join('\n')
+        .join('\n') +
+      (hayFotos ? '\n\n' + unir(COPY.verFotoOpcionHint()) : '')
     );
   }
 
@@ -305,6 +307,33 @@ async function flujoCatalogo(ctx) {
 
       // Esperando elección de subproducto (Color/Talla/…): el número es la OPCIÓN
       if (flujo.esperandoVariante && actual?.variantes?.length) {
+        // "foto 2" (con prefijo textual, nunca un dígito pelado) → manda la foto de
+        // esa opción sin avanzar de fase; el cliente sigue pudiendo elegir después.
+        const nFoto = esVerFotoOpcion(msj);
+        if (nFoto) {
+          const objetivo = actual.variantes[nFoto - 1];
+          if (!objetivo) {
+            return {
+              respuesta: 'No ubico esa opción 🤔\n\n' + listarVariantes(actual),
+              parche: { lastCopyKeys: { ...claves } },
+            };
+          }
+          if (!objetivo.imageUrl) {
+            return { respuesta: unir(COPY.opcionSinFoto()), parche: { lastCopyKeys: { ...claves } } };
+          }
+          const envio = await llamarHerramienta('products.send_image', {
+            chatId: entrada.chatId,
+            waSessionId: entrada.waSessionId,
+            productId: actual.id,
+            variantId: objetivo.id,
+            caption: `${objetivo.etiqueta} — S/ ${Number(objetivo.precio).toFixed(2)}`,
+          });
+          return {
+            respuesta: envio?.sent ? '' : unir(COPY.opcionSinFoto()),
+            parche: { lastCopyKeys: { ...claves } },
+          };
+        }
+
         let variante = null;
         if (/^\d+$/.test(msj)) {
           const n = parseInt(msj, 10);

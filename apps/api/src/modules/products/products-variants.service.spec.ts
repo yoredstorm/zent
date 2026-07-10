@@ -20,6 +20,9 @@ describe('ProductsService — atributos y variantes', () => {
         update: jest.fn(),
         aggregate: jest.fn(),
       },
+      productImage: {
+        create: jest.fn(),
+      },
       $transaction: jest.fn(async (ops: any) => (Array.isArray(ops) ? Promise.all(ops) : ops(prisma))),
     } as any;
     const botCatalog = { invalidate: jest.fn() } as any;
@@ -117,5 +120,22 @@ describe('ProductsService — atributos y variantes', () => {
     const { service, prisma } = createService();
     prisma.productVariant.findUnique.mockResolvedValue(null);
     await expect(service.updateVariant('nope', { stock: 1 })).rejects.toThrow(NotFoundException);
+  });
+
+  it('uploadVariantImage crea la imagen ligada al producto y a la variante', async () => {
+    const { service, prisma } = createService();
+    prisma.productVariant.findUnique.mockResolvedValue({ id: 'v1', productId: 'p1' });
+    prisma.productImage.create.mockResolvedValue({ id: 'img1', productId: 'p1', variantId: 'v1', url: '/x.jpg', orden: 0 });
+    await service.uploadVariantImage('v1', '/x.jpg', 0);
+    expect(prisma.productImage.create).toHaveBeenCalledWith({
+      data: { productId: 'p1', variantId: 'v1', url: '/x.jpg', orden: 0 },
+    });
+  });
+
+  it('uploadVariantImage con variante inexistente lanza NotFound', async () => {
+    const { service, prisma } = createService();
+    prisma.productVariant.findUnique.mockResolvedValue(null);
+    await expect(service.uploadVariantImage('nope', '/x.jpg')).rejects.toThrow(NotFoundException);
+    expect(prisma.productImage.create).not.toHaveBeenCalled();
   });
 });

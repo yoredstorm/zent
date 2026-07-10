@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +24,7 @@ interface Variante {
   salePrice: string | number | null;
   isActive: boolean;
   values: { attributeValue: { id: string; valor: string; attribute: { nombre: string } } }[];
+  images?: { id: string; url: string }[];
 }
 
 /**
@@ -35,6 +36,8 @@ export function SubproductosProducto({ productId }: { productId: string }) {
   const [variantes, setVariantes] = useState<Variante[]>([]);
   const [cargando, setCargando] = useState(true);
   const [creando, setCreando] = useState(false);
+  const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
+  const fotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [nueva, setNueva] = useState<{ valores: Record<string, string>; stock: number; precio: string }>({
     valores: {},
     stock: 0,
@@ -105,6 +108,31 @@ export function SubproductosProducto({ productId }: { productId: string }) {
     }
   };
 
+  const subirFoto = async (variante: Variante, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setSubiendoFoto(variante.id);
+    try {
+      const { url } = await api.upload('/uploads/image', file);
+      await api.post(`/products/variants/${variante.id}/images`, { url });
+      cargarVariantes();
+    } catch (err: any) {
+      toast.error(err?.message || 'No se pudo subir la foto');
+    } finally {
+      setSubiendoFoto(null);
+    }
+  };
+
+  const quitarFoto = async (imageId: string) => {
+    try {
+      await api.delete(`/products/images/${imageId}`);
+      cargarVariantes();
+    } catch {
+      toast.error('No se pudo quitar la foto');
+    }
+  };
+
   if (cargando) return <p className="text-sm text-slate-400">Cargando subproductos…</p>;
 
   if (!atributos.length) {
@@ -123,6 +151,7 @@ export function SubproductosProducto({ productId }: { productId: string }) {
           <thead>
             <tr className="text-left text-xs uppercase text-slate-500">
               <th className="py-2 pr-4">Opción</th>
+              <th className="py-2 pr-4">Foto</th>
               <th className="py-2 pr-4">Stock</th>
               <th className="py-2 pr-4">Precio</th>
               <th className="py-2" />
@@ -139,6 +168,44 @@ export function SubproductosProducto({ productId }: { productId: string }) {
                       </Badge>
                     ))}
                   </div>
+                </td>
+                <td className="py-2 pr-4">
+                  {v.images?.[0] ? (
+                    <div className="group relative h-10 w-10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={v.images[0].url}
+                        alt=""
+                        className="h-10 w-10 rounded object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => quitarFoto(v.images![0].id)}
+                        title="Quitar foto"
+                        className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] leading-none text-white group-hover:flex"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fotoInputRefs.current[v.id]?.click()}
+                      disabled={subiendoFoto === v.id}
+                      className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+                    >
+                      {subiendoFoto === v.id ? 'Subiendo…' : '+ Foto'}
+                    </button>
+                  )}
+                  <input
+                    ref={(el) => {
+                      fotoInputRefs.current[v.id] = el;
+                    }}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => subirFoto(v, e)}
+                  />
                 </td>
                 <td className="py-2 pr-4">
                   <input

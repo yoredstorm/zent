@@ -69,6 +69,17 @@ function esVerMas(msj) {
   return /^(mas|ver mas|mostrar mas|siguiente|siguiente pagina|otra pagina|mas productos|continuar)$/.test(msj);
 }
 
+/**
+ * "foto 2", "ver foto 1", "imagen 3" → pedir la foto de esa opción numerada.
+ * Usa un prefijo textual a propósito: un dígito pelado ("2") sigue significando
+ * SIEMPRE "elegir esa opción", nunca "ver su foto" — así no hay ambigüedad.
+ * Devuelve el número (1-based) o null si el mensaje no calza con el patrón.
+ */
+function esVerFotoOpcion(msj) {
+  const m = msj.match(/^(?:ver\s+)?(?:foto|imagen)\s*(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     normalizarMensaje,
@@ -79,5 +90,6 @@ if (typeof module !== 'undefined') {
     esQuitar,
     referenciaQuitar,
     esVerMas,
+    esVerFotoOpcion,
   };
 }

@@ -152,6 +152,54 @@ describe('N8nCommerceToolsController', () => {
     });
   });
 
+  it('products.send_image con variantId usa la foto propia de la variante', async () => {
+    const { controller, openwa, products, productVariant } = createController();
+    products.findUnique.mockResolvedValueOnce({
+      id: 'prod_1',
+      nombre: 'Polo',
+      salePrice: { toString: () => '50' },
+      images: [{ url: 'https://img.test/polo.png' }],
+    });
+    productVariant.findUnique.mockResolvedValueOnce({
+      id: 'v1',
+      productId: 'prod_1',
+      images: [{ url: 'https://img.test/polo-rojo.png' }],
+    });
+    const result = await controller.sendProductImage({
+      chatId: '51987752653@lid',
+      productId: 'prod_1',
+      variantId: 'v1',
+    });
+    expect(result.sent).toBe(true);
+    expect(openwa.sendImage).toHaveBeenCalledWith(
+      expect.objectContaining({ image: { url: 'https://img.test/polo-rojo.png' } }),
+    );
+  });
+
+  it('products.send_image con variantId sin foto propia cae a la foto del producto', async () => {
+    const { controller, openwa, products, productVariant } = createController();
+    products.findUnique.mockResolvedValueOnce({
+      id: 'prod_1',
+      nombre: 'Polo',
+      salePrice: { toString: () => '50' },
+      images: [{ url: 'https://img.test/polo.png' }],
+    });
+    productVariant.findUnique.mockResolvedValueOnce({
+      id: 'v2',
+      productId: 'prod_1',
+      images: [],
+    });
+    const result = await controller.sendProductImage({
+      chatId: '51987752653@lid',
+      productId: 'prod_1',
+      variantId: 'v2',
+    });
+    expect(result.sent).toBe(true);
+    expect(openwa.sendImage).toHaveBeenCalledWith(
+      expect.objectContaining({ image: { url: 'https://img.test/polo.png' } }),
+    );
+  });
+
   it('returns chat-ready categories and products', async () => {
     const { controller } = createController();
 
@@ -211,7 +259,9 @@ describe('N8nCommerceToolsController', () => {
       ],
     });
     expect(result.atributos).toBe('Marca: Faber · Peso: 2 kg');
-    expect(result.variantes).toEqual([{ id: 'v1', etiqueta: 'Color: Rojo · Talla: M', precio: 50, stock: 3 }]);
+    expect(result.variantes).toEqual([
+      { id: 'v1', etiqueta: 'Color: Rojo · Talla: M', precio: 50, stock: 3, imageUrl: null },
+    ]);
   });
 
   it('productForChat excluye de "atributos" los que ya diferencian subproductos', () => {
@@ -259,9 +309,55 @@ describe('N8nCommerceToolsController', () => {
     // combinación de subproductos; ya se ven completas en cada opción del selector.
     expect(result.atributos).toBeNull();
     expect(result.variantes).toEqual([
-      { id: 'v1', etiqueta: 'Color: Rojo · Material: Acero inoxidable · Textura: Piel genuino', precio: 50, stock: 7 },
-      { id: 'v2', etiqueta: 'Color: Verde · Material: Oro · Textura: Piel genuino', precio: 50, stock: 8 },
+      {
+        id: 'v1',
+        etiqueta: 'Color: Rojo · Material: Acero inoxidable · Textura: Piel genuino',
+        precio: 50,
+        stock: 7,
+        imageUrl: null,
+      },
+      {
+        id: 'v2',
+        etiqueta: 'Color: Verde · Material: Oro · Textura: Piel genuino',
+        precio: 50,
+        stock: 8,
+        imageUrl: null,
+      },
     ]);
+  });
+
+  it('productForChat expone la foto propia de cada variante sin heredar la del producto', () => {
+    const { controller } = createController();
+    const result = (controller as any).productForChat({
+      id: 'p3',
+      nombre: 'polo',
+      descripcion: '',
+      salePrice: 50,
+      stock: 5,
+      minStock: 1,
+      category: { nombre: 'ropa' },
+      images: [{ url: '/api/uploads/images/producto.jpg' }],
+      variants: [
+        {
+          id: 'v1',
+          stock: 3,
+          salePrice: null,
+          values: [{ attributeValue: { valor: 'Rojo', attribute: { nombre: 'Color' } } }],
+          images: [{ url: '/api/uploads/images/variante-rojo.jpg' }],
+        },
+        {
+          id: 'v2',
+          stock: 2,
+          salePrice: null,
+          values: [{ attributeValue: { valor: 'Azul', attribute: { nombre: 'Color' } } }],
+          images: [],
+        },
+      ],
+    });
+    expect(result.variantes[0].imageUrl).toBe('/api/uploads/images/variante-rojo.jpg');
+    // v2 no tiene foto propia: queda null, NO hereda la del producto (eso se resuelve
+    // recién en products.send_image, para poder ofrecer "foto N" solo donde aplica).
+    expect(result.variantes[1].imageUrl).toBeNull();
   });
 
   it('productForChat mantiene atributos informativos que no varían entre subproductos', () => {

@@ -15,6 +15,7 @@ import { BotCatalogContextService } from '../bot-ai/bot-catalog-context.service'
 
 const INCLUDE_VARIANTES = {
   values: { include: { attributeValue: { include: { attribute: true } } } },
+  images: { orderBy: { orden: 'asc' as const } },
 } as const;
 
 @Injectable()
@@ -126,6 +127,17 @@ export class ProductsService {
   async deleteImage(id: string) {
     await this.prisma.productImage.delete({ where: { id } });
     return { success: true };
+  }
+
+  async uploadVariantImage(variantId: string, url: string, orden: number = 0) {
+    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!variant) throw new NotFoundException('Subproducto no encontrado');
+
+    const image = await this.prisma.productImage.create({
+      data: { productId: variant.productId, variantId, url, orden },
+    });
+    this.botCatalog.invalidate();
+    return image;
   }
 
   // -------------------------------------------------------------------------

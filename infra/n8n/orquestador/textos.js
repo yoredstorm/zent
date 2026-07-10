@@ -412,6 +412,24 @@ function buildCopy(lastKeys = {}) {
         ],
         lastKeys,
       ),
+    verFotoOpcionHint: () =>
+      pickAvoidRepeat(
+        'verFotoOpcionHint',
+        [
+          '📷 Escribe *foto 1*, *foto 2*... para ver la foto de cada opción.',
+          '📷 ¿Quieres ver alguna opción? Escribe *foto* y el número (ej: *foto 1*).',
+        ],
+        lastKeys,
+      ),
+    opcionSinFoto: () =>
+      pickAvoidRepeat(
+        'opcionSinFoto',
+        [
+          'Esa opción no tiene foto propia todavía 😔',
+          'No tengo una foto de esa opción por ahora.',
+        ],
+        lastKeys,
+      ),
     searchResultsIntro: (query) =>
       pickAvoidRepeat(
         'searchResultsIntro',

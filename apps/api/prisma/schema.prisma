@@ -143,6 +143,7 @@ model ProductVariant {
   updatedAt  DateTime       @updatedAt
   values     VariantValue[]
   orderItems OrderItem[]
+  images     ProductImage[]
 
   @@map("product_variants")
 }
@@ -159,12 +160,14 @@ model VariantValue {
 }
 
 model ProductImage {
-  id        String   @id @default(uuid())
+  id        String          @id @default(uuid())
   productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
   url       String
-  orden     Int      @default(0)
-  createdAt DateTime @default(now())
+  orden     Int             @default(0)
+  createdAt DateTime        @default(now())
 
   @@map("product_images")
 }

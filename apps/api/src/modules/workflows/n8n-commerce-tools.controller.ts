@@ -20,7 +20,10 @@ const INCLUDE_PRODUCTO_CHAT = {
   attributeValues: { include: { attributeValue: { include: { attribute: true } } } },
   variants: {
     where: { isActive: true },
-    include: { values: { include: { attributeValue: { include: { attribute: true } } } } },
+    include: {
+      values: { include: { attributeValue: { include: { attribute: true } } } },
+      images: { orderBy: { orden: 'asc' as const }, take: 1 },
+    },
   },
 };
 
@@ -146,9 +149,16 @@ export class N8nCommerceToolsController {
   }
 
   @Post('products.send_image')
-  @ApiOperation({ summary: 'n8n tool: send primary product image via WhatsApp' })
+  @ApiOperation({ summary: 'n8n tool: send product or variant image via WhatsApp' })
   async sendProductImage(
-    @Body() body: { chatId: string; waSessionId?: string; productId: string; caption?: string },
+    @Body()
+    body: {
+      chatId: string;
+      waSessionId?: string;
+      productId: string;
+      variantId?: string;
+      caption?: string;
+    },
   ) {
     if (!body.chatId?.trim()) throw new BadRequestException('chatId is required');
     if (!body.productId?.trim()) throw new BadRequestException('productId is required');
@@ -157,7 +167,23 @@ export class N8nCommerceToolsController {
       where: { id: body.productId },
       include: { images: { orderBy: { orden: 'asc' }, take: 1 } },
     });
-    if (!product?.images[0]?.url) return { sent: false, reason: 'no_image' };
+    if (!product) throw new NotFoundException(`Producto no encontrado: ${body.productId}`);
+
+    // Foto propia de la variante si existe; si no, cae a la del producto (fallback
+    // solo aquí, en el punto de envío — el listado de opciones no hereda para poder
+    // distinguir "esta opción tiene foto propia" de "no tiene").
+    let imageUrl = product.images[0]?.url;
+    if (body.variantId?.trim()) {
+      const variant = await this.prisma.productVariant.findUnique({
+        where: { id: body.variantId },
+        include: { images: { orderBy: { orden: 'asc' }, take: 1 } },
+      });
+      if (!variant || variant.productId !== product.id) {
+        throw new NotFoundException(`Subproducto no encontrado: ${body.variantId}`);
+      }
+      imageUrl = variant.images[0]?.url ?? imageUrl;
+    }
+    if (!imageUrl) return { sent: false, reason: 'no_image' };
 
     const waChatId = this.normalizeWaChatId(body.chatId);
     const caption =
@@ -167,12 +193,12 @@ export class N8nCommerceToolsController {
     await this.openwa.sendImage({
       chatId: waChatId,
       sessionId: body.waSessionId,
-      image: { url: product.images[0].url },
+      image: { url: imageUrl },
       caption,
       source: 'bot',
     });
 
-    return { sent: true, productId: product.id, url: product.images[0].url };
+    return { sent: true, productId: product.id, url: imageUrl };
   }
 
   @Post('cart.get')
@@ -519,6 +545,7 @@ export class N8nCommerceToolsController {
       stock: number;
       salePrice: unknown;
       values: { attributeValue: { valor: string; attribute: { nombre: string } } }[];
+      images?: { url: string }[];
     }[];
   }) {
     const variantes =
@@ -529,6 +556,10 @@ export class N8nCommerceToolsController {
           etiqueta: etiquetaVariante(v),
           precio: v.salePrice != null ? Number(v.salePrice) : Number(row.salePrice),
           stock: v.stock,
+          // Sin heredar la del producto aquí: el listado necesita distinguir "esta
+          // opción tiene foto propia" (para ofrecer "foto N") de "no tiene". El
+          // fallback al producto se resuelve en products.send_image, al enviar.
+          imageUrl: v.images?.[0]?.url ?? null,
         })) ?? [];
     // Un atributo que ya diferencia los subproductos (ej. Color, Material) no debe
     // repetirse como "informativo": ahí mostraría valores contradictorios (Color:

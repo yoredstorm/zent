@@ -112,4 +112,11 @@ export class ProductsController {
   removeVariant(@Param('variantId') variantId: string) {
     return this.products.removeVariant(variantId);
   }
+
+  @Post('variants/:variantId/images')
+  @Roles(Role.ADMIN, Role.VENDEDOR)
+  @ApiOperation({ summary: 'Subir foto de un subproducto' })
+  uploadVariantImage(@Param('variantId') variantId: string, @Body() dto: UploadImageDto) {
+    return this.products.uploadVariantImage(variantId, dto.url, dto.orden);
+  }
 }

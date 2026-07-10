@@ -263,6 +263,10 @@ function sinFiller(r, caso) {
     console.error('FAIL variantes parche:', r5.parche);
     process.exit(1);
   }
+  if (/escribe \*foto/i.test(r5.respuesta)) {
+    console.error('FAIL variantes: no debería ofrecer "foto N" si ninguna opción tiene imagen', r5.respuesta);
+    process.exit(1);
+  }
 
   // 6. Elegir opción "2" → guarda variante y pide cantidad
   const r6 = await flujoCatalogo(
@@ -326,6 +330,118 @@ function sinFiller(r, caso) {
   }
   if (!/azul \/ l/i.test(r7.respuesta) || !/110\.00/.test(r7.respuesta)) {
     console.error('FAIL agregar variante resumen:', r7.respuesta);
+    process.exit(1);
+  }
+
+  // --- Foto por subproducto: "foto N" bajo demanda -------------------------
+  const poloConFotos = {
+    id: 'p10',
+    name: 'polo con fotos',
+    price: 50,
+    lowStock: false,
+    imageUrl: null,
+    description: null,
+    atributos: null,
+    variantes: [
+      { id: 'vf1', etiqueta: 'Rojo / M', precio: 50, stock: 3, imageUrl: '/api/uploads/images/rojo.jpg' },
+      { id: 'vf2', etiqueta: 'Azul / L', precio: 55, stock: 2, imageUrl: null },
+    ],
+  };
+
+  // 8. Listado con al menos una opción con foto → ofrece "foto N"
+  const r8 = await flujoCatalogo(
+    ctxBase({
+      mensaje: '1',
+      msj: '1',
+      intencion: 'numero',
+      sesion: sesionVariantes({ phase: 'browse_products', categoryName: 'ropa', lastProductList: [poloConFotos] }),
+    }),
+  );
+  sinFiller(r8, 'hint de foto');
+  if (!/foto 1/i.test(r8.respuesta)) {
+    console.error('FAIL hint de foto: no aparece cuando hay una opción con imagen', r8.respuesta);
+    process.exit(1);
+  }
+
+  // 9. "foto 1" (con imagen) → manda products.send_image con el variantId correcto,
+  //    sin avanzar de fase (no pide cantidad).
+  const llamadas9 = [];
+  const r9 = await flujoCatalogo(
+    ctxBase({
+      mensaje: 'foto 1',
+      msj: 'foto 1',
+      intencion: 'libre',
+      sesion: sesionVariantes({
+        phase: 'product_detail',
+        selectedProductId: 'p10',
+        lastProductList: [poloConFotos],
+        esperandoVariante: true,
+      }),
+      llamarHerramienta: async (n, c) => {
+        llamadas9.push([n, c]);
+        if (n === 'products.send_image') return { sent: true };
+        return null;
+      },
+    }),
+  );
+  sinFiller(r9, 'foto 1');
+  const llamadaFoto = llamadas9.find(([n]) => n === 'products.send_image');
+  if (!llamadaFoto || llamadaFoto[1].variantId !== 'vf1' || llamadaFoto[1].productId !== 'p10') {
+    console.error('FAIL foto 1: no llamó products.send_image con el variantId correcto', llamadas9);
+    process.exit(1);
+  }
+  if (/cantidad|cu[aá]ntas/i.test(r9.respuesta)) {
+    console.error('FAIL foto 1: no debería avanzar a pedir cantidad', r9.respuesta);
+    process.exit(1);
+  }
+
+  // 10. "foto 2" (esa opción no tiene imagen propia) → respuesta honesta, sin llamar la tool
+  const llamadas10 = [];
+  const r10 = await flujoCatalogo(
+    ctxBase({
+      mensaje: 'foto 2',
+      msj: 'foto 2',
+      intencion: 'libre',
+      sesion: sesionVariantes({
+        phase: 'product_detail',
+        selectedProductId: 'p10',
+        lastProductList: [poloConFotos],
+        esperandoVariante: true,
+      }),
+      llamarHerramienta: async (n, c) => {
+        llamadas10.push([n, c]);
+        return null;
+      },
+    }),
+  );
+  sinFiller(r10, 'foto 2 sin imagen propia');
+  if (llamadas10.some(([n]) => n === 'products.send_image')) {
+    console.error('FAIL foto 2 sin imagen: no debería llamar products.send_image', llamadas10);
+    process.exit(1);
+  }
+  if (!/no tengo|no tiene foto/i.test(r10.respuesta)) {
+    console.error('FAIL foto 2 sin imagen: respuesta no es honesta', r10.respuesta);
+    process.exit(1);
+  }
+
+  // 11. Un dígito pelado ("2") SIGUE siendo elegir la opción, nunca pedir su foto —
+  //     incluso con un producto que sí tiene variantes con imageUrl seteado.
+  const r11 = await flujoCatalogo(
+    ctxBase({
+      mensaje: '2',
+      msj: '2',
+      intencion: 'numero',
+      sesion: sesionVariantes({
+        phase: 'product_detail',
+        selectedProductId: 'p10',
+        lastProductList: [poloConFotos],
+        esperandoVariante: true,
+      }),
+    }),
+  );
+  sinFiller(r11, 'digito sigue eligiendo variante');
+  if (r11.parche.varianteSeleccionada?.id !== 'vf2') {
+    console.error('FAIL: "2" debía seguir eligiendo la variante, no interpretarse como pedido de foto', r11.parche);
     process.exit(1);
   }
 
