@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { AtributosProducto } from '@/components/products/AtributosProducto';
 import { SubproductosProducto } from '@/components/products/SubproductosProducto';
-import { etiquetaVariante } from '@/lib/variantes';
+import { paresAtributoVariante } from '@/lib/variantes';
+import { Badge } from '@/components/ui/Badge';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -317,9 +318,7 @@ export default function ProductsPage() {
                       {expandido === p.id ? '▾' : '▸'}
                     </button>
                   ) : (
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${p.stock <= p.minStock ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                      {p.stock}
-                    </span>
+                    <Badge tone={p.stock <= p.minStock ? 'danger' : 'success'}>{p.stock}</Badge>
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -330,20 +329,49 @@ export default function ProductsPage() {
               </tr>
               {expandido === p.id && p.variants?.length > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={9} className="px-6 py-3">
-                    <p className="mb-2 text-xs font-medium uppercase text-slate-400">
+                  <td colSpan={9} className="px-6 py-4">
+                    <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">
                       Subproductos — el stock del producto es la suma de estas opciones
                     </p>
-                    {p.variants.map((v: any) => (
-                      <div key={v.id} className="flex justify-between border-b border-slate-100 py-1 text-sm last:border-b-0">
-                        <span className="text-slate-700">
-                          {(v.values?.length ? etiquetaVariante(v) : '') || v.sku || 'Opción'}
-                        </span>
-                        <span className={v.stock <= 0 ? 'font-medium text-red-600' : 'text-slate-600'}>
-                          {v.stock} uds — S/ {Number(v.salePrice ?? p.salePrice).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                      <table className="min-w-full divide-y divide-slate-100 text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                            <th className="px-4 py-2">Opción</th>
+                            <th className="px-4 py-2">Stock</th>
+                            <th className="px-4 py-2 text-right">Precio</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {p.variants.map((v: any) => {
+                            const pares = v.values?.length ? paresAtributoVariante(v) : [];
+                            return (
+                              <tr key={v.id}>
+                                <td className="px-4 py-2.5">
+                                  {pares.length ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {pares.map((par) => (
+                                        <Badge key={par.nombre} tone="default">
+                                          {par.nombre}: {par.valor}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-500">{v.sku || 'Opción'}</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <Badge tone={v.stock <= 0 ? 'danger' : 'success'}>{v.stock} uds</Badge>
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-medium text-slate-700">
+                                  S/ {Number(v.salePrice ?? p.salePrice).toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </td>
                 </tr>
               )}

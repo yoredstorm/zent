@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
-import { etiquetaVariante } from '@/lib/variantes';
+import { Badge } from '@/components/ui/Badge';
+import { paresAtributoVariante } from '@/lib/variantes';
 
 interface ValorAtributo {
   id: string;
@@ -130,7 +131,15 @@ export function SubproductosProducto({ productId }: { productId: string }) {
           <tbody className="divide-y divide-slate-100">
             {variantes.map((v) => (
               <tr key={v.id}>
-                <td className="py-2 pr-4 font-medium text-slate-800">{etiquetaVariante(v)}</td>
+                <td className="py-2 pr-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {paresAtributoVariante(v).map((par) => (
+                      <Badge key={par.nombre} tone="default">
+                        {par.nombre}: {par.valor}
+                      </Badge>
+                    ))}
+                  </div>
+                </td>
                 <td className="py-2 pr-4">
                   <input
                     type="number"
