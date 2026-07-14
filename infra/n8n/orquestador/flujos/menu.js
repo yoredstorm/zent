@@ -15,11 +15,23 @@ async function flujoMenu(ctx) {
     const respuesta = resultado?.sent
       ? unir(COPY.catalogPdfSent())
       : unir(COPY.catalogPdfUnavailable());
-    return { respuesta, parche: { phase: 'main_menu', lastCopyKeys: { ...claves } } };
+    return {
+      respuesta,
+      datosIA: { tipo: 'catalogo_pdf', enviado: Boolean(resultado?.sent) },
+      parche: { phase: 'main_menu', lastCopyKeys: { ...claves } },
+    };
   }
 
   const respuesta = textoBienvenida({ sesion, copys, COPY, unir });
-  return { respuesta, parche: parcheBienvenida(claves) };
+  return {
+    respuesta,
+    datosIA: {
+      tipo: 'saludo',
+      storeName: sesion.storeName || 'Zent',
+      cliente: sesion.customer || { found: false },
+    },
+    parche: parcheBienvenida(claves),
+  };
 }
 
 if (typeof module !== 'undefined') {

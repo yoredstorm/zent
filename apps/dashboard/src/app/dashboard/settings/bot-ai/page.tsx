@@ -11,7 +11,7 @@ import { api } from '@/lib/api';
 import { useRequireAdmin } from '@/lib/useRequireAdmin';
 import { BotEnginePicker } from '@/components/settings/BotEnginePicker';
 
-type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n';
+type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n' | 'n8n_ai';
 
 type EngineStatus = {
   engine: WhatsappBotEngine;
@@ -556,7 +556,7 @@ export default function BotAiSettingsPage() {
               <Button type="button" variant="secondary" loading={syncing} onClick={syncOpenwa}>
                 Aplicar y sincronizar OpenWA
               </Button>
-              {whatsappBotEngine === 'n8n' ? (
+              {whatsappBotEngine === 'n8n' || whatsappBotEngine === 'n8n_ai' ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -621,6 +621,7 @@ export default function BotAiSettingsPage() {
                 <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone}`}>{statusLabel}</span>
               </div>
             </div>
+
 
             {zentFlowSyncWarning ? (
               <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -711,7 +712,11 @@ export default function BotAiSettingsPage() {
               </div>
             </div>
           </Card>
+          </>
+          ) : null}
 
+          {whatsappBotEngine === 'novita' || whatsappBotEngine === 'n8n_ai' ? (
+          <>
           <Card className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-800">Novita API</h2>
             <Field
@@ -801,7 +806,7 @@ export default function BotAiSettingsPage() {
           </>
           ) : null}
 
-          {whatsappBotEngine === 'n8n' ? (
+          {whatsappBotEngine === 'n8n' || whatsappBotEngine === 'n8n_ai' ? (
           <>
           <Card className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">

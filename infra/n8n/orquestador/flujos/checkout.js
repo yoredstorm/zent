@@ -24,6 +24,13 @@ async function flujoCheckout(ctx) {
       unir(COPY.checkoutConfirmCta());
     return {
       respuesta,
+      datosIA: {
+        tipo: 'resumen_checkout',
+        carrito: (carrito.items || []).map((i) => ({ nombre: i.nombre, cantidad: i.quantity })),
+        total: carrito.total,
+        direccion,
+        referencia: referencia || null,
+      },
       parche: { phase: 'checkout_confirm', checkout, lastCopyKeys: { ...claves } },
     };
   }
@@ -155,6 +162,12 @@ async function flujoCheckout(ctx) {
           unir(COPY.goodbyeSoft());
         return {
           respuesta,
+          datosIA: {
+            tipo: 'pedido_confirmado',
+            orderId: pedido.orderId,
+            direccion,
+            total: Number(carrito.total ?? 0),
+          },
           parche: {
             phase: 'main_menu',
             checkout: {},

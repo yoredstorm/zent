@@ -4,6 +4,13 @@
  * Siempre consulta cart.get para tener el carrito fresco (nunca el de la sesión).
  */
 
+function carritoParaIA(carrito) {
+  return {
+    items: (carrito.items || []).map((i) => ({ nombre: i.nombre, cantidad: i.quantity })),
+    total: carrito.total,
+  };
+}
+
 async function flujoCarrito(ctx) {
   const { mensaje, msj, intencion, sesion, entrada, claveEstado, copys, llamarHerramienta } = ctx;
   const { COPY, unir, claves } = prepararCopys(copys, sesion);
@@ -53,6 +60,7 @@ async function flujoCarrito(ctx) {
     if (!carritoAct.items?.length) {
       return {
         respuesta: unir(COPY.itemRemoved(objetivo.nombre)) + '\n\n' + unir(COPY.cartEmpty()),
+        datosIA: { tipo: 'carrito_item_quitado', quitado: objetivo.nombre, carrito: carritoParaIA(carritoAct) },
         parche: { phase: 'cart', lastCopyKeys: { ...claves } },
       };
     }
@@ -64,6 +72,7 @@ async function flujoCarrito(ctx) {
         '\n' +
         resumenCarrito(carritoAct, { numerar: true }) +
         '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.',
+      datosIA: { tipo: 'carrito_item_quitado', quitado: objetivo.nombre, carrito: carritoParaIA(carritoAct) },
       parche: { phase: 'cart', lastCopyKeys: { ...claves } },
     };
   }
@@ -89,7 +98,11 @@ async function flujoCarrito(ctx) {
       fase = 'checkout_address';
       respuesta = unir(COPY.checkoutAskAddress());
     }
-    return { respuesta, parche: { phase: fase, checkout, lastCopyKeys: { ...claves } } };
+    return {
+      respuesta,
+      datosIA: { tipo: 'inicio_checkout', direccionGuardada: cliente.found ? cliente.address || null : null, carrito: carritoParaIA(carrito) },
+      parche: { phase: fase, checkout, lastCopyKeys: { ...claves } },
+    };
   }
 
   if (!carrito.items?.length) {
@@ -104,7 +117,11 @@ async function flujoCarrito(ctx) {
     '\n' +
     resumenCarrito(carrito, { numerar: true }) +
     '\n\nDi *confirmar pedido* para finalizar, *quita N* para quitar algo o *catálogo* para seguir comprando.';
-  return { respuesta, parche: { phase: 'cart', lastCopyKeys: { ...claves } } };
+  return {
+    respuesta,
+    datosIA: { tipo: 'resumen_carrito', carrito: carritoParaIA(carrito) },
+    parche: { phase: 'cart', lastCopyKeys: { ...claves } },
+  };
 }
 
 if (typeof module !== 'undefined') {

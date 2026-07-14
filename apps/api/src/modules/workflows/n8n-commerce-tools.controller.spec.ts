@@ -81,6 +81,9 @@ describe('N8nCommerceToolsController', () => {
       lookupCustomer: jest.fn(),
       findActiveOrderByPhone: jest.fn(),
     };
+    const aiComposer = {
+      composeReply: jest.fn().mockResolvedValue({ reply: 'Hola, redactado por IA' }),
+    };
     const controller = new N8nCommerceToolsController(
       prisma as any,
       orders as any,
@@ -89,6 +92,7 @@ describe('N8nCommerceToolsController', () => {
       cartService as any,
       cartHold as any,
       sessionTools as any,
+      aiComposer as any,
     );
     return {
       controller,

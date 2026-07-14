@@ -1,6 +1,6 @@
 'use client';
 
-type EngineId = 'legacy' | 'novita' | 'n8n';
+type EngineId = 'legacy' | 'novita' | 'n8n' | 'n8n_ai';
 
 const ENGINES: Array<{
   id: EngineId;
@@ -10,6 +10,7 @@ const ENGINES: Array<{
   { id: 'legacy', title: 'Menu clasico', desc: 'Opciones 1-2-3-4, catalogo y carrito' },
   { id: 'novita', title: 'IA Novita', desc: 'Conversacion natural con IA' },
   { id: 'n8n', title: 'Flujos n8n', desc: 'Automatizacion editable en n8n' },
+  { id: 'n8n_ai', title: 'n8n + IA', desc: 'Flujo de n8n con respuestas redactadas por IA' },
 ];
 
 export function BotEnginePicker({
@@ -25,7 +26,7 @@ export function BotEnginePicker({
       <p className="mt-1 text-sm text-slate-500">
         Elige un solo motor activo. La configuracion se guarda en la tienda y aplica al instante.
       </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {ENGINES.map((engine) => {
           const active = value === engine.id;
           return (

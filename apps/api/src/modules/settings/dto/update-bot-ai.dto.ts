@@ -57,9 +57,9 @@ export class UpdateBotAiDto {
   @IsBoolean()
   n8nRestoreDefaults?: boolean;
 
-  @ApiPropertyOptional({ description: 'Motor WhatsApp: legacy, novita o n8n' })
+  @ApiPropertyOptional({ description: 'Motor WhatsApp: legacy, novita, n8n o n8n_ai (hibrido)' })
   @IsOptional()
-  @IsIn(['legacy', 'novita', 'n8n'])
+  @IsIn(['legacy', 'novita', 'n8n', 'n8n_ai'])
   whatsappBotEngine?: string;
 
   @ApiPropertyOptional({ description: 'Alcance chat n8n: sandbox o core' })

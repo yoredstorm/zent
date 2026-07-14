@@ -120,7 +120,12 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
             contactPhone: decision.resolvedPhone ?? senderPhone ?? from,
             message: body,
             messageType: 'text',
-            context: { from, engine: cfg.engine, routeReason: decision.reason },
+            context: {
+              from,
+              engine: cfg.engine,
+              routeReason: decision.reason,
+              aiHybrid: cfg.engine === 'n8n_ai',
+            },
           },
           {
             chatWebhookUrl: cfg.n8nChatWebhookUrl,
@@ -131,7 +136,7 @@ export class WhatsappBotWorker implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      if (decision.globalEngine === 'n8n') {
+      if (decision.globalEngine === 'n8n' || decision.globalEngine === 'n8n_ai') {
         await this.turnLog.startTurn({
           stateKey,
           chatId,

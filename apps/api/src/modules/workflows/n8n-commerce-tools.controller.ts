@@ -9,6 +9,7 @@ import { CartService } from '../whatsapp-bot/cart.service';
 import { CartHoldService } from '../inventory/cart-hold.service';
 import { N8nToolAuthGuard } from './n8n-tool-auth.guard';
 import { N8nSessionToolsService } from './n8n-session-tools.service';
+import { N8nAiComposerService } from './n8n-ai-composer.service';
 import type { N8nFlowContext } from './n8n-flow.types';
 import { parseWaConversationId } from '../whatsapp-inbox/wa-conversation.util';
 
@@ -57,6 +58,7 @@ export class N8nCommerceToolsController {
     private cart: CartService,
     private cartHold: CartHoldService,
     private sessionTools: N8nSessionToolsService,
+    private aiComposer: N8nAiComposerService,
   ) {}
 
   @Post('categories.list')
@@ -509,6 +511,24 @@ export class N8nCommerceToolsController {
       notes: body.note,
     });
     return { orderId: updated.id, status: updated.status };
+  }
+
+  @Post('ai.compose_reply')
+  @ApiOperation({
+    summary: 'n8n tool: redacta una respuesta natural con IA a partir de hechos estructurados (modo n8n + IA)',
+  })
+  async composeReply(
+    @Body()
+    body: {
+      datosIA: Record<string, unknown>;
+      mensajeUsuario?: string;
+      fase?: string;
+      cliente?: { found: boolean; name?: string | null } | null;
+    },
+  ) {
+    if (!body.datosIA) throw new BadRequestException('datosIA is required');
+    const result = await this.aiComposer.composeReply(body);
+    return result ?? { reply: null };
   }
 
   @Post('messages.send_text')

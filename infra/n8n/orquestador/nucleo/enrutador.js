@@ -97,6 +97,7 @@ function prepararContexto(cuerpo) {
     claveEstado,
     apiUrl: contexto.zentApiUrl || 'http://backend-api:3000/api',
     secreto: contexto.zentN8nSecret || '',
+    aiHybrid: contexto.aiHybrid === true,
   };
 }
 

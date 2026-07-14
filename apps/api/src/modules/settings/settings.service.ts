@@ -80,7 +80,7 @@ export class SettingsService {
     }
 
     const n8nChatMode =
-      cfg.engine === 'n8n'
+      cfg.engine === 'n8n' || cfg.engine === 'n8n_ai'
         ? cfg.n8nChatScope
         : ('disabled' as const);
 
@@ -152,7 +152,7 @@ export class SettingsService {
       ...status,
       wouldRouteTestPhone: testPhone
         ? this.botEngine.shouldRouteToN8n(testPhone, status)
-        : status.engine === 'n8n' && status.n8nChatScope === 'core',
+        : (status.engine === 'n8n' || status.engine === 'n8n_ai') && status.n8nChatScope === 'core',
       testPhone,
       wouldRoutePhones: sandboxPhones.map((phone) => ({
         phone,
@@ -187,7 +187,7 @@ export class SettingsService {
       ...storeFields
     } = dto;
 
-    let engine = whatsappBotEngine as 'legacy' | 'novita' | 'n8n' | undefined;
+    let engine = whatsappBotEngine as 'legacy' | 'novita' | 'n8n' | 'n8n_ai' | undefined;
     if (!engine && n8nChatMode && n8nChatMode !== 'disabled') engine = 'n8n';
     if (!engine && novitaBotEnabled) engine = 'novita';
 
@@ -246,7 +246,7 @@ export class SettingsService {
     );
     this.secrets.upsertEnvConfig(
       'N8N_CHAT_MODE',
-      resolvedEngine === 'n8n' ? (chatScope ?? 'sandbox') : 'disabled',
+      resolvedEngine === 'n8n' || resolvedEngine === 'n8n_ai' ? (chatScope ?? 'sandbox') : 'disabled',
     );
 
     if (n8nWorkflowsEnabled !== undefined) {

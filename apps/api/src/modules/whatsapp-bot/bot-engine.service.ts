@@ -8,7 +8,7 @@ import { OpenwaService } from '../openwa/openwa.service';
 import { WORKFLOW_FETCH } from '../workflows/workflow-events.service';
 import { resolvePhoneFromIds } from './wa-contact.util';
 
-export type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n';
+export type WhatsappBotEngine = 'legacy' | 'novita' | 'n8n' | 'n8n_ai';
 export type N8nChatScope = 'sandbox' | 'core';
 export type N8nSalesMode = 'disabled' | 'sandbox' | 'core';
 
@@ -160,14 +160,14 @@ export class BotEngineService {
   }
 
   shouldRouteToN8n(phone: string | undefined | null, cfg: BotEngineConfig): boolean {
-    if (cfg.engine !== 'n8n') return false;
+    if (cfg.engine !== 'n8n' && cfg.engine !== 'n8n_ai') return false;
     if (!cfg.webhookSecret) return false;
     if (cfg.n8nChatScope === 'core') return true;
     return this.matchesSandboxPhone(phone, cfg.n8nChatSandboxPhones);
   }
 
   shouldRoutePhone(phone: string | undefined | null, cfg: BotEngineConfig): boolean {
-    if (cfg.engine === 'n8n') return this.shouldRouteToN8n(phone, cfg);
+    if (cfg.engine === 'n8n' || cfg.engine === 'n8n_ai') return this.shouldRouteToN8n(phone, cfg);
     return true;
   }
 
@@ -225,7 +225,7 @@ export class BotEngineService {
 
     if (!cfg.webhookSecret) {
       return {
-        globalEngine: 'n8n',
+        globalEngine: cfg.engine,
         effectiveEngine: 'skipped',
         wouldRouteToN8n: false,
         resolvedPhone: phone,
@@ -235,7 +235,7 @@ export class BotEngineService {
 
     if (!phone) {
       return {
-        globalEngine: 'n8n',
+        globalEngine: cfg.engine,
         effectiveEngine: 'skipped',
         wouldRouteToN8n: false,
         resolvedPhone: null,
@@ -245,8 +245,8 @@ export class BotEngineService {
 
     const wouldRoute = this.shouldRouteToN8n(phone, cfg);
     return {
-      globalEngine: 'n8n',
-      effectiveEngine: wouldRoute ? 'n8n' : 'skipped',
+      globalEngine: cfg.engine,
+      effectiveEngine: wouldRoute ? cfg.engine : 'skipped',
       wouldRouteToN8n: wouldRoute,
       resolvedPhone: phone,
       reason: wouldRoute
@@ -295,6 +295,11 @@ export class BotEngineService {
 
     if (cfg.engine === 'novita') {
       if (!cfg.botAiEnabled) blockers.push('novita_store_disabled');
+    }
+
+    // n8n_ai también depende de Novita para redactar respuestas, pero no requiere
+    // activar el motor "novita" completo (botAiEnabled es irrelevante aquí).
+    if (cfg.engine === 'novita' || cfg.engine === 'n8n_ai') {
       if (!novitaKeyConfigured) blockers.push('novita_api_key_missing');
       if (novitaKeyConfigured) {
         novitaBalanceUsd = await this.novitaBalance.getAvailableBalanceUsd();
@@ -306,7 +311,7 @@ export class BotEngineService {
     }
 
     const n8nChatWebhookOk: boolean | null = null;
-    if (cfg.engine === 'n8n') {
+    if (cfg.engine === 'n8n' || cfg.engine === 'n8n_ai') {
       if (!cfg.webhookSecret) blockers.push('n8n_secret_missing');
       if (cfg.n8nChatScope === 'sandbox' && !cfg.n8nChatSandboxPhones.trim()) {
         blockers.push('sandbox_phone_empty');
@@ -368,7 +373,7 @@ export class BotEngineService {
 
   private normalizeEngine(value: string | null | undefined): WhatsappBotEngine {
     const v = (value ?? '').trim().toLowerCase();
-    if (v === 'novita' || v === 'n8n') return v;
+    if (v === 'novita' || v === 'n8n' || v === 'n8n_ai') return v;
     return 'legacy';
   }
 

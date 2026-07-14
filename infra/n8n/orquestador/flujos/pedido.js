@@ -19,6 +19,20 @@ const EMOJI_ESTADO = {
 
 const DIVISOR_PEDIDO = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄';
 
+function pedidoParaIA(o) {
+  const fechaRef = o.updatedAt || o.createdAt;
+  return {
+    codigo: o.shortId,
+    estado: ESTADOS_ES[o.status] || o.status,
+    antiguedad: fechaRef ? haceCuanto(fechaRef) : null,
+    items: (o.items || []).map((it) => ({
+      nombre: it.productName,
+      cantidad: it.quantity,
+      opcion: it.variantLabel || null,
+    })),
+  };
+}
+
 function textoDetallePedido(o, unir, COPY) {
   const fechaRef = o.updatedAt || o.createdAt;
   const antiguedad = fechaRef ? haceCuanto(fechaRef) : '';
@@ -49,6 +63,7 @@ async function flujoPedido(ctx) {
     if (r?.found) {
       return {
         respuesta: textoDetallePedido(r.order, unir, COPY),
+        datosIA: { tipo: 'estado_pedido', pedido: pedidoParaIA(r.order) },
         parche: { phase: 'main_menu', esperandoCodigo: null, lastCopyKeys: { ...claves } },
       };
     }
@@ -70,6 +85,7 @@ async function flujoPedido(ctx) {
       if (r?.status) {
         return {
           respuesta: textoDetallePedido(r, unir, COPY),
+          datosIA: { tipo: 'estado_pedido', pedido: pedidoParaIA(r) },
           parche: { phase: 'main_menu', esperandoCodigo: null, lastCopyKeys: { ...claves } },
         };
       }
@@ -91,6 +107,7 @@ async function flujoPedido(ctx) {
     if (r?.status) {
       return {
         respuesta: textoDetallePedido(r, unir, COPY),
+        datosIA: { tipo: 'estado_pedido', pedido: pedidoParaIA(r) },
         parche: { phase: 'main_menu', lastCopyKeys: { ...claves } },
       };
     }

@@ -20,6 +20,17 @@ async function flujoCatalogo(ctx) {
   const AYUDA_PRODUCTOS =
     '\n\nEscribe el *número* para ver un producto, su nombre, o *agregar 2* para añadir directo.';
 
+  // Hechos compactos para el modo "n8n + IA" — sin plantillas, la IA los redacta.
+  function productosParaIA(productos) {
+    return productos.map((p) => ({
+      nombre: p.name,
+      precio: p.price,
+      stock: p.lowStock ? 'poco stock' : 'disponible',
+      caracteristicas: p.atributos || null,
+      opciones: (p.variantes || []).map((v) => ({ etiqueta: v.etiqueta, precio: v.precio })),
+    }));
+  }
+
   async function mostrarCategorias() {
     let cats = flujo.categoryList || [];
     const resultado = await llamarHerramienta('categories.list', {});
@@ -39,6 +50,11 @@ async function flujoCatalogo(ctx) {
       cats.map((c, i) => `${tecla(i + 1)} ${c.name}`).join('\n');
     return {
       respuesta,
+      datosIA: {
+        tipo: 'categorias',
+        tienda,
+        categorias: cats.map((c) => ({ nombre: c.name, cantidadProductos: c.productCount })),
+      },
       parche: {
         phase: 'browse_categories',
         categoryList: cats.map((c) => ({ id: c.id, name: c.name, productCount: c.productCount })),
@@ -78,6 +94,7 @@ async function flujoCatalogo(ctx) {
       AYUDA_PRODUCTOS;
     return {
       respuesta,
+      datosIA: { tipo: 'productos', categoria: categoria.name, productos: productosParaIA(productos) },
       parche: {
         phase: 'browse_products',
         categoryId: categoria.id,
@@ -117,6 +134,16 @@ async function flujoCatalogo(ctx) {
       varianteSeleccionada: null,
       lastCopyKeys: { ...claves },
     };
+    const datosIA = {
+      tipo: 'producto_detalle',
+      producto: {
+        nombre: producto.name,
+        precio: producto.price,
+        descripcion: producto.description || null,
+        caracteristicas: producto.atributos || null,
+        opciones: (producto.variantes || []).map((v) => ({ etiqueta: v.etiqueta, precio: v.precio })),
+      },
+    };
     // Con variantes se pide primero la opción; sin variantes, la cantidad.
     const siguiente = tieneVariantes ? listarVariantes(producto) : unir(COPY.productAskQuantity());
     if (producto.imageUrl) {
@@ -128,11 +155,12 @@ async function flujoCatalogo(ctx) {
       });
       if (envio?.sent) {
         // La foto ya lleva nombre/precio en el caption.
-        return { respuesta: siguiente, parche };
+        return { respuesta: siguiente, datosIA, parche };
       }
     }
     return {
       respuesta: detalleProducto(producto) + '\n\n' + siguiente,
+      datosIA,
       parche,
     };
   }
@@ -165,6 +193,13 @@ async function flujoCatalogo(ctx) {
       unir(COPY.keepShopping());
     return {
       respuesta,
+      datosIA: {
+        tipo: 'carrito_actualizado',
+        agregado: { nombre: producto.name, cantidad },
+        carrito: (resultado.cart.items || []).map((i) => ({ nombre: i.nombre, cantidad: i.quantity })),
+        total: resultado.cart.total,
+        reservaMinutos: minutos,
+      },
       parche: {
         phase: 'cart',
         selectedProductId: null,
@@ -204,6 +239,7 @@ async function flujoCatalogo(ctx) {
       AYUDA_PRODUCTOS;
     return {
       respuesta,
+      datosIA: { tipo: 'busqueda_productos', consulta: query, productos: productosParaIA(productos) },
       parche: {
         phase: 'browse_products',
         categoryId: null,
