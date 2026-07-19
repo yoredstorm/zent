@@ -6,7 +6,7 @@ export interface StartTurnInput {
   stateKey: string;
   chatId: string;
   waSessionId?: string;
-  mode: 'ai' | 'legacy' | 'n8n_chat' | 'routing_skipped' | 'handoff_silent';
+  mode: 'ai' | 'legacy' | 'n8n_chat' | 'n8n_ai_chat' | 'routing_skipped' | 'handoff_silent';
   userMessage?: string;
 }
 

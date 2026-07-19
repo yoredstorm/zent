@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/Badge';
 
 const LABELS = {
   n8n: { text: 'n8n', tone: 'brand' as const },
+  n8n_ai: { text: 'n8n + IA', tone: 'brand' as const },
   novita: { text: 'Novita', tone: 'success' as const },
   legacy: { text: 'Menú clásico', tone: 'default' as const },
   skipped: { text: 'Sin ruteo n8n', tone: 'warning' as const },
@@ -35,6 +36,7 @@ export function EngineBadge({ engine, reason }: { engine: string; reason?: strin
 
 export const MODE_LABELS: Record<string, string> = {
   n8n_chat: 'n8n',
+  n8n_ai_chat: 'n8n + IA',
   ai: 'Novita',
   legacy: 'Menú clásico',
   routing_skipped: 'Sin ruteo (sandbox)',

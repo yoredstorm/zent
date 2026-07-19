@@ -41,6 +41,8 @@ export class N8nAiComposerService {
       store?.botAiPolicies?.trim() ||
       'Pagos y entregas se coordinan con un asesor tras confirmar el pedido.';
 
+    const esSaludo = (input.datosIA as { tipo?: string } | undefined)?.tipo === 'saludo';
+
     const systemPrompt = [
       `Eres ${storeName}, redactando UN mensaje de WhatsApp para un cliente. Tono amable, natural, como una persona de confianza — nunca como un menú o un bot.`,
       `Negocio: ${businessDescription}`,
@@ -50,7 +52,9 @@ export class N8nAiComposerService {
       '- No los repitas como una lista técnica; redáctalos en prosa cálida y breve (2 a 5 líneas, apto para WhatsApp).',
       '- Nunca uses menús numerados (1, 2, 3...).',
       '- Si "Datos" incluye una lista de productos u opciones, termina invitando a elegir una de forma natural.',
-      '- Si el cliente ya es conocido (found=true), puedes saludarlo por su nombre de forma natural.',
+      esSaludo
+        ? '- Este es el saludo inicial: si el cliente ya es conocido (found=true), salúdalo por su nombre de forma natural.'
+        : '- El cliente YA fue saludado antes en esta conversación: NO vuelvas a saludarlo ni a presentarte ni a repetir el nombre de la tienda como apertura. Ve directo a responder lo que pidió.',
       '- Responde SOLO con el mensaje final, sin comentarios ni comillas.',
     ].join('\n');
 

@@ -79,7 +79,7 @@ export class N8nChatBridgeService {
       stateKey: input.waSessionId ? `${input.waSessionId}:${input.chatId}` : input.chatId,
       chatId: input.chatId,
       waSessionId: input.waSessionId,
-      mode: 'n8n_chat',
+      mode: input.context?.aiHybrid === true ? 'n8n_ai_chat' : 'n8n_chat',
       userMessage: input.message.slice(0, 2000),
     });
 
