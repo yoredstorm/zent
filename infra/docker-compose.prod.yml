@@ -126,6 +126,7 @@ services:
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
+      OPENWA_REQUEST_TIMEOUT_MS: ${OPENWA_REQUEST_TIMEOUT_MS:-10000}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}}
@@ -187,6 +188,7 @@ services:
       REDIS_PORT: "6379"
       OPENWA_BASE_URL: http://openwa:2785
       OPENWA_API_KEY: ${OPENWA_API_KEY:?OPENWA_API_KEY is required}
+      OPENWA_REQUEST_TIMEOUT_MS: ${OPENWA_REQUEST_TIMEOUT_MS:-10000}
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}
       OPENWA_WEBHOOK_URL: http://backend-api:3000/api/webhooks/openwa
       BOT_PLUGIN_SECRET: ${BOT_PLUGIN_SECRET:-${OPENWA_WEBHOOK_SECRET:-webhook-secret-2024}}

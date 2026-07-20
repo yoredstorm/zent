@@ -110,6 +110,11 @@ export class OpenwaService {
     });
   }
 
+  private requestTimeoutMs(): number {
+    const value = Number.parseInt(this.config.get<string>('OPENWA_REQUEST_TIMEOUT_MS', '10000'), 10);
+    return Number.isFinite(value) && value >= 500 ? value : 10000;
+  }
+
   private async request<T>(path: string, method: string = 'GET', body?: any): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -117,10 +122,18 @@ export class OpenwaService {
       'Content-Type': 'application/json',
     };
 
-    const options: RequestInit = { method, headers };
+    const options: RequestInit = { method, headers, signal: AbortSignal.timeout(this.requestTimeoutMs()) };
     if (body) options.body = JSON.stringify(body);
 
-    const response = await fetch(url, options);
+    let response: Response;
+    try {
+      response = await fetch(url, options);
+    } catch (err: any) {
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        throw new Error(`OpenWA API error: no respondió en ${this.requestTimeoutMs()}ms (${method} ${path})`);
+      }
+      throw err;
+    }
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
       const msg = detail ? `${response.status} ${response.statusText}: ${detail.slice(0, 300)}` : `${response.status} ${response.statusText}`;
