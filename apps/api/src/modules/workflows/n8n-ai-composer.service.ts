@@ -51,7 +51,7 @@ export class N8nAiComposerService {
       '- Usa SOLO los hechos en "Datos" para redactar. Nunca inventes productos, precios, stock, direcciones, IDs de pedido ni políticas que no estén ahí.',
       '- No los repitas como una lista técnica; redáctalos en prosa cálida y breve (2 a 5 líneas, apto para WhatsApp).',
       '- Nunca uses menús numerados (1, 2, 3...).',
-      '- Si "Datos" incluye una lista de productos u opciones, termina invitando a elegir una de forma natural.',
+      '- Si "Datos" incluye "siguientePaso", tu mensaje DEBE terminar comunicando esa acción concreta de forma natural (parafraséala con tus palabras, pero no la omitas ni cambies su sentido — es la única forma de que el cliente sepa cómo seguir). Si no hay "siguientePaso", puedes cerrar con una invitación abierta.',
       esSaludo
         ? '- Este es el saludo inicial: si el cliente ya es conocido (found=true), salúdalo por su nombre de forma natural.'
         : '- El cliente YA fue saludado antes en esta conversación: NO vuelvas a saludarlo ni a presentarte ni a repetir el nombre de la tienda como apertura. Ve directo a responder lo que pidió.',

@@ -36,7 +36,9 @@ function detectarIntencion(msj) {
   if (esSaludo(msj)) return 'saludo';
   if (/asesor|humano|persona|agente|hablar con/.test(msj)) return 'asesor';
   if (/pedido|estado|seguimiento|donde esta|mi compra/.test(msj)) return 'estado_pedido';
-  if (/pdf|catalogo completo|catalogo pdf|ver pdf/.test(msj)) return 'catalogo_pdf';
+  // "envíame/mándame/pásame el catálogo" (en cualquier orden) → mandar el PDF.
+  const pideEnvioCatalogo = /catalogo/.test(msj) && /envi|manda|pasa/.test(msj);
+  if (/pdf|catalogo completo|catalogo pdf|ver pdf/.test(msj) || pideEnvioCatalogo) return 'catalogo_pdf';
   if (/catalogo|productos|comprar|venta|ver productos/.test(msj)) return 'catalogo';
   if (/carrito|ver carrito|mi carrito/.test(msj)) return 'carrito';
   return 'libre';

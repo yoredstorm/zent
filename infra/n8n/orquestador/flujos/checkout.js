@@ -30,6 +30,7 @@ async function flujoCheckout(ctx) {
         total: carrito.total,
         direccion,
         referencia: referencia || null,
+        siguientePaso: 'Escribe "confirmar" para registrar el pedido.',
       },
       parche: { phase: 'checkout_confirm', checkout, lastCopyKeys: { ...claves } },
     };

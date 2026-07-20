@@ -60,7 +60,12 @@ async function flujoCarrito(ctx) {
     if (!carritoAct.items?.length) {
       return {
         respuesta: unir(COPY.itemRemoved(objetivo.nombre)) + '\n\n' + unir(COPY.cartEmpty()),
-        datosIA: { tipo: 'carrito_item_quitado', quitado: objetivo.nombre, carrito: carritoParaIA(carritoAct) },
+        datosIA: {
+          tipo: 'carrito_item_quitado',
+          quitado: objetivo.nombre,
+          carrito: carritoParaIA(carritoAct),
+          siguientePaso: 'El carrito quedó vacío; invítalo a escribir "catálogo" para seguir comprando.',
+        },
         parche: { phase: 'cart', lastCopyKeys: { ...claves } },
       };
     }
@@ -72,7 +77,12 @@ async function flujoCarrito(ctx) {
         '\n' +
         resumenCarrito(carritoAct, { numerar: true }) +
         '\n\nDi *confirmar pedido* para finalizar o *catálogo* para seguir comprando.',
-      datosIA: { tipo: 'carrito_item_quitado', quitado: objetivo.nombre, carrito: carritoParaIA(carritoAct) },
+      datosIA: {
+        tipo: 'carrito_item_quitado',
+        quitado: objetivo.nombre,
+        carrito: carritoParaIA(carritoAct),
+        siguientePaso: 'Escribe "confirmar pedido" para finalizar o "catálogo" para seguir comprando.',
+      },
       parche: { phase: 'cart', lastCopyKeys: { ...claves } },
     };
   }
@@ -87,20 +97,29 @@ async function flujoCarrito(ctx) {
     const checkout = flujo.checkout || {};
     let fase;
     let respuesta;
+    let siguientePaso;
     if (cliente.found && cliente.address) {
       fase = 'checkout_address';
       checkout.useSavedAddress = true;
       respuesta = unir(COPY.checkoutConfirmSavedAddress(cliente.address));
+      siguientePaso = `Pregúntale si entregamos en su dirección guardada (${cliente.address}) o si quiere darte una nueva.`;
     } else if (!cliente.found || !cliente.name) {
       fase = 'checkout_name';
       respuesta = unir(COPY.checkoutAskName());
+      siguientePaso = 'Pídele el nombre para registrar el pedido.';
     } else {
       fase = 'checkout_address';
       respuesta = unir(COPY.checkoutAskAddress());
+      siguientePaso = 'Pídele la dirección de entrega.';
     }
     return {
       respuesta,
-      datosIA: { tipo: 'inicio_checkout', direccionGuardada: cliente.found ? cliente.address || null : null, carrito: carritoParaIA(carrito) },
+      datosIA: {
+        tipo: 'inicio_checkout',
+        direccionGuardada: cliente.found ? cliente.address || null : null,
+        carrito: carritoParaIA(carrito),
+        siguientePaso,
+      },
       parche: { phase: fase, checkout, lastCopyKeys: { ...claves } },
     };
   }
@@ -119,7 +138,11 @@ async function flujoCarrito(ctx) {
     '\n\nDi *confirmar pedido* para finalizar, *quita N* para quitar algo o *catálogo* para seguir comprando.';
   return {
     respuesta,
-    datosIA: { tipo: 'resumen_carrito', carrito: carritoParaIA(carrito) },
+    datosIA: {
+      tipo: 'resumen_carrito',
+      carrito: carritoParaIA(carrito),
+      siguientePaso: 'Escribe "confirmar pedido" para finalizar, "quita N" para quitar algo, o "catálogo" para seguir comprando.',
+    },
     parche: { phase: 'cart', lastCopyKeys: { ...claves } },
   };
 }

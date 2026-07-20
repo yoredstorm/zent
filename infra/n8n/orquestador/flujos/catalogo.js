@@ -54,6 +54,7 @@ async function flujoCatalogo(ctx) {
         tipo: 'categorias',
         tienda,
         categorias: cats.map((c) => ({ nombre: c.name, cantidadProductos: c.productCount })),
+        siguientePaso: 'Escribe el nombre o número de la categoría que te interesa.',
       },
       parche: {
         phase: 'browse_categories',
@@ -94,7 +95,12 @@ async function flujoCatalogo(ctx) {
       AYUDA_PRODUCTOS;
     return {
       respuesta,
-      datosIA: { tipo: 'productos', categoria: categoria.name, productos: productosParaIA(productos) },
+      datosIA: {
+        tipo: 'productos',
+        categoria: categoria.name,
+        productos: productosParaIA(productos),
+        siguientePaso: 'Escribe el nombre o número del producto que te interesa, o "agregar N" para añadirlo directo.',
+      },
       parche: {
         phase: 'browse_products',
         categoryId: categoria.id,
@@ -143,6 +149,9 @@ async function flujoCatalogo(ctx) {
         caracteristicas: producto.atributos || null,
         opciones: (producto.variantes || []).map((v) => ({ etiqueta: v.etiqueta, precio: v.precio })),
       },
+      siguientePaso: tieneVariantes
+        ? 'Pídele que elija una opción (por nombre o número).'
+        : 'Pregúntale cuántas unidades quiere.',
     };
     // Con variantes se pide primero la opción; sin variantes, la cantidad.
     const siguiente = tieneVariantes ? listarVariantes(producto) : unir(COPY.productAskQuantity());
@@ -199,6 +208,7 @@ async function flujoCatalogo(ctx) {
         carrito: (resultado.cart.items || []).map((i) => ({ nombre: i.nombre, cantidad: i.quantity })),
         total: resultado.cart.total,
         reservaMinutos: minutos,
+        siguientePaso: 'Escribe "confirmar pedido" para finalizar, o sigue viendo el catálogo.',
       },
       parche: {
         phase: 'cart',
@@ -239,7 +249,12 @@ async function flujoCatalogo(ctx) {
       AYUDA_PRODUCTOS;
     return {
       respuesta,
-      datosIA: { tipo: 'busqueda_productos', consulta: query, productos: productosParaIA(productos) },
+      datosIA: {
+        tipo: 'busqueda_productos',
+        consulta: query,
+        productos: productosParaIA(productos),
+        siguientePaso: 'Escribe el nombre o número del producto que te interesa, o "agregar N" para añadirlo directo.',
+      },
       parche: {
         phase: 'browse_products',
         categoryId: null,

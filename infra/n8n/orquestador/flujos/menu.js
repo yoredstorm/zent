@@ -17,7 +17,13 @@ async function flujoMenu(ctx) {
       : unir(COPY.catalogPdfUnavailable());
     return {
       respuesta,
-      datosIA: { tipo: 'catalogo_pdf', enviado: Boolean(resultado?.sent) },
+      datosIA: {
+        tipo: 'catalogo_pdf',
+        enviado: Boolean(resultado?.sent),
+        siguientePaso: resultado?.sent
+          ? 'Invítalo a preguntarte por una categoría o producto específico si quiere más detalle.'
+          : 'Ofrécele mostrarle el catálogo aquí mismo, por categorías.',
+      },
       parche: { phase: 'main_menu', lastCopyKeys: { ...claves } },
     };
   }
