@@ -243,7 +243,7 @@ export class N8nChatBridgeService {
   }
 
   private timeoutMs(): number {
-    const value = Number.parseInt(this.config.get<string>('N8N_CHAT_TIMEOUT_MS', '5000'), 10);
-    return Number.isFinite(value) && value >= 500 ? value : 5000;
+    const value = Number.parseInt(this.config.get<string>('N8N_CHAT_TIMEOUT_MS', '15000'), 10);
+    return Number.isFinite(value) && value >= 500 ? value : 15000;
   }
 }

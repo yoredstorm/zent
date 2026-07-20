@@ -68,15 +68,22 @@ export class N8nAiComposerService {
     try {
       const client = createNovitaClient(this.config, apiKey);
       const model = this.config.get<string>('NOVITA_MODEL', 'deepseek/deepseek-v3.2');
-      const completion = await client.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.6,
-        max_tokens: 300,
-      });
+      // Esta llamada corre DENTRO del turno de n8n, que a su vez tiene su propio
+      // timeout (N8N_CHAT_TIMEOUT_MS) esperando la respuesta completa del webhook.
+      // Un timeout corto y explícito aquí evita que una Novita lenta agote ese
+      // presupuesto en silencio — si se pasa, cae al texto canon (fail-soft).
+      const completion = await client.chat.completions.create(
+        {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.6,
+          max_tokens: 220,
+        },
+        { timeout: 6000 },
+      );
       const reply = completion.choices?.[0]?.message?.content?.trim();
       if (!reply) return null;
       return { reply };
